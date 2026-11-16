@@ -2742,7 +2742,7 @@ class ConfirmBanner(_HudOverlay):
 
         row = QHBoxLayout(); row.setSpacing(8)
 
-        yes = QPushButton("▸  CONFIRM")
+        yes = QPushButton("CONFIRM")
         yes.setIcon(get_uicon("shield-exclamation", color=C.ACC, size=15))
         yes.setFixedHeight(32)
         yes.setFont(QFont("Montserrat", 9, QFont.Weight.Bold))
@@ -5195,7 +5195,8 @@ class BottomChatDock(QWidget):
         self._min_btn.clicked.connect(self._toggle_collapse)
         hdr.addWidget(self._min_btn)
 
-        close_btn = QPushButton("X")
+        close_btn = QPushButton("")
+        close_btn.setIcon(get_uicon("cross", color="#ff5252", size=11))
         close_btn.setFont(QFont("Montserrat", 8, QFont.Weight.Bold))
         close_btn.setFixedSize(22, 18)
         close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -5641,7 +5642,7 @@ class LeftSearchDock(QWidget):
         if hasattr(self._main_win, "_content_sep"):
             self._main_win._content_sep.show()
         if hasattr(self._main_win, "_content_min_btn"):
-            self._main_win._content_min_btn.setText("MIN  —")
+            self._main_win._content_min_btn.setText(" MIN")
             self._main_win._content_min_btn.setIcon(get_uicon("minus", color=C.PRI, size=11))
             self._main_win._content_min_btn.setToolTip("Minimize search display")
 
@@ -5663,7 +5664,7 @@ class LeftSearchDock(QWidget):
         if hasattr(self._main_win, "_content_sep"):
             self._main_win._content_sep.hide()
         if hasattr(self._main_win, "_content_min_btn"):
-            self._main_win._content_min_btn.setText("RESTORE  □")
+            self._main_win._content_min_btn.setText(" RESTORE")
             self._main_win._content_min_btn.setIcon(get_uicon("restore", color=C.PRI, size=11))
             self._main_win._content_min_btn.setToolTip("Restore search display")
         self.hide()
@@ -5683,7 +5684,7 @@ class LeftSearchDock(QWidget):
         dock_h = getattr(self, "_dock_h", min(580, screen.height() - 140))
         self.setFixedHeight(dock_h)
         if hasattr(self._main_win, "_content_min_btn"):
-            self._main_win._content_min_btn.setText("MIN  —")
+            self._main_win._content_min_btn.setText(" MIN")
             self._main_win._content_min_btn.setIcon(get_uicon("minus", color=C.PRI, size=11))
             self._main_win._content_min_btn.setToolTip("Minimize search display")
         if self._main_win:
@@ -5927,7 +5928,7 @@ class RemindersDisplayWindow(QWidget):
         self._count_lbl.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
         hdr.addWidget(self._count_lbl)
 
-        self._ref_btn = QPushButton("⟳")
+        self._ref_btn = QPushButton("")
         self._ref_btn.setIcon(get_uicon("refresh", color=C.PRI, size=13))
         self._ref_btn.setFont(QFont("Montserrat", 9, QFont.Weight.Bold))
         self._ref_btn.setFixedSize(22, 18)
@@ -5943,7 +5944,7 @@ class RemindersDisplayWindow(QWidget):
         self._ref_btn.clicked.connect(self.load_reminders)
         hdr.addWidget(self._ref_btn)
 
-        self._min_btn = QPushButton("MIN  —")
+        self._min_btn = QPushButton(" MIN")
         self._min_btn.setIcon(get_uicon("minus", color=C.PRI, size=11))
         self._min_btn.setFont(QFont("Montserrat", 7))
         self._min_btn.setFixedHeight(18)
@@ -5959,7 +5960,7 @@ class RemindersDisplayWindow(QWidget):
         self._min_btn.clicked.connect(self.toggle_collapse)
         hdr.addWidget(self._min_btn)
 
-        close_btn = QPushButton("DISMISS  ✕")
+        close_btn = QPushButton(" DISMISS")
         close_btn.setIcon(get_uicon("cross", color=C.TEXT_DIM, size=11))
         close_btn.setFont(QFont("Montserrat", 7))
         close_btn.setFixedHeight(18)
@@ -6258,7 +6259,7 @@ class RemindersDisplayWindow(QWidget):
         top_row.addStretch()
 
         if not is_completed:
-            done_btn = QPushButton("✓ DONE")
+            done_btn = QPushButton(" DONE")
             done_btn.setIcon(get_uicon("check-circle", color="#00e676", size=12))
             done_btn.setFont(QFont("Montserrat", 7, QFont.Weight.Bold))
             done_btn.setFixedHeight(18)
@@ -6273,7 +6274,7 @@ class RemindersDisplayWindow(QWidget):
             done_btn.clicked.connect(lambda _, rid=rem_id: self._on_complete(rid))
             top_row.addWidget(done_btn)
 
-        del_btn = QPushButton("✕")
+        del_btn = QPushButton("")
         del_btn.setIcon(get_uicon("cross", color=C.TEXT_DIM, size=11))
         del_btn.setFont(QFont("Montserrat", 7, QFont.Weight.Bold))
         del_btn.setFixedSize(18, 18)
@@ -6358,7 +6359,8 @@ class RemindersDisplayWindow(QWidget):
         self._collapsed = True
         self._body_widget.hide()
         self.setFixedHeight(46)
-        self._min_btn.setText("RESTORE  □")
+        self._min_btn.setText(" RESTORE")
+        self._min_btn.setIcon(get_uicon("restore", color=C.PRI, size=11))
         self._min_btn.setToolTip("Restore reminders display")
         self.hide()
         if self._main_win:
@@ -6373,7 +6375,8 @@ class RemindersDisplayWindow(QWidget):
         screen = QApplication.primaryScreen().availableGeometry()
         h = getattr(self, "_normal_h", min(640, screen.height() - 120))
         self.setFixedHeight(h)
-        self._min_btn.setText("MIN  —")
+        self._min_btn.setText(" MIN")
+        self._min_btn.setIcon(get_uicon("minus", color=C.PRI, size=11))
         self._min_btn.setToolTip("Minimize reminders display")
         if self._main_win:
             self._main_win._reminders_dock_minimized_to_bar = False
@@ -6481,7 +6484,7 @@ class MemoryActionsDisplayWindow(QWidget):
         self._count_lbl.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
         hdr.addWidget(self._count_lbl)
 
-        self._ref_btn = QPushButton("⟳")
+        self._ref_btn = QPushButton("")
         self._ref_btn.setIcon(get_uicon("refresh", color=C.PRI, size=13))
         self._ref_btn.setFont(QFont("Montserrat", 9, QFont.Weight.Bold))
         self._ref_btn.setFixedSize(22, 18)
@@ -6497,7 +6500,7 @@ class MemoryActionsDisplayWindow(QWidget):
         self._ref_btn.clicked.connect(self.load_data)
         hdr.addWidget(self._ref_btn)
 
-        self._min_btn = QPushButton("MIN  —")
+        self._min_btn = QPushButton(" MIN")
         self._min_btn.setIcon(get_uicon("minus", color=C.PRI, size=11))
         self._min_btn.setFont(QFont("Montserrat", 7))
         self._min_btn.setFixedHeight(18)
@@ -6513,7 +6516,7 @@ class MemoryActionsDisplayWindow(QWidget):
         self._min_btn.clicked.connect(self.toggle_collapse)
         hdr.addWidget(self._min_btn)
 
-        close_btn = QPushButton("DISMISS  ✕")
+        close_btn = QPushButton(" DISMISS")
         close_btn.setIcon(get_uicon("cross", color=C.TEXT_DIM, size=11))
         close_btn.setFont(QFont("Montserrat", 7))
         close_btn.setFixedHeight(18)
@@ -6541,7 +6544,7 @@ class MemoryActionsDisplayWindow(QWidget):
         top_tabs = QHBoxLayout()
         top_tabs.setSpacing(8)
 
-        self._btn_tab_mem = QPushButton("🧠  MEMORY MATRIX")
+        self._btn_tab_mem = QPushButton(" MEMORY MATRIX")
         self._btn_tab_mem.setIcon(get_uicon("database", color=C.PRI, size=14))
         self._btn_tab_mem.setFont(QFont("Montserrat", 8, QFont.Weight.Bold))
         self._btn_tab_mem.setFixedHeight(26)
@@ -6549,7 +6552,7 @@ class MemoryActionsDisplayWindow(QWidget):
         self._btn_tab_mem.clicked.connect(lambda: self._switch_tab("memory"))
         top_tabs.addWidget(self._btn_tab_mem, stretch=1)
 
-        self._btn_tab_act = QPushButton("⚡  ACTION REGISTRY & PERMISSIONS")
+        self._btn_tab_act = QPushButton(" ACTION REGISTRY & PERMISSIONS")
         self._btn_tab_act.setIcon(get_uicon("shield", color=C.PRI, size=14))
         self._btn_tab_act.setFont(QFont("Montserrat", 8, QFont.Weight.Bold))
         self._btn_tab_act.setFixedHeight(26)
@@ -6945,7 +6948,7 @@ class MemoryActionsDisplayWindow(QWidget):
 
         top_row.addStretch()
 
-        edit_btn = QPushButton("✎ EDIT")
+        edit_btn = QPushButton("EDIT")
         edit_btn.setFont(QFont("Montserrat", 7, QFont.Weight.Bold))
         edit_btn.setFixedHeight(18)
         edit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -6959,7 +6962,7 @@ class MemoryActionsDisplayWindow(QWidget):
         edit_btn.clicked.connect(lambda _, c=cat, k=key, v=val: self._on_edit_memory(c, k, v))
         top_row.addWidget(edit_btn)
 
-        del_btn = QPushButton("✕")
+        del_btn = QPushButton("")
         del_btn.setIcon(get_uicon("cross", color=C.TEXT_DIM, size=11))
         del_btn.setFont(QFont("Montserrat", 7, QFont.Weight.Bold))
         del_btn.setFixedSize(18, 18)
@@ -7165,7 +7168,8 @@ class MemoryActionsDisplayWindow(QWidget):
         screen = QApplication.primaryScreen().availableGeometry()
         h = getattr(self, "_normal_h", min(740, screen.height() - 100))
         self.setFixedHeight(h)
-        self._min_btn.setText("MIN  —")
+        self._min_btn.setText("MIN")
+        self._min_btn.setIcon(get_uicon("minus", color=C.PRI, size=11))
         self._switch_tab(tab or "memory")
         if self._main_win and hasattr(self._main_win, "_memory_actions_dock_minimized_to_bar"):
             self._main_win._memory_actions_dock_minimized_to_bar = False
@@ -7177,7 +7181,8 @@ class MemoryActionsDisplayWindow(QWidget):
         self._collapsed = True
         self._body_widget.hide()
         self.setFixedHeight(46)
-        self._min_btn.setText("RESTORE  □")
+        self._min_btn.setText(" RESTORE")
+        self._min_btn.setIcon(get_uicon("restore", color=C.PRI, size=11))
         self._min_btn.setToolTip("Restore platform display")
         self.hide()
         if self._main_win:
@@ -7192,7 +7197,8 @@ class MemoryActionsDisplayWindow(QWidget):
         screen = QApplication.primaryScreen().availableGeometry()
         h = getattr(self, "_normal_h", min(740, screen.height() - 100))
         self.setFixedHeight(h)
-        self._min_btn.setText("MIN  —")
+        self._min_btn.setText(" MIN")
+        self._min_btn.setIcon(get_uicon("minus", color=C.PRI, size=11))
         self._min_btn.setToolTip("Minimize platform display")
         if self._main_win:
             self._main_win._memory_actions_dock_minimized_to_bar = False
@@ -7320,131 +7326,60 @@ class ArmouryCrateTelemetryWidget(QWidget):
             """)
             return pb
 
-        # ── 2x2 Grid of Cards
-        grid = QGridLayout()
-        grid.setHorizontalSpacing(8)
-        grid.setVerticalSpacing(6)
+        # ── Vertical Stack of Cards (CPU, RAM, GPU, Storage in 1-by-1 order)
+        cards_lay = QVBoxLayout()
+        cards_lay.setSpacing(6)
 
         # 1. CPU Card
         c_cpu, v_cpu = _make_card("CPU")
-        r_cf, self.lbl_cpu_freq = _make_row("Frequency")
         r_cu, self.lbl_cpu_usage = _make_row("Usage")
         self.bar_cpu = _make_bar("#ff7a00")
-        r_cm, self.lbl_cpu_mem_freq = _make_row("Memory Frequency")
+        r_cf, self.lbl_cpu_freq = _make_row("Frequency")
         r_ct, self.lbl_cpu_temp = _make_row("Temperature")
         r_cv, self.lbl_cpu_volt = _make_row("Voltage")
-        v_cpu.addLayout(r_cf)
         v_cpu.addLayout(r_cu)
         v_cpu.addWidget(self.bar_cpu)
-        v_cpu.addLayout(r_cm)
+        v_cpu.addLayout(r_cf)
         v_cpu.addLayout(r_ct)
         v_cpu.addLayout(r_cv)
-        grid.addWidget(c_cpu, 0, 0)
+        cards_lay.addWidget(c_cpu)
 
-        # 2. GPU Card
+        # 2. RAM Card
+        c_ram, v_ram = _make_card("RAM")
+        r_mr, self.lbl_ram = _make_row("Memory Usage")
+        self.bar_ram = _make_bar("#ff1744")
+        v_ram.addLayout(r_mr)
+        v_ram.addWidget(self.bar_ram)
+        cards_lay.addWidget(c_ram)
+
+        # 3. GPU Card
         c_gpu, v_gpu = _make_card("GPU")
-        r_gf, self.lbl_gpu_freq = _make_row("Frequency")
         r_gu, self.lbl_gpu_usage = _make_row("Usage")
         self.bar_gpu = _make_bar("#ff1744")
-        r_gm, self.lbl_gpu_mem_freq = _make_row("Memory Frequency")
+        r_gf, self.lbl_gpu_freq = _make_row("Frequency")
         r_gt, self.lbl_gpu_temp = _make_row("Temperature")
         r_gv, self.lbl_gpu_volt = _make_row("Voltage")
-        v_gpu.addLayout(r_gf)
         v_gpu.addLayout(r_gu)
         v_gpu.addWidget(self.bar_gpu)
-        v_gpu.addLayout(r_gm)
+        v_gpu.addLayout(r_gf)
         v_gpu.addLayout(r_gt)
         v_gpu.addLayout(r_gv)
-        grid.addWidget(c_gpu, 0, 1)
+        cards_lay.addWidget(c_gpu)
 
-        # 3. Fan Card
-        c_fan, v_fan = _make_card("Fan")
-        r_fc, self.lbl_fan_cpu = _make_row("CPU Fan")
-        self.bar_fan_cpu = _make_bar("#ff7a00")
-        r_fg, self.lbl_fan_gpu = _make_row("GPU Fan")
-        self.bar_fan_gpu = _make_bar("#ff7a00")
-        r_fa, self.lbl_fan_acoustics = _make_row("Fan Acoustics")
-        v_fan.addLayout(r_fc)
-        v_fan.addWidget(self.bar_fan_cpu)
-        v_fan.addLayout(r_fg)
-        v_fan.addWidget(self.bar_fan_gpu)
-        v_fan.addLayout(r_fa)
-        grid.addWidget(c_fan, 1, 0)
-
-        # 4. Memory & Storage Card
-        c_mem, v_mem = _make_card("Memory")
-        r_ms, self.lbl_storage = _make_row("Storage")
+        # 4. Storage Card
+        c_store, v_store = _make_card("Storage")
+        r_ms, self.lbl_storage = _make_row("Disk Usage (C:)")
         self.bar_storage = _make_bar("#00e5ff")
-        r_mr, self.lbl_ram = _make_row("RAM")
-        self.bar_ram = _make_bar("#ff1744")
-        r_mn, self.lbl_net = _make_row("Network I/O")
-        v_mem.addLayout(r_ms)
-        v_mem.addWidget(self.bar_storage)
-        v_mem.addLayout(r_mr)
-        v_mem.addWidget(self.bar_ram)
-        v_mem.addLayout(r_mn)
-        grid.addWidget(c_mem, 1, 1)
+        v_store.addLayout(r_ms)
+        v_store.addWidget(self.bar_storage)
+        cards_lay.addWidget(c_store)
 
-        root.addLayout(grid)
-
-        # ── Section 2: Operating Mode
-        sec2_hdr = QHBoxLayout()
-        sec2_hdr.setContentsMargins(0, 4, 0, 0)
-        sec2_hdr.setSpacing(6)
-        slashes2 = QLabel("\\\\\\")
-        slashes2.setFont(keena_font(9, bold=True))
-        slashes2.setStyleSheet("color: #ff7a00; background: transparent;")
-        sec2_hdr.addWidget(slashes2)
-        t2 = QLabel("Operating Mode")
-        t2.setFont(keena_font(9, bold=True, spacing=1.2))
-        t2.setStyleSheet("color: #ffffff; background: transparent;")
-        sec2_hdr.addWidget(t2)
-        sec2_hdr.addStretch()
-        root.addLayout(sec2_hdr)
-
-        modes_row = QHBoxLayout()
-        modes_row.setSpacing(6)
-        self._mode_btns = {}
-        for m_name in ["Windows®", "Silent", "Performance", "Turbo"]:
-            b = QPushButton(m_name)
-            b.setFont(keena_font(8, bold=True))
-            b.setFixedHeight(30)
-            b.setCursor(Qt.CursorShape.PointingHandCursor)
-            b.clicked.connect(lambda checked=False, name=m_name: self.set_operating_mode(name))
-            self._mode_btns[m_name] = b
-            modes_row.addWidget(b)
-        root.addLayout(modes_row)
-
-        self.set_operating_mode("Performance")
+        self.lbl_net = QLabel("")
+        root.addLayout(cards_lay)
+        root.addStretch()
 
     def set_operating_mode(self, mode: str):
         self._mode = mode
-        for name, b in self._mode_btns.items():
-            if name == mode:
-                b.setStyleSheet("""
-                    QPushButton {
-                        background: rgba(255, 122, 0, 0.22);
-                        color: #ffffff;
-                        border: 1px solid #ff7a00;
-                        border-radius: 4px;
-                        padding: 4px 8px;
-                    }
-                """)
-            else:
-                b.setStyleSheet("""
-                    QPushButton {
-                        background: rgba(22, 6, 22, 0.65);
-                        color: #d6a0be;
-                        border: 1px solid rgba(255, 23, 68, 0.22);
-                        border-radius: 4px;
-                        padding: 4px 8px;
-                    }
-                    QPushButton:hover {
-                        border-color: #ff7a00;
-                        color: #ffffff;
-                        background: rgba(255, 122, 0, 0.12);
-                    }
-                """)
 
     def update_metrics(self, snap: dict):
         cpu = snap.get("cpu", 0.0)
@@ -7463,12 +7398,22 @@ class ArmouryCrateTelemetryWidget(QWidget):
         # CPU Usage
         self.lbl_cpu_usage.setText(f"{cpu:.0f} %")
         self.bar_cpu.setValue(int(max(0, min(100, cpu))))
-        self.lbl_cpu_mem_freq.setText("4800 MT/s")
 
         # CPU Temp & Voltage
         c_temp = int(tmp if tmp > 0 else (46 + (cpu / 100.0) * 36))
         self.lbl_cpu_temp.setText(f"{c_temp} °C")
         self.lbl_cpu_volt.setText(f"{1.05 + (cpu / 100.0) * 0.31:.2f} V")
+
+        # RAM
+        try:
+            vm = psutil.virtual_memory()
+            r_used = vm.used / (1024**3)
+            r_total = vm.total / (1024**3)
+            r_pct = vm.percent
+        except Exception:
+            r_used, r_total, r_pct = 9.0, 15.8, 57.0
+        self.lbl_ram.setText(f"{r_used:.1f} / {r_total:.1f} GB ({r_pct:.0f} %)")
+        self.bar_ram.setValue(int(r_pct))
 
         # GPU
         if gpu >= 0:
@@ -7478,39 +7423,15 @@ class ArmouryCrateTelemetryWidget(QWidget):
             self.bar_gpu.setValue(int(max(0, min(100, gpu))))
             g_temp = int(tmp if tmp > 0 else (42 + (gpu / 100.0) * 32))
             self.lbl_gpu_temp.setText(f"{g_temp} °C")
-            self.lbl_gpu_mem_freq.setText(f"{int(405 + (gpu / 100.0) * 1200)} MHz")
             self.lbl_gpu_volt.setText(f"{0.72 + (gpu / 100.0) * 0.38:.2f} V")
         else:
             self.lbl_gpu_freq.setText("210 MHz")
             self.lbl_gpu_usage.setText("0 %")
             self.bar_gpu.setValue(0)
-            self.lbl_gpu_mem_freq.setText("405 MHz")
             self.lbl_gpu_temp.setText("42 °C")
             self.lbl_gpu_volt.setText("0.65 V")
 
-        # Fan & Acoustics based on Mode
-        if self._mode == "Silent":
-            base_rpm = 1900
-            acoustic = 22.0 + (cpu / 100.0) * 3.5
-        elif self._mode == "Turbo":
-            base_rpm = 3600
-            acoustic = 34.0 + (cpu / 100.0) * 7.5
-        elif self._mode == "Windows®":
-            base_rpm = 2200
-            acoustic = 23.5 + (cpu / 100.0) * 4.5
-        else:  # Performance
-            base_rpm = 2800
-            acoustic = 25.5 + (cpu / 100.0) * 5.5
-
-        cpu_fan = int(base_rpm + (cpu / 100.0) * 900)
-        gpu_fan = int(max(1500, cpu_fan - 80))
-        self.lbl_fan_cpu.setText(f"{cpu_fan} RPM")
-        self.bar_fan_cpu.setValue(int(min(100, (cpu_fan / 5200.0) * 100)))
-        self.lbl_fan_gpu.setText(f"{gpu_fan} RPM")
-        self.bar_fan_gpu.setValue(int(min(100, (gpu_fan / 5200.0) * 100)))
-        self.lbl_fan_acoustics.setText(f"{acoustic:.1f} dBA")
-
-        # Storage & RAM
+        # Storage
         try:
             drive = "C:\\" if os.name == "nt" else "/"
             du = psutil.disk_usage(drive)
@@ -7519,25 +7440,16 @@ class ArmouryCrateTelemetryWidget(QWidget):
             s_pct = du.percent
         except Exception:
             s_used, s_total, s_pct = 105.7, 446.4, 23.7
-        self.lbl_storage.setText(f"{s_used:.1f} / {s_total:.1f} GB")
+        self.lbl_storage.setText(f"{s_used:.1f} / {s_total:.1f} GB ({s_pct:.0f} %)")
         self.bar_storage.setValue(int(s_pct))
 
-        try:
-            vm = psutil.virtual_memory()
-            r_used = vm.used / (1024**3)
-            r_total = vm.total / (1024**3)
-            r_pct = vm.percent
-        except Exception:
-            r_used, r_total, r_pct = 9.0, 15.8, 57.0
-        self.lbl_ram.setText(f"{r_used:.1f} / {r_total:.1f} GB")
-        self.bar_ram.setValue(int(r_pct))
-
-        # Network
-        if net < 1.0:
-            net_str = f"{net * 1024:.0f} KB/s"
-        else:
-            net_str = f"{net:.1f} MB/s"
-        self.lbl_net.setText(net_str)
+        # Network (if label present)
+        if hasattr(self, "lbl_net"):
+            if net < 1.0:
+                net_str = f"{net * 1024:.0f} KB/s"
+            else:
+                net_str = f"{net:.1f} MB/s"
+            self.lbl_net.setText(net_str)
 
 
 class MinimizedDisplayPill(QPushButton):
@@ -7571,27 +7483,31 @@ class MinimizedDisplayPill(QPushButton):
         icon_or_id = str(self.display_id)
         uicon_name = None
         if self.display_id == "search":
-            icon_or_id = "🔍"
             uicon_name = "search"
         elif self.display_id == "reminders":
-            icon_or_id = "⏰"
             uicon_name = "calendar"
         elif self.display_id == "memory_actions":
-            icon_or_id = "💾"
             uicon_name = "database"
 
         if uicon_name:
             c = "#ffffff" if self._is_hovered else C.PRI
             self.setIcon(get_uicon(uicon_name, color=c, size=16))
             self.setIconSize(QSize(16, 16))
-
-        if self._is_hovered:
-            clean_title = self.display_title.strip()
-            if len(clean_title) > 24:
-                clean_title = clean_title[:22] + "..."
-            self.setText(f" {icon_or_id} │ {clean_title} ")
+            if self._is_hovered:
+                clean_title = self.display_title.strip()
+                if len(clean_title) > 24:
+                    clean_title = clean_title[:22] + "..."
+                self.setText(f"  {clean_title} ")
+            else:
+                self.setText("")
         else:
-            self.setText(icon_or_id)
+            if self._is_hovered:
+                clean_title = self.display_title.strip()
+                if len(clean_title) > 24:
+                    clean_title = clean_title[:22] + "..."
+                self.setText(f" {icon_or_id} │ {clean_title} ")
+            else:
+                self.setText(icon_or_id)
 
     def _update_style(self):
         if self._is_hovered:
@@ -7813,7 +7729,8 @@ class JarvisDisplayWindow(QWidget):
         self._max_btn.clicked.connect(self.maximize_window)
         hdr.addWidget(self._max_btn)
 
-        close_btn = QPushButton("X")
+        close_btn = QPushButton("")
+        close_btn.setIcon(get_uicon("cross", color="#ff5252", size=11))
         close_btn.setFont(keena_font(8, bold=True))
         close_btn.setFixedSize(22, 20)
         close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -9267,7 +9184,8 @@ class MainWindow(QMainWindow):
         lay.setSpacing(4)
 
         def _btn(txt, tip, icon_name=None):
-            b = QPushButton(txt)
+            btn_txt = f" {txt.strip()}" if icon_name and txt.strip() else txt
+            b = QPushButton(btn_txt)
             b.setFont(keena_font(8, True))
             b.setCursor(Qt.CursorShape.PointingHandCursor)
             b.setToolTip(tip)
@@ -9381,7 +9299,8 @@ class MainWindow(QMainWindow):
         hdr.addStretch()
 
         def _drawer_btn(txt, tip, cb, icon_name=None):
-            b = QPushButton(txt)
+            btn_txt = f" {txt.strip()}" if icon_name and txt.strip() else txt
+            b = QPushButton(btn_txt)
             b.setFont(keena_font(8, True))
             b.setCursor(Qt.CursorShape.PointingHandCursor)
             b.setToolTip(tip)
@@ -9413,7 +9332,7 @@ class MainWindow(QMainWindow):
         self._hud_mem_btn = self._drawer_mem_btn
         hdr.addWidget(self._drawer_mem_btn)
 
-        btn_close = QPushButton("X")
+        btn_close = QPushButton("")
         btn_close.setIcon(get_uicon("angle-small-up", color=C.TEXT_DIM, size=14))
         btn_close.setIconSize(QSize(14, 14))
         btn_close.setFont(keena_font(10, True))
@@ -9608,7 +9527,8 @@ class MainWindow(QMainWindow):
             return l
 
         def _action_btn(txt, cb, icon_name=None):
-            b = QPushButton(txt)
+            btn_txt = f" {txt.strip()}" if icon_name and txt.strip() else txt
+            b = QPushButton(btn_txt)
             b.setFont(keena_font(9, True))
             b.setCursor(Qt.CursorShape.PointingHandCursor)
             if icon_name:
@@ -9665,7 +9585,7 @@ class MainWindow(QMainWindow):
             new_x = max(screen.left() + 20, right_anchor - new_w)
             self.setGeometry(new_x, curr.y(), new_w, new_h)
             if hasattr(self, "_hud_exp_btn"):
-                self._hud_exp_btn.setText("COLLAPSE")
+                self._hud_exp_btn.setText(" COLLAPSE")
                 self._hud_exp_btn.setIcon(get_uicon("angle-small-up", color=C.PRI, size=13))
                 self._hud_exp_btn.setToolTip("Collapse drawer into compact HUD")
         else:
@@ -9676,7 +9596,7 @@ class MainWindow(QMainWindow):
             self.setGeometry(new_x, curr.y(), new_w, new_h)
             self.resize(new_w, new_h)
             if hasattr(self, "_hud_exp_btn"):
-                self._hud_exp_btn.setText("EXPAND")
+                self._hud_exp_btn.setText(" EXPAND")
                 self._hud_exp_btn.setIcon(get_uicon("angle-small-down", color=C.PRI, size=13))
                 self._hud_exp_btn.setToolTip("Expand attached JARVIS Intelligence Matrix")
 
@@ -10887,7 +10807,7 @@ class MainWindow(QMainWindow):
         self._content_ts_lbl.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
         hdr.addWidget(self._content_ts_lbl)
 
-        self._content_min_btn = QPushButton("MIN  —")
+        self._content_min_btn = QPushButton(" MIN")
         self._content_min_btn.setIcon(get_uicon("minus", color=C.PRI, size=11))
         self._content_min_btn.setFont(QFont("Montserrat", 7))
         self._content_min_btn.setFixedHeight(18)
@@ -10903,7 +10823,7 @@ class MainWindow(QMainWindow):
         self._content_min_btn.clicked.connect(self._toggle_search_dock_minimize)
         hdr.addWidget(self._content_min_btn)
 
-        dismiss = QPushButton("DISMISS  ✕")
+        dismiss = QPushButton(" DISMISS")
         dismiss.setIcon(get_uicon("cross", color=C.TEXT_DIM, size=11))
         dismiss.setFont(QFont("Montserrat", 7))
         dismiss.setFixedHeight(18)
@@ -12173,7 +12093,7 @@ class MainWindow(QMainWindow):
     def _style_mute_btn(self):
         if hasattr(self, "_hud_mute_btn"):
             if self._muted:
-                self._hud_mute_btn.setText("MUTED")
+                self._hud_mute_btn.setText(" MUTED")
                 self._hud_mute_btn.setIcon(get_uicon("microphone-slash", color=C.MUTED_C, size=13))
                 self._hud_mute_btn.setStyleSheet(f"""
                     QPushButton {{
@@ -12184,7 +12104,7 @@ class MainWindow(QMainWindow):
                     }}
                 """)
             else:
-                self._hud_mute_btn.setText("MIC")
+                self._hud_mute_btn.setText(" MIC")
                 self._hud_mute_btn.setIcon(get_uicon("circle-microphone", color=C.PRI, size=13))
                 self._hud_mute_btn.setStyleSheet(f"""
                     QPushButton {{

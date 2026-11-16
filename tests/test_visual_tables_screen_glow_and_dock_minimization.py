@@ -106,10 +106,12 @@ class TestLeftDockMinimization(unittest.TestCase):
 
     def test_minimized_pill_search_and_reminders(self):
         pill_search = MinimizedDisplayPill("search", "Intel Query")
-        self.assertEqual(pill_search.text(), "🔍")
+        self.assertEqual(pill_search.text(), "")
+        self.assertFalse(pill_search.icon().isNull())
 
         pill_rem = MinimizedDisplayPill("reminders", "Schedule Matrix")
-        self.assertEqual(pill_rem.text(), "⏰")
+        self.assertEqual(pill_rem.text(), "")
+        self.assertFalse(pill_rem.icon().isNull())
 
     def test_search_dock_minimizes_to_left_bar(self):
         # Open search dock

@@ -42,19 +42,19 @@ class TestRemindersAlertsWindowControls(unittest.TestCase):
         # Popup search content
         self.win._show_content("WHERE TO DOWNLOAD SKILLRACK", "Download links here...")
         self.assertFalse(getattr(dock, "_collapsed", False))
-        self.assertEqual(self.win._content_min_btn.text(), "MIN  —")
+        self.assertEqual(self.win._content_min_btn.text().strip(), "MIN")
 
         # Toggle minimize (collapse)
         dock.toggle_minimize()
         self.assertTrue(dock._collapsed)
         self.assertEqual(dock.height(), 46)
-        self.assertEqual(self.win._content_min_btn.text(), "RESTORE  □")
+        self.assertEqual(self.win._content_min_btn.text().strip(), "RESTORE")
         self.assertFalse(self.win._content_display.isVisible())
 
         # Toggle restore
         dock.toggle_minimize()
         self.assertFalse(dock._collapsed)
-        self.assertEqual(self.win._content_min_btn.text(), "MIN  —")
+        self.assertEqual(self.win._content_min_btn.text().strip(), "MIN")
         self.assertTrue(self.win._content_display.isVisible())
 
     def test_02_confirmation_does_not_popup_display(self):
@@ -124,11 +124,11 @@ class TestRemindersAlertsWindowControls(unittest.TestCase):
         rem_win.toggle_collapse()
         self.assertTrue(rem_win._collapsed)
         self.assertEqual(rem_win.height(), 46)
-        self.assertEqual(rem_win._min_btn.text(), "RESTORE  □")
+        self.assertEqual(rem_win._min_btn.text().strip(), "RESTORE")
 
         rem_win.toggle_collapse()
         self.assertFalse(rem_win._collapsed)
-        self.assertEqual(rem_win._min_btn.text(), "MIN  —")
+        self.assertEqual(rem_win._min_btn.text().strip(), "MIN")
 
         # Test player helper
         self.player.show_reminders("all")
@@ -190,7 +190,7 @@ class TestRemindersAlertsWindowControls(unittest.TestCase):
         """Remind and Mem/Act buttons removed from collapse bar, present in expanded drawer."""
         # 1. Collapsed bar buttons: MIC, EXPAND, CHAT, MINI, CLOSE
         btn_texts = [
-            self.win.hud_ctrl_bar.layout().itemAt(i).widget().text()
+            self.win.hud_ctrl_bar.layout().itemAt(i).widget().text().strip()
             for i in range(self.win.hud_ctrl_bar.layout().count())
             if self.win.hud_ctrl_bar.layout().itemAt(i).widget()
         ]
@@ -203,8 +203,8 @@ class TestRemindersAlertsWindowControls(unittest.TestCase):
         # 2. Expanded drawer has the buttons in header
         self.assertTrue(hasattr(self.win, "_drawer_rem_btn"))
         self.assertTrue(hasattr(self.win, "_drawer_mem_btn"))
-        self.assertEqual(self.win._drawer_rem_btn.text(), "REMIND")
-        self.assertEqual(self.win._drawer_mem_btn.text(), "MEM/ACT")
+        self.assertEqual(self.win._drawer_rem_btn.text().strip(), "REMIND")
+        self.assertEqual(self.win._drawer_mem_btn.text().strip(), "MEM/ACT")
 
 
 if __name__ == "__main__":

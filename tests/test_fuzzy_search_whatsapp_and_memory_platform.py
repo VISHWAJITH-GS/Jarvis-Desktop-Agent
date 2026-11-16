@@ -179,7 +179,8 @@ class TestMemoryAndActionsPlatform(unittest.TestCase):
         self.assertFalse(mem_win.isVisible())
         self.assertTrue(self.win._memory_actions_dock_minimized_to_bar)
         self.assertIn("memory_actions", self.win._dots_overlay._buttons)
-        self.assertEqual(self.win._dots_overlay._buttons["memory_actions"].text(), "💾")
+        self.assertEqual(self.win._dots_overlay._buttons["memory_actions"].text(), "")
+        self.assertFalse(self.win._dots_overlay._buttons["memory_actions"].icon().isNull())
 
         # Restore from left dock
         self.win._on_restore_display("memory_actions")
