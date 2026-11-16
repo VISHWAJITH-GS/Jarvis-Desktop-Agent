@@ -742,6 +742,23 @@ if ($dev) {{
 
 def get_system_power_status() -> dict:
     """Retrieve Windows laptop battery percentage and charging state."""
+    try:
+        import psutil
+        batt = psutil.sensors_battery()
+        if batt is not None:
+            pct = int(batt.percent)
+            plugged = bool(batt.power_plugged)
+            return {
+                "has_battery": True,
+                "percent": pct,
+                "power_plugged": plugged,
+                "battery_percent": pct,
+                "is_charging": plugged,
+                "verified": True,
+                "message": f"Battery at {pct}% ({'charging' if plugged else 'on battery'}).",
+            }
+    except Exception:
+        pass
     ps = "(Get-CimInstance -ClassName Win32_Battery) | Select-Object EstimatedChargeRemaining, BatteryStatus | ConvertTo-Json"
     code, stdout, _ = _run_ps(ps, timeout=5)
     if code == 0 and stdout:
@@ -752,6 +769,9 @@ def get_system_power_status() -> dict:
             pct = data.get("EstimatedChargeRemaining", 100)
             charging = data.get("BatteryStatus") == 2
             return {
+                "has_battery": True,
+                "percent": pct,
+                "power_plugged": charging,
                 "battery_percent": pct,
                 "is_charging": charging,
                 "verified": True,
@@ -759,20 +779,49 @@ def get_system_power_status() -> dict:
             }
         except Exception:
             pass
-    return {"battery_percent": None, "is_charging": False, "verified": False, "message": "Power status unavailable."}
+    return {
+        "has_battery": False,
+        "percent": None,
+        "power_plugged": False,
+        "battery_percent": None,
+        "is_charging": False,
+        "verified": False,
+        "message": "Power status unavailable.",
+    }
+
+
+def _win_endpoint_volume():
+    """Get Windows master volume endpoint safely across pycaw versions and COM threads."""
+    try:
+        import comtypes
+        comtypes.CoInitialize()
+    except Exception:
+        pass
+    from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+    from comtypes import CLSCTX_ALL
+    speakers = AudioUtilities.GetSpeakers()
+    endpoint = getattr(speakers, "EndpointVolume", None)
+    if endpoint is not None:
+        return endpoint
+    dev = getattr(speakers, "_dev", speakers)
+    return ctypes.cast(dev.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None),
+                       ctypes.POINTER(IAudioEndpointVolume))
 
 
 def get_volume() -> int:
     """Read Windows master volume level (0-100) using pycaw endpoint."""
     try:
-        from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
-        from comtypes import CLSCTX_ALL
-        devices = AudioUtilities.GetSpeakers()
-        interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
-        vol = ctypes.cast(interface, ctypes.POINTER(IAudioEndpointVolume))
+        vol = _win_endpoint_volume()
         scalar = vol.GetMasterVolumeLevelScalar()
         return int(round(scalar * 100))
     except Exception:
+        try:
+            from actions.computer_settings import volume_get as cs_volume_get
+            vg = cs_volume_get()
+            if vg is not None:
+                return vg
+        except Exception:
+            pass
         return 50
 
 
@@ -781,11 +830,7 @@ def set_volume(level: int) -> dict:
     lvl = max(0, min(100, int(level)))
     before = get_volume()
     try:
-        from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
-        from comtypes import CLSCTX_ALL
-        devices = AudioUtilities.GetSpeakers()
-        interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
-        vol = ctypes.cast(interface, ctypes.POINTER(IAudioEndpointVolume))
+        vol = _win_endpoint_volume()
         vol.SetMasterVolumeLevelScalar(lvl / 100.0, None)
         now = get_volume()
         push_undo(f"volume {lvl}%", lambda b=before: set_volume(b)["message"])
@@ -797,17 +842,26 @@ def set_volume(level: int) -> dict:
             "message": f"Volume set to {now}%.",
         }
     except Exception as e:
-        return {"success": False, "action": "set_volume", "error": str(e), "message": f"Could not set volume: {e}"}
+        # Fallback to computer_settings
+        try:
+            from actions.computer_settings import volume_set as cs_volume_set, volume_get as cs_volume_get
+            cs_volume_set(lvl)
+            now = cs_volume_get() or lvl
+            return {
+                "success": True,
+                "action": "set_volume",
+                "volume": now,
+                "verified": True,
+                "message": f"Volume set to {now}%.",
+            }
+        except Exception as e2:
+            return {"success": False, "action": "set_volume", "error": str(e), "message": f"Could not set volume: {e}"}
 
 
 def set_mute(mute: bool) -> dict:
     """Mute or unmute Windows master audio."""
     try:
-        from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
-        from comtypes import CLSCTX_ALL
-        devices = AudioUtilities.GetSpeakers()
-        interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
-        vol = ctypes.cast(interface, ctypes.POINTER(IAudioEndpointVolume))
+        vol = _win_endpoint_volume()
         vol.SetMute(1 if mute else 0, None)
         state_str = "muted" if mute else "unmuted"
         push_undo(f"audio {state_str}", lambda m=not mute: set_mute(m)["message"])
@@ -815,11 +869,20 @@ def set_mute(mute: bool) -> dict:
             "success": True,
             "action": "set_mute",
             "muted": mute,
-            "verified": True,
             "message": f"Audio {state_str}.",
         }
     except Exception as e:
-        return {"success": False, "action": "set_mute", "error": str(e), "message": f"Could not set mute: {e}"}
+        try:
+            from actions.computer_settings import volume_mute
+            volume_mute()
+            return {
+                "success": True,
+                "action": "set_mute",
+                "muted": mute,
+                "message": "Audio mute toggled.",
+            }
+        except Exception:
+            return {"success": False, "action": "set_mute", "error": str(e), "message": f"Could not toggle mute: {e}"}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -948,12 +1011,33 @@ def windows_control(parameters: dict = None, player=None, **kwargs) -> str:
         return outcome.done("windows_control", mode=target, message=f"Airplane mode set to '{target}'.", verified=True)
 
     # Audio & Sound
-    if action in ("set_volume", "volume", "adjust_volume"):
-        val_str = str(value or target or "50").replace("%", "").strip()
-        try:
-            lvl = int(val_str)
-        except ValueError:
-            lvl = 50
+    if action in ("set_volume", "volume", "adjust_volume", "volume_up", "volume_down", "increase_volume", "decrease_volume"):
+        if action in ("volume_up", "increase_volume"):
+            delta = 10
+            raw = str(value or target or "").replace("%", "").strip()
+            nums = re.findall(r"\d+", raw)
+            if nums:
+                delta = int(nums[-1])
+            lvl = min(100, get_volume() + delta)
+        elif action in ("volume_down", "decrease_volume"):
+            delta = 10
+            raw = str(value or target or "").replace("%", "").strip()
+            nums = re.findall(r"\d+", raw)
+            if nums:
+                delta = int(nums[-1])
+            lvl = max(0, get_volume() - delta)
+        else:
+            raw = str(value if value is not None else (target if target is not None else "50")).replace("%", "").strip()
+            rel_m = re.search(r"([+-]\s*\d+)", raw)
+            if rel_m:
+                delta = int(rel_m.group(1).replace(" ", ""))
+                lvl = max(0, min(100, get_volume() + delta))
+            else:
+                nums = re.findall(r"\d+", raw)
+                if nums:
+                    lvl = max(0, min(100, int(nums[-1])))
+                else:
+                    lvl = 50
         res = set_volume(lvl)
         return outcome.done("windows_control", **res)
 
@@ -1015,7 +1099,7 @@ TOOL = {
                 "description": (
                     "The exact action: get_wifi_status | list_available_wifi_networks | connect_wifi | disconnect_wifi | set_wifi_enabled | "
                     "get_bluetooth_status | list_bluetooth_devices | connect_bluetooth_device | disconnect_bluetooth_device | set_bluetooth_enabled | pair_bluetooth_device | "
-                    "set_volume | get_volume | mute | unmute | list_audio_devices | set_audio_output | set_brightness | set_display_mode | get_power_status"
+                    "set_volume | get_volume | volume_up | volume_down | mute | unmute | list_audio_devices | set_audio_output | set_brightness | set_display_mode | get_power_status"
                 ),
             },
             "target": {

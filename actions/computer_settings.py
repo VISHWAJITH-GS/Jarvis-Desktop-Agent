@@ -115,6 +115,11 @@ def _win_endpoint_volume():
     inner device for older pycaw, and read the scalar rather than deriving a
     number from decibels.
     """
+    try:
+        import comtypes
+        comtypes.CoInitialize()
+    except Exception:
+        pass
     from ctypes import cast, POINTER
     from comtypes import CLSCTX_ALL
     from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume

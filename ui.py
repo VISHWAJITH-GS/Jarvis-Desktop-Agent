@@ -8302,6 +8302,13 @@ class MainWindow(QMainWindow):
                 (cw.height() - oh) // 2,
                 ow, oh,
             )
+        if getattr(self, "_confirm_overlay", None) and self._confirm_overlay.isVisible():
+            ov = self._confirm_overlay
+            ov.setGeometry(
+                max(0, (cw.width()  - ov.width())  // 2),
+                max(0, (cw.height() - ov.height()) // 2),
+                ov.width(), ov.height(),
+            )
         # Camera preview — bottom-right corner of the center/HUD area
         pw = _CameraPreview._W
         ph = self._cam_preview.height() or _CameraPreview._H
@@ -10029,6 +10036,32 @@ class MainWindow(QMainWindow):
 
     def _show_confirm_banner(self, title: str, detail: str):
         self._hide_confirm_banner()
+
+        was_min = self.isMinimized() or getattr(self, "_is_minimized_top", False)
+
+        # 1. If HUD is minimized in Arc Reactor mini-mode (58px orb), restore to normal HUD
+        if getattr(self, "_is_minimized_top", False):
+            self.toggle_minimize_top()
+
+        # 2. If window is minimized to Windows taskbar, restore back to normal (not minimized)
+        if self.isMinimized():
+            self.showNormal()
+        elif not self.isVisible():
+            self.show()
+
+        # 3. Apply state:
+        # If minimized while asking confirmation, restore back to normal (not minimized).
+        # Otherwise, if confirmation is needed, show in the maximized way.
+        if was_min:
+            self.showNormal()
+            self._was_maximized_for_confirm = False
+        else:
+            self._was_maximized_for_confirm = not self.isMaximized()
+            self.showMaximized()
+
+        self.raise_()
+        self.activateWindow()
+
         ov = ConfirmBanner(title, detail, parent=self.centralWidget())
         ov.answered.connect(self._on_confirm_answered)
         self._centre_overlay(ov)
@@ -10040,6 +10073,9 @@ class MainWindow(QMainWindow):
             ov.hide()
             ov.deleteLater()
             self._confirm_overlay = None
+        if getattr(self, "_was_maximized_for_confirm", False):
+            self._was_maximized_for_confirm = False
+            self.showNormal()
 
     def _on_confirm_answered(self, accepted: bool):
         # Tear the banner down first: core.confirm.resolve() may be about to

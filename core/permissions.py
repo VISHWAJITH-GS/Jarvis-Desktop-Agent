@@ -119,7 +119,6 @@ class ActionPermissionManager:
     """
 
     FORBIDDEN_FORMAT_PATTERNS = (
-        "format",
         "format_drive",
         "format_disk",
         "format_volume",
@@ -138,19 +137,38 @@ class ActionPermissionManager:
         act = str(action_name or "").lower().strip()
         params = parameters or {}
         sub_act = str(params.get("action") or "").lower().strip()
-        target = str(params.get("target") or params.get("path") or params.get("command") or params.get("text") or params.get("query") or "").lower()
 
-        # Direct action name or sub-action check
-        if act in ("format", "format_drive", "format_disk") or sub_act in ("format", "format_drive", "format_disk", "format_volume"):
+        # Tools that only display UI, search, or process non-system text cannot format drives
+        if act in ("display_window", "web_search", "observe_page", "reminder", "send_message", "notification_center", "spotify_control", "video_player"):
+            return False
+
+        # Direct format action on file/drive controller tools
+        if act in ("format", "format_drive", "format_disk") or (
+            act in ("file_controller", "windows_control", "computer_control")
+            and sub_act in ("format", "format_drive", "format_disk", "format_volume")
+        ):
             return True
 
-        combined = f"{act} {sub_act} {target}".lower()
+        # Check command/script or target paths for system formatting commands
+        cmd_text = str(params.get("command") or params.get("cmd") or params.get("script") or "").lower()
+        target_path = str(params.get("target") or params.get("path") or "").lower()
+        combined = f"{act} {sub_act} {cmd_text} {target_path}".lower()
+
+        # Check explicit disk formatting patterns
         for pat in cls.FORBIDDEN_FORMAT_PATTERNS:
             if pat in combined:
-                # Do not misclassify text reformatting in file_processor or code_helper
-                if act in ("file_processor", "code_helper", "video_player") and "drive" not in combined and "disk" not in combined and "c:" not in combined:
-                    continue
                 return True
+
+        # Regex check for Windows drive formatting syntax: e.g. "format c:", "format d:"
+        if re.search(r"\bformat\s+[a-z]:", combined):
+            return True
+
+        # Check computer_control cmd/shell text for format commands
+        if act == "computer_control" and sub_act in ("cmd", "shell", "run", "terminal"):
+            input_text = str(params.get("text") or "").lower()
+            if re.search(r"\bformat\s+[a-z]:", input_text) or "format-volume" in input_text or "diskpart" in input_text:
+                return True
+
         return False
 
     @classmethod
