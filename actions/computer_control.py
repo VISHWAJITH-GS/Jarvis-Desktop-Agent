@@ -14,6 +14,7 @@ if platform.system() == "Windows":
 else:
     _WIN_HIDE: dict = {}
 import time
+from datetime import datetime
 import random
 from pathlib import Path
 
@@ -28,6 +29,11 @@ _PYPERCLIP = installed("pyperclip")
 
 # Windows UI Automation integration
 from actions import windows_uia
+
+
+def _cc_log(msg: str) -> None:
+    ts = datetime.now().strftime("%I:%M:%S %p")
+    print(f"[{ts}] [ComputerControl] {msg}")
 
 
 def _configure_pyautogui(module) -> None:
@@ -284,7 +290,7 @@ def _click(x=None, y=None, button: str = "left", clicks: int = 1) -> str:
             req_x, req_y = int(x), int(y)
             adj_x, adj_y, is_valid, reason = windows_uia.validate_coordinates(req_x, req_y)
             if not is_valid:
-                print(f"[ComputerControl] ⚠️ Refusing click at invalid requested coordinates ({req_x}, {req_y}): {reason}")
+                _cc_log(f"⚠️ Refusing click at invalid requested coordinates ({req_x}, {req_y}): {reason}")
                 return outcome.failed("click", f"Coordinates ({req_x}, {req_y}) are invalid: {reason}")
 
             final_x, final_y = adj_x, adj_y
@@ -299,13 +305,13 @@ def _click(x=None, y=None, button: str = "left", clicks: int = 1) -> str:
                         final_x, final_y = cx, cy
 
             pyautogui.click(final_x, final_y, button=button, clicks=clicks)
-            print(f"[ComputerControl] Click executed: requested=({req_x}, {req_y}), executed=({final_x}, {final_y})")
+            _cc_log(f"Click executed: requested=({req_x}, {req_y}), executed=({final_x}, {final_y})")
             return f"{'Double-c' if clicks == 2 else 'C'}licked ({final_x}, {final_y}) [{button}]"
         except Exception as e:
             return outcome.failed("click", f"Click error at ({x}, {y}): {e}")
 
     # Explicitly refuse silent center clicking when coordinates are missing
-    print("[ComputerControl] ⚠️ Refusing click: no coordinates specified.")
+    _cc_log("⚠️ Refusing click: no coordinates specified.")
     return outcome.failed("click", "No target coordinates or element specified for click.")
 
 
@@ -496,7 +502,7 @@ def _close_app(app_name: str, confirmed_index: int | None = None) -> str:
                     win32gui.PostMessage(h, win32con.WM_CLOSE, 0, 0)
                 closed_win = True
         except Exception as e:
-            print(f"[ComputerControl] Explorer win32 close error: {e}")
+            _cc_log(f"Explorer win32 close error: {e}")
 
         if not closed_win and windows_uia.is_available():
             uia_res = windows_uia.close_window("File Explorer")
@@ -569,7 +575,7 @@ def _close_app(app_name: str, confirmed_index: int | None = None) -> str:
                 f"{', '.join(tied[:4])} - which one should be closed?",
                 app=app_name, candidates=len(tied),
             )
-        print(f"[ComputerControl] close_app: '{app_name}' -> {target_name} "
+        _cc_log(f"close_app: '{app_name}' -> {target_name} "
               f"(also matched: {', '.join(n for n, _ in ranked[1:5])})")
 
     # Safety check if target is a special Windows application that shouldn't be terminated by process
@@ -651,7 +657,7 @@ def _close_app(app_name: str, confirmed_index: int | None = None) -> str:
 def _screen_find(description: str) -> tuple[int, int] | None:
     api_key = _get_api_key()
     if not api_key:
-        print("[ComputerControl] ⚠️ No API key for screen_find")
+        _cc_log("⚠️ No API key for screen_find")
         return None
 
     try:
@@ -689,7 +695,7 @@ def _screen_find(description: str) -> tuple[int, int] | None:
             return int(match.group(1)), int(match.group(2))
 
     except Exception as e:
-        print(f"[ComputerControl] ⚠️ screen_find failed: {e}")
+        _cc_log(f"⚠️ screen_find failed: {e}")
 
     return None
 
@@ -751,9 +757,9 @@ def computer_control(
         # Terminal, not the HUD: the activity log is for the conversation and
         # for problems, not a receipt for every keystroke. See
         # core/outcome.is_problem().
-        print(f"[ComputerControl] {action}")
+        _cc_log(f"{action}")
 
-    print(f"[ComputerControl] ▶ {action}  {params}")
+    _cc_log(f"▶ {action}  {params}")
 
     try:
 
@@ -844,7 +850,7 @@ def computer_control(
                 adj_x, adj_y, is_valid, reason = windows_uia.validate_coordinates(coords[0], coords[1])
                 if is_valid:
                     return f"{adj_x},{adj_y}"
-                print(f"[ComputerControl] ⚠️ screen_find coordinates out of bounds: {reason}")
+                _cc_log(f"⚠️ screen_find coordinates out of bounds: {reason}")
             return "NOT_FOUND"
 
         if action == "screen_click":
@@ -994,7 +1000,7 @@ def computer_control(
         if action == "random_data":
             dt     = params.get("type", "name")
             result = _random_data(dt)
-            print(f"[ComputerControl] 🎲 random {dt} → {result}")
+            _cc_log(f"🎲 random {dt} → {result}")
             return result
 
         if action == "user_data":
@@ -1003,13 +1009,13 @@ def computer_control(
             value   = profile.get(field, "")
             if not value:
                 value = _random_data(field)
-                print(f"[ComputerControl] ⚠️ No '{field}' in memory, using random: {value}")
+                _cc_log(f"⚠️ No '{field}' in memory, using random: {value}")
             return value
 
         return f"Unknown action: '{action}'"
 
     except Exception as e:
-        print(f"[ComputerControl] ❌ {action}: {e}")
+        _cc_log(f"❌ {action}: {e}")
         return f"computer_control '{action}' failed: {e}"
 
 

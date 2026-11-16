@@ -3,6 +3,7 @@ import json
 import re
 import sys
 import time
+from datetime import datetime
 import subprocess
 import platform
 from pathlib import Path
@@ -868,6 +869,30 @@ def _detect_action(description: str) -> dict:
     if num and any(w in low for w in ("volume", "ses", "sound", "lautstark", "громкость")):
         return {"action": "volume_set", "value": max(0, min(100, int(num.group(1))))}
 
+    # JARVIS self-control: Mute/Unmute & Window management
+    if any(k in low for k in ("unmute yourself", "unmute jarvis", "start listening", "unmute mic", "unmute microphone")):
+        return {"action": "unmute_jarvis", "value": None}
+    if any(k in low for k in ("mute yourself", "mute jarvis", "silence yourself", "be quiet", "mute mic", "mute microphone")):
+        return {"action": "mute_jarvis", "value": None}
+    if any(k in low for k in ("minimize yourself", "minimize jarvis", "hide yourself", "shrink yourself")):
+        return {"action": "minimize_jarvis", "value": None}
+    if any(k in low for k in ("maximize yourself", "maximize jarvis", "restore yourself", "restore jarvis", "show yourself")):
+        return {"action": "maximize_jarvis", "value": None}
+    if any(k in low for k in ("manage memory", "open memory", "show memory", "memory platform", "memory manager")):
+        return {"action": "manage_memory", "value": None}
+    if any(k in low for k in ("manage actions", "open actions", "show actions", "action platform", "action registry", "action permissions")):
+        return {"action": "manage_actions", "value": None}
+
+    # JARVIS self-control: Mute/Unmute & Window management
+    if any(k in low for k in ("unmute yourself", "unmute jarvis", "start listening", "unmute mic", "unmute microphone")):
+        return {"action": "unmute_jarvis", "value": None}
+    if any(k in low for k in ("mute yourself", "mute jarvis", "silence yourself", "be quiet", "mute mic", "mute microphone")):
+        return {"action": "mute_jarvis", "value": None}
+    if any(k in low for k in ("minimize yourself", "minimize jarvis", "hide yourself", "shrink yourself")):
+        return {"action": "minimize_jarvis", "value": None}
+    if any(k in low for k in ("maximize yourself", "maximize jarvis", "restore yourself", "restore jarvis", "show yourself")):
+        return {"action": "maximize_jarvis", "value": None}
+
     # 3. Alias phrases.
     for action, phrases in _ALIASES.items():
         if any(_normalise(p) == norm or p in low for p in phrases):
@@ -905,6 +930,7 @@ def computer_settings(
     response=None,
     player=None,
     session_memory=None,
+    **kwargs,
 ) -> str:
     if not _PYAUTOGUI:
         return outcome.failed(
@@ -912,7 +938,8 @@ def computer_settings(
             "pyautogui is not installed, so the keyboard cannot be driven - "
             "run: pip install pyautogui")
 
-    params      = parameters or {}
+    params      = dict(parameters or {})
+    params.update(kwargs)
     raw_action  = params.get("action", "").strip()
     description = params.get("description", "").strip()
     value       = params.get("value", None)
@@ -928,9 +955,90 @@ def computer_settings(
     if not action:
         return _suggest(description or raw_action)
 
-    print(f"[Settings] Action: {action}  Value: {value}  OS: {_OS}")
+    ts = datetime.now().strftime("%I:%M:%S %p")
+    print(f"[{ts}] [Settings] Action: {action}  Value: {value}  OS: {_OS}")
     if player:
-        print(f"[Settings] {action}")            # terminal, not the HUD
+        print(f"[{ts}] [Settings] {action}")            # terminal, not the HUD
+
+    # ── JARVIS self-control: Mute/Unmute & Window management ──────────────────
+    target_str = (str(params.get("target") or "") + " " + str(description or "") + " " + str(raw_action or "")).lower()
+    is_jarvis_target = any(k in target_str for k in ("jarvis", "yourself", "myself", "self", "assistant"))
+
+    if action in ("mute_jarvis", "jarvis_mute") or (action in ("mute", "toggle_mute") and is_jarvis_target):
+        if player and hasattr(player, "muted"):
+            player.muted = True
+            if hasattr(player, "write_log"):
+                player.write_log("SYS: JARVIS muted on instruction.")
+            return outcome.done("computer_settings", wanted=action, message="I have muted myself.", verified=True)
+
+    if action in ("unmute_jarvis", "jarvis_unmute") or (action == "unmute" and is_jarvis_target):
+        if player and hasattr(player, "muted"):
+            player.muted = False
+            if hasattr(player, "write_log"):
+                player.write_log("SYS: JARVIS unmuted on instruction.")
+            return outcome.done("computer_settings", wanted=action, message="I have unmuted myself.", verified=True)
+
+    if action in ("minimize_jarvis", "jarvis_minimize") or (action in ("minimize", "minimize_window") and is_jarvis_target):
+        if player and hasattr(player, "minimize_jarvis"):
+            player.minimize_jarvis()
+            if hasattr(player, "write_log"):
+                player.write_log("SYS: JARVIS minimized.")
+            return outcome.done("computer_settings", wanted=action, message="I have minimized myself.", verified=True)
+
+    if action in ("maximize_jarvis", "jarvis_maximize", "restore_jarvis") or (action in ("maximize", "maximize_window", "restore") and is_jarvis_target):
+        if player and hasattr(player, "maximize_jarvis"):
+            player.maximize_jarvis()
+            if hasattr(player, "write_log"):
+                player.write_log("SYS: JARVIS restored.")
+            return outcome.done("computer_settings", wanted=action, message="I have restored and maximized myself.", verified=True)
+
+    if action in ("show_memory", "manage_memory", "memory_platform", "memory_manager", "show_actions", "manage_actions", "action_registry", "action_platform"):
+        tab = "actions" if "action" in action else "memory"
+        if player and hasattr(player, "show_memory_actions_display"):
+            player.show_memory_actions_display(tab=tab)
+            if hasattr(player, "write_log"):
+                player.write_log(f"SYS: Opening JARVIS Memory & Actions Platform ({tab}).")
+            return outcome.done("computer_settings", wanted=action, message=f"Opening JARVIS {tab} management matrix.", verified=True)
+
+    # ── JARVIS self-control: Mute/Unmute & Window management ──────────────────
+    target_str = (str(params.get("target") or "") + " " + str(description or "") + " " + str(raw_action or "")).lower()
+    is_jarvis_target = any(k in target_str for k in ("jarvis", "yourself", "myself", "self", "assistant"))
+
+    if action in ("mute_jarvis", "jarvis_mute") or (action in ("mute", "toggle_mute") and is_jarvis_target):
+        if player and hasattr(player, "muted"):
+            player.muted = True
+            if hasattr(player, "write_log"):
+                player.write_log("SYS: JARVIS muted on instruction.")
+            return outcome.done("computer_settings", wanted=action, message="I have muted myself.", verified=True)
+
+    if action in ("unmute_jarvis", "jarvis_unmute") or (action == "unmute" and is_jarvis_target):
+        if player and hasattr(player, "muted"):
+            player.muted = False
+            if hasattr(player, "write_log"):
+                player.write_log("SYS: JARVIS unmuted on instruction.")
+            return outcome.done("computer_settings", wanted=action, message="I have unmuted myself.", verified=True)
+
+    if action in ("minimize_jarvis", "jarvis_minimize") or (action in ("minimize", "minimize_window") and is_jarvis_target):
+        if player and hasattr(player, "minimize_jarvis"):
+            player.minimize_jarvis()
+            if hasattr(player, "write_log"):
+                player.write_log("SYS: JARVIS minimized.")
+            return outcome.done("computer_settings", wanted=action, message="I have minimized myself.", verified=True)
+
+    if action in ("maximize_jarvis", "jarvis_maximize", "restore_jarvis") or (action in ("maximize", "maximize_window", "restore") and is_jarvis_target):
+        if player and hasattr(player, "maximize_jarvis"):
+            player.maximize_jarvis()
+            if hasattr(player, "write_log"):
+                player.write_log("SYS: JARVIS restored.")
+            return outcome.done("computer_settings", wanted=action, message="I have restored and maximized myself.", verified=True)
+
+    if action in ("show_memory", "manage_memory", "memory_platform", "memory_manager", "show_actions", "manage_actions", "action_registry", "action_platform"):
+        tab = "actions" if "action" in action else "memory"
+        if player and hasattr(player, "show_memory_actions_display"):
+            player.show_memory_actions_display(tab=tab)
+            if hasattr(player, "write_log"):
+                player.write_log(f"SYS: Opening JARVIS Memory & Actions Platform ({tab}).")
+            return outcome.done("computer_settings", wanted=action, message=f"Opening JARVIS {tab} management matrix.", verified=True)
 
     # ── The gate ─────────────────────────────────────────────────────────────
     # A human presses a button, or this does not happen. The model can no longer
@@ -1109,11 +1217,11 @@ def computer_settings(
 # ── Tool declaration (auto-discovered by core/action_loader.py) ──────────────
 TOOL = {
     "name": "computer_settings",
-    "description": "Controls the computer: volume, brightness, window management, keyboard shortcuts, typing text on screen, closing apps, fullscreen, dark mode, checking Wi-Fi status (wifi_status), toggle Wi-Fi (toggle_wifi), restart, shutdown, scrolling, tab management, zoom, screenshots, lock screen, refresh/reload page. Use for ANY single computer control command. Checking Wi-Fi status (wifi_status) executes immediately with NO confirmation. Only restart, shutdown, and toggle_wifi require user confirmation. Volume, brightness and dark mode can be reversed with the `undo` tool.",
+    "description": "Controls the computer and JARVIS assistant: volume, brightness, mute JARVIS (mute_jarvis), unmute JARVIS (unmute_jarvis), minimize JARVIS (minimize_jarvis), maximize/restore JARVIS (maximize_jarvis), window management, keyboard shortcuts, typing text on screen, closing apps, fullscreen, dark mode, checking Wi-Fi status (wifi_status), toggle Wi-Fi (toggle_wifi), restart, shutdown, scrolling, tab management, zoom, screenshots, lock screen, refresh/reload page. Use for ANY single computer or JARVIS window control command.",
     # Used in place of `description` only when a small model is on a tool
     # budget - Gemini still gets the full text. See providers/schema.py.
     "brief": (
-        "Changes a computer setting: volume, brightness, WiFi, window layout, power. Name the action in 'action'."
+        "Changes a computer setting or JARVIS window: volume, brightness, mute JARVIS, minimize/maximize JARVIS, WiFi, window layout, power. Name the action in 'action'."
     ),
     "parameters": {
         "type": "OBJECT",
@@ -1124,6 +1232,7 @@ TOOL = {
                 "description": (
                     "The exact action. Prefer this over `description` — pick one of: "
                     "wifi_status | toggle_wifi | volume_up | volume_down | volume_set | mute | "
+                    "mute_jarvis | unmute_jarvis | minimize_jarvis | maximize_jarvis | restore_jarvis | "
                     "brightness_up | brightness_down | sleep_display | "
                     "pause_video | close_window | full_screen | "
                     "minimize | maximize | snap_left | snap_right | "

@@ -1011,6 +1011,35 @@ def windows_control(parameters: dict = None, player=None, **kwargs) -> str:
         return outcome.done("windows_control", mode=target, message=f"Airplane mode set to '{target}'.", verified=True)
 
     # Audio & Sound
+    target_str = (str(target or "") + " " + str(action or "") + " " + str(params)).lower()
+    is_jarvis_target = any(k in target_str for k in ("jarvis", "yourself", "myself", "self", "assistant"))
+
+    if action in ("mute_jarvis", "jarvis_mute") or (action == "mute" and is_jarvis_target):
+        if player and hasattr(player, "muted"):
+            player.muted = True
+            return outcome.done("windows_control", action=action, message="I have muted myself.", verified=True)
+
+    if action in ("unmute_jarvis", "jarvis_unmute") or (action == "unmute" and is_jarvis_target):
+        if player and hasattr(player, "muted"):
+            player.muted = False
+            return outcome.done("windows_control", action=action, message="I have unmuted myself.", verified=True)
+
+    if action in ("minimize_jarvis", "jarvis_minimize") or (action == "minimize" and is_jarvis_target):
+        if player and hasattr(player, "minimize_jarvis"):
+            player.minimize_jarvis()
+            return outcome.done("windows_control", action=action, message="I have minimized myself.", verified=True)
+
+    if action in ("maximize_jarvis", "jarvis_maximize", "restore_jarvis") or (action in ("maximize", "restore") and is_jarvis_target):
+        if player and hasattr(player, "maximize_jarvis"):
+            player.maximize_jarvis()
+            return outcome.done("windows_control", action=action, message="I have restored and maximized myself.", verified=True)
+
+    if action in ("show_memory", "manage_memory", "memory_platform", "memory_manager", "show_actions", "manage_actions", "action_registry", "action_platform"):
+        tab = "actions" if "action" in action else "memory"
+        if player and hasattr(player, "show_memory_actions_display"):
+            player.show_memory_actions_display(tab=tab)
+            return outcome.done("windows_control", action=action, message=f"Opening JARVIS {tab} management matrix.", verified=True)
+
     if action in ("set_volume", "volume", "adjust_volume", "volume_up", "volume_down", "increase_volume", "decrease_volume"):
         if action in ("volume_up", "increase_volume"):
             delta = 10
@@ -1099,7 +1128,7 @@ TOOL = {
                 "description": (
                     "The exact action: get_wifi_status | list_available_wifi_networks | connect_wifi | disconnect_wifi | set_wifi_enabled | "
                     "get_bluetooth_status | list_bluetooth_devices | connect_bluetooth_device | disconnect_bluetooth_device | set_bluetooth_enabled | pair_bluetooth_device | "
-                    "set_volume | get_volume | volume_up | volume_down | mute | unmute | list_audio_devices | set_audio_output | set_brightness | set_display_mode | get_power_status"
+                    "set_volume | get_volume | volume_up | volume_down | mute | unmute | mute_jarvis | unmute_jarvis | minimize_jarvis | maximize_jarvis | manage_memory | manage_actions | list_audio_devices | set_audio_output | set_brightness | set_display_mode | get_power_status"
                 ),
             },
             "target": {

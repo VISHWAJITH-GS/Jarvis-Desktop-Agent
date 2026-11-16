@@ -785,6 +785,22 @@ def reminder(
     recurrence = (p.get("recurrence") or "none").lower().strip()
 
     # Route based on action
+    if action in ("show", "display", "open", "manage", "view", "reminders_display"):
+        scope = "upcoming"
+        if "today" in query.lower() or "today" in str(p).lower():
+            scope = "today"
+        elif "tomorrow" in query.lower() or "tomorrow" in str(p).lower():
+            scope = "tomorrow"
+        elif "all" in query.lower() or "all" in str(p).lower():
+            scope = "all"
+        elif "completed" in query.lower() or "completed" in str(p).lower():
+            scope = "completed"
+        if player and hasattr(player, "show_reminders"):
+            player.show_reminders(scope)
+        if player and hasattr(player, "write_log"):
+            player.write_log(f"[Reminder] 📋 Opened Reminders Matrix ({scope})")
+        return f"I have opened the reminders display for {scope} reminders."
+
     if action in ("list", "list_reminders", "get_reminders", "check_reminders"):
         scope = "upcoming"
         if "today" in query.lower() or "today" in str(p).lower():
@@ -796,11 +812,15 @@ def reminder(
         res = list_reminders(scope=scope)
         if player and hasattr(player, "write_log"):
             player.write_log(f"[Reminder] 📋 {res.message}")
+        if player and hasattr(player, "show_reminders"):
+            player.show_reminders(scope)
         return res.to_speech_text()
 
     if action in ("read", "read_aloud", "read_reminders", "speak_reminders"):
         scope = "today" if "today" in query.lower() else ("tomorrow" if "tomorrow" in query.lower() else "upcoming")
         res = list_reminders(scope=scope)
+        if player and hasattr(player, "show_reminders"):
+            player.show_reminders(scope)
         return res.to_speech_text()
 
     if action in ("delete", "delete_reminder", "remove", "cancel"):
@@ -808,17 +828,25 @@ def reminder(
         res = delete_reminder(target_id)
         if player and hasattr(player, "write_log"):
             player.write_log(f"[Reminder] 🗑️ {res.message}")
+        if player and hasattr(player, "show_reminders"):
+            player.show_reminders("upcoming")
         return res.to_speech_text()
 
     if action in ("complete", "complete_reminder", "done", "mark_completed"):
         target_id = p.get("id") or query or msg
         res = complete_reminder(target_id)
+        if player and hasattr(player, "write_log"):
+            player.write_log(f"[Reminder] ✓ {res.message}")
+        if player and hasattr(player, "show_reminders"):
+            player.show_reminders("upcoming")
         return res.to_speech_text()
 
     if action in ("edit", "edit_reminder", "reschedule", "update"):
         target_id = p.get("id") or query
         dt, err = parse_datetime(date_str, time_str, natural_text=msg)
         res = edit_reminder(target_id, new_message=msg if msg != target_id else None, new_due_time=dt, new_recurrence=recurrence if recurrence != "none" else None)
+        if player and hasattr(player, "show_reminders"):
+            player.show_reminders("upcoming")
         return res.to_speech_text()
 
     # Default: Create reminder
@@ -831,28 +859,31 @@ def reminder(
     res = create_reminder(message=msg or "Reminder", target_dt=target_dt, recurrence=recurrence)
     if player and hasattr(player, "write_log"):
         player.write_log(f"[Reminder] ⏰ {res.message}")
+    if player and hasattr(player, "show_reminders"):
+        player.show_reminders("upcoming")
     return res.to_speech_text()
 
 
 TOOL = {
     "name": "reminder",
     "description": (
-        "Complete reminder management system. Capabilities: "
-        "1. Create reminders (action='create', message='...', date='YYYY-MM-DD' or 'tomorrow', time='HH:MM' or '7 PM', recurrence='none'|'daily'|'weekly'). "
-        "2. List reminders (action='list', scope='upcoming'|'today'|'tomorrow'|'all'). "
-        "3. Read reminders aloud (action='read', scope='upcoming'|'today'|'tomorrow'). "
-        "4. Edit/reschedule reminders (action='edit', query='...', time='...', message='...'). "
-        "5. Delete reminders (action='delete', query='assignment'). "
-        "6. Mark reminder completed (action='complete', query='...'). "
+        "Complete reminder management system and dedicated reminders display. Capabilities: "
+        "1. Open reminders display (action='show' or 'display', scope='upcoming'|'today'|'tomorrow'|'all'|'completed'). "
+        "2. Create reminders (action='create', message='...', date='YYYY-MM-DD' or 'tomorrow', time='HH:MM' or '7 PM', recurrence='none'|'daily'|'weekly'). "
+        "3. List reminders (action='list', scope='upcoming'|'today'|'tomorrow'|'all'). "
+        "4. Read reminders aloud (action='read', scope='upcoming'|'today'|'tomorrow'). "
+        "5. Edit/reschedule reminders (action='edit', query='...', time='...', message='...'). "
+        "6. Delete reminders (action='delete', query='assignment'). "
+        "7. Mark reminder completed (action='complete', query='...'). "
         "Persists across restarts and verifies scheduling."
     ),
-    "brief": "Creates, lists, reads, edits, deletes, and tracks persistent reminders and schedules.",
+    "brief": "Creates, lists, reads, edits, deletes, and opens the interactive Reminders Matrix display.",
     "parameters": {
         "type": "OBJECT",
         "properties": {
             "action": {
                 "type": "STRING",
-                "description": "create | list | read | edit | delete | complete",
+                "description": "create | list | show | display | read | edit | delete | complete",
             },
             "message": {
                 "type": "STRING",

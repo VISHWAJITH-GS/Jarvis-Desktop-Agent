@@ -149,11 +149,28 @@ class WhatsAppDriver:
         if search_box:
             self.uia.click_element(search_box)
             time.sleep(0.2)
+            if _PYAUTOGUI:
+                try:
+                    pyautogui.hotkey("ctrl", "a")
+                    time.sleep(0.05)
+                    pyautogui.press("backspace")
+                    time.sleep(0.05)
+                    pyautogui.press("delete")
+                    time.sleep(0.1)
+                except Exception:
+                    pass
             self.uia.type_text(contact_name, element_or_name=search_box, clear_first=True)
             time.sleep(0.8)
         elif _PYAUTOGUI:
             pyautogui.hotkey("ctrl", "f")
             time.sleep(0.3)
+            # Explicitly empty search bar before typing contact name
+            pyautogui.hotkey("ctrl", "a")
+            time.sleep(0.05)
+            pyautogui.press("backspace")
+            time.sleep(0.05)
+            pyautogui.press("delete")
+            time.sleep(0.12)
             _paste_text(contact_name)
             time.sleep(0.8)
 

@@ -183,6 +183,37 @@ class ActionPermissionManager:
         if cls.is_drive_format_attempt(act, params):
             return ActionRiskLevel.FORBIDDEN
 
+        # 1. JARVIS Shutdown vs Window Controls & Adjustments
+        # Only shutdown/closing of JARVIS itself asks for user confirmation!
+        if act in ("shutdown_jarvis", "kill_jarvis") or (
+            sub_act in ("shutdown_jarvis", "close_jarvis", "kill_jarvis", "exit_jarvis", "quit_jarvis")
+        ) or (
+            sub_act in ("close_app", "kill", "quit", "exit", "close")
+            and any(k in target for k in ("jarvis", "assistant", "ai"))
+        ):
+            return ActionRiskLevel.HIGH_IMPACT
+
+        # Window controls for adjusting JARVIS display window, displays, or desktop windows NEVER need permissions
+        if act == "display_window":
+            return ActionRiskLevel.IMMEDIATE
+
+        WINDOW_ADJUST_ACTIONS = (
+            "minimize_jarvis", "maximize_jarvis", "restore_jarvis", "mute_jarvis", "unmute_jarvis",
+            "minimize", "maximize", "restore", "minimize_window", "maximize_window", "restore_window", "close_window",
+            "switch_window", "show_desktop", "desktop", "full_screen", "fullscreen", "toggle_fullscreen", "exit_fullscreen",
+            "focus_display", "minimize_display", "maximize_display", "close_display", "list_displays", "open_display",
+            "fit_window", "center_window", "resize_window", "move_window", "adjust_window", "tile_window",
+            "toggle_minimize", "toggle_collapse", "toggle_chat", "toggle_chat_dock", "toggle_expanded", "mini_mode",
+            "show_reminders", "hide_reminders", "minimize_reminders",
+            "show_memory", "manage_memory", "show_actions", "manage_actions", "action_registry", "memory_platform",
+        )
+        if sub_act in WINDOW_ADJUST_ACTIONS:
+            return ActionRiskLevel.IMMEDIATE
+
+        if any(k in target for k in ("jarvis", "arc reactor", "reactor", "hud", "display_window")) and any(w in sub_act for w in ("window", "display", "adjust", "move", "resize", "size", "fit", "show", "hide", "view", "toggle", "pos", "center")):
+            if sub_act not in ("shutdown", "shutdown_computer", "shutdown_laptop", "restart", "reboot", "format", "delete", "destroy", "kill"):
+                return ActionRiskLevel.IMMEDIATE
+
         # Destructive sub-action parameter escalation (kill, destroy, shutdown, etc.)
         if sub_act in ("kill", "kill_process", "destroy"):
             return ActionRiskLevel.HIGH_IMPACT
@@ -276,7 +307,10 @@ class ActionPermissionManager:
                            "get_volume", "check_volume", "volume_status", "volume_get",
                            "get_brightness", "brightness_get",
                            "volume_up", "volume_down", "set_volume", "volume", "adjust_volume",
-                           "mute", "unmute",
+                           "mute", "unmute", "mute_jarvis", "unmute_jarvis",
+                           "minimize_jarvis", "maximize_jarvis", "restore_jarvis",
+                           "show_memory", "manage_memory", "memory_platform",
+                           "show_actions", "manage_actions", "action_registry",
                            "brightness_up", "brightness_down", "set_brightness", "brightness",
                            "lock_screen", "lock_laptop", "lock"):
                 return ActionRiskLevel.IMMEDIATE
@@ -449,8 +483,13 @@ class ActionPermissionManager:
             title = "Change Audio Output"
             detail = f"Set default audio playback endpoint to '{target}'."
 
-        # Laptop Controls
-        elif sub_act in ("shutdown", "shutdown_computer", "shutdown_laptop") or act == "shutdown_jarvis":
+        # JARVIS Shutdown vs System Controls
+        elif act in ("shutdown_jarvis", "kill_jarvis") or sub_act in ("shutdown_jarvis", "close_jarvis", "kill_jarvis") or (
+            sub_act in ("close_app", "kill", "quit", "exit") and any(k in target for k in ("jarvis", "assistant", "ai"))
+        ):
+            title = "Shut Down JARVIS"
+            detail = "Are you sure you want to completely shut down and exit JARVIS?"
+        elif sub_act in ("shutdown", "shutdown_computer", "shutdown_laptop"):
             title = "Shut Down Laptop"
             detail = "Power off the computer. Unsaved work in open applications will be lost."
         elif sub_act in ("restart", "restart_computer", "restart_laptop", "reboot"):
@@ -647,13 +686,11 @@ class ActionExecutionGuard:
                 raw = _call_handler_safe(handler, auth_params, ctx)
                 res = outcome.normalize_result(raw, action_name=name)
                 log_action_audit(name, params, str(risk_level.value), res.status, res.verified, res.error)
-                # Output to UI log & content if player available
+                # Output to UI log if player available
                 player = ctx.get("player")
                 if player:
                     if hasattr(player, "write_log"):
                         player.write_log(f"SYS: Confirmed {title} executed. {res.message or 'Done.'}")
-                    if hasattr(player, "show_content") and res.message:
-                        player.show_content(title, res.message)
                 return res.message or "Done."
             except Exception as err:
                 log_action_audit(name, params, str(risk_level.value), "failed", False, error=str(err))

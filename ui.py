@@ -50,9 +50,9 @@ except Exception as _e:            # noqa: BLE001 - reported, never fatal
     print(f"[Video] playback unavailable ({_e}) — the HUD will not show video.")
 
 from PyQt6.QtWidgets import (
-    QApplication, QComboBox, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMenu,
+    QApplication, QComboBox, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMenu,
     QMainWindow, QPushButton, QScrollArea, QSizePolicy, QSplitter,
-    QGraphicsScene, QGraphicsView,
+    QGraphicsScene, QGraphicsView, QGraphicsDropShadowEffect,
     QStackedWidget, QTextEdit, QVBoxLayout, QWidget, QProgressBar, QSlider,
 )
 
@@ -5298,6 +5298,229 @@ class BottomChatDock(QWidget):
         super().mouseReleaseEvent(e)
 
 
+def format_visual_content_html(raw_text: str) -> str:
+    """
+    Format raw assistant / search output into easily interpretable visual HTML:
+    - Tables: Formatted as sleek holographic matrix tables with glowing headers, borders, and alternating rows.
+    - Progress / Metrics / Bar Charts: Detected percentages/ratios rendered with glowing horizontal bars.
+    - Diagrams / Flowcharts: Step sequences ('A -> B -> C') converted into visual flow badge pipelines.
+    - Markdown: Formatted with bold highlights, bullets, code blocks, and structured typography.
+    """
+    if not raw_text:
+        return ""
+
+    import re
+    lines = raw_text.replace("\r\n", "\n").split("\n")
+    out_html = []
+    i = 0
+
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.strip()
+
+        if not stripped:
+            out_html.append("<div style='height: 6px;'></div>")
+            i += 1
+            continue
+
+        # 1. Check for Markdown Table
+        if "|" in stripped and (stripped.startswith("|") or stripped.endswith("|") or stripped.count("|") >= 2):
+            table_lines = []
+            while i < len(lines) and ("|" in lines[i].strip() and len(lines[i].strip()) > 1):
+                table_lines.append(lines[i].strip())
+                i += 1
+
+            rows = []
+            has_header_sep = False
+            for tl in table_lines:
+                cells = [c.strip() for c in tl.strip("|").split("|")]
+                if all(set(c).issubset({"-", ":", " "}) for c in cells if c):
+                    has_header_sep = True
+                    continue
+                rows.append(cells)
+
+            if rows:
+                t_html = ['<table width="100%" cellpadding="6" cellspacing="0" style="border: 1px solid rgba(255,23,68,0.45); background: rgba(14,3,7,0.85); border-radius: 4px; margin: 8px 0;">']
+                start_row = 0
+                if has_header_sep and len(rows) > 0:
+                    t_html.append('<tr bgcolor="rgba(45,8,16,0.95)">')
+                    for h_cell in rows[0]:
+                        t_html.append(f'<th align="left" style="color: #ff5252; font-family: \'Courier New\'; font-size: 11px; border-bottom: 1.5px solid #ff1744; padding: 6px;"><b>{h_cell}</b></th>')
+                    t_html.append('</tr>')
+                    start_row = 1
+
+                for r_idx, row in enumerate(rows[start_row:]):
+                    bg = "rgba(24,5,11,0.70)" if r_idx % 2 == 0 else "rgba(12,2,5,0.50)"
+                    t_html.append(f'<tr bgcolor="{bg}">')
+                    for cell in row:
+                        pct_match = re.search(r'(\d{1,3})%', cell)
+                        bar_html = ""
+                        if pct_match:
+                            val = min(100, max(0, int(pct_match.group(1))))
+                            bar_html = f'<table width="100%" cellpadding="0" cellspacing="0" style="border: 1px solid #ff1744; background: #120306; border-radius: 2px; margin-top: 3px;"><tr><td width="{val}%" bgcolor="#ff1744" height="6"></td><td width="{100-val}%"></td></tr></table>'
+                        t_html.append(f'<td style="color: #e0e0e0; font-family: \'Courier New\'; font-size: 11px; border-bottom: 1px solid rgba(255,23,68,0.18); padding: 5px;">{cell}{bar_html}</td>')
+                    t_html.append('</tr>')
+                t_html.append('</table>')
+                out_html.append(''.join(t_html))
+            continue
+
+        # 2. Check for Diagram / Flowchart ('->' or '➔' with >= 2 transitions)
+        if any(arrow in line for arrow in ("->", "-->", "➔", "==>")) and not line.startswith("<"):
+            tokens = re.split(r'\s*(?:-->|->|➔|==>)\s*', stripped)
+            if len(tokens) >= 2 and all(len(t) < 50 for t in tokens):
+                f_html = ['<div style="margin: 8px 0; padding: 8px; background: rgba(18, 4, 8, 0.85); border: 1px solid rgba(255,23,68,0.35); border-radius: 4px;">']
+                f_html.append('<div style="color: #ff5252; font-family: \'Courier New\'; font-size: 10px; font-weight: bold; margin-bottom: 6px;">◈ SYSTEM FLOW DIAGRAM</div>')
+                f_html.append('<table cellpadding="4" cellspacing="0"><tr>')
+                for s_idx, tok in enumerate(tokens):
+                    f_html.append(f'<td style="background: rgba(255,23,68,0.22); border: 1px solid #ff1744; color: #ffffff; border-radius: 3px; font-family: \'Courier New\'; font-size: 11px; font-weight: bold; padding: 4px 8px;">{tok}</td>')
+                    if s_idx < len(tokens) - 1:
+                        f_html.append('<td style="color: #ff1744; font-size: 14px; font-weight: bold; padding: 0 4px;">➔</td>')
+                f_html.append('</tr></table></div>')
+                out_html.append(''.join(f_html))
+                i += 1
+                continue
+
+        # 3. Check for Standalone Metric / Bar Chart
+        metric_match = re.match(r'^([A-Za-z0-9_\- ]+?)[:=]\s*(\d{1,3})%', stripped)
+        if metric_match:
+            lbl, pct_str = metric_match.group(1).strip(), metric_match.group(2)
+            pct = min(100, max(0, int(pct_str)))
+            b_html = f'''
+            <div style="margin: 6px 0; padding: 6px 8px; background: rgba(22, 5, 10, 0.7); border: 1px solid rgba(255,23,68,0.3); border-radius: 4px;">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="left" style="color: #ffffff; font-family: \'Courier New\'; font-size: 11px; font-weight: bold;">{lbl}</td>
+                  <td align="right" style="color: #00e676; font-family: \'Courier New\'; font-size: 11px; font-weight: bold;">{pct}%</td>
+                </tr>
+                <tr>
+                  <td colspan="2" style="padding-top: 4px;">
+                    <table width="100%" cellpadding="0" cellspacing="0" style="border: 1px solid #ff1744; background: #120306; border-radius: 2px;">
+                      <tr><td width="{pct}%" bgcolor="#ff1744" height="8"></td><td width="{100-pct}%"></td></tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </div>'''
+            out_html.append(b_html)
+            i += 1
+            continue
+
+        # 4. Regular text & Markdown formatting
+        formatted = stripped
+        if formatted.startswith("###"):
+            formatted = f'<div style="color: #ff5252; font-family: \'Courier New\'; font-size: 13px; font-weight: bold; margin: 8px 0 3px 0;">◈ {formatted[3:].strip()}</div>'
+        elif formatted.startswith("##"):
+            formatted = f'<div style="color: #ff1744; font-family: \'Courier New\'; font-size: 14px; font-weight: bold; margin: 10px 0 4px 0;">◈ {formatted[2:].strip()}</div>'
+        elif formatted.startswith(("* ", "- ")):
+            bullet_txt = formatted[2:].strip()
+            bullet_txt = re.sub(r'\*\*(.+?)\*\*', r'<b style="color:#ffffff;">\1</b>', bullet_txt)
+            bullet_txt = re.sub(r'`(.+?)`', r'<code style="background:rgba(255,23,68,0.18); color:#80cbc4; padding:1px 4px; border-radius:2px;">\1</code>', bullet_txt)
+            formatted = f'<div style="color: #e0e0e0; font-family: \'Courier New\'; font-size: 11px; padding-left: 8px;">• {bullet_txt}</div>'
+        else:
+            formatted = re.sub(r'\*\*(.+?)\*\*', r'<b style="color:#ffffff;">\1</b>', formatted)
+            formatted = re.sub(r'`(.+?)`', r'<code style="background:rgba(255,23,68,0.18); color:#80cbc4; padding:1px 4px; border-radius:2px;">\1</code>', formatted)
+            formatted = f'<div style="color: #d0d0d0; font-family: \'Courier New\'; font-size: 11px; margin: 2px 0;">{formatted}</div>'
+
+        out_html.append(formatted)
+        i += 1
+
+    return "".join(out_html)
+
+
+class ScreenGlowOverlay(QWidget):
+    """
+    Full-screen transparent HUD overlay that illuminates a glowing red border around
+    the edges of the screen whenever JARVIS observes or captures the display.
+    """
+    def __init__(self, parent=None):
+        super().__init__(None)
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint |
+            Qt.WindowType.WindowStaysOnTopHint |
+            Qt.WindowType.Tool |
+            Qt.WindowType.WindowTransparentForInput
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
+
+        self._glow_alpha = 0
+        self._fade_timer = QTimer(self)
+        self._fade_timer.timeout.connect(self._on_fade_step)
+        self._auto_hide_timer = QTimer(self)
+        self._auto_hide_timer.setSingleShot(True)
+        self._auto_hide_timer.timeout.connect(self.hide_glow)
+
+        self.reposition()
+
+    def reposition(self):
+        screen = QApplication.primaryScreen().geometry()
+        self.setGeometry(screen)
+
+    def trigger_glow(self, duration_ms: int = 2500):
+        """Trigger glowing red screen edges for duration_ms."""
+        self.reposition()
+        self._glow_alpha = 255
+        self.show()
+        self.raise_()
+        self.update()
+        self._fade_timer.stop()
+        self._auto_hide_timer.start(duration_ms)
+
+    def hide_glow(self):
+        self._fade_timer.start(30)
+
+    def _on_fade_step(self):
+        self._glow_alpha = max(0, self._glow_alpha - 25)
+        if self._glow_alpha <= 0:
+            self._fade_timer.stop()
+            self.hide()
+        self.update()
+
+    def paintEvent(self, event):
+        if not self.isVisible() or self._glow_alpha <= 0:
+            return
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+
+        w = self.width()
+        h = self.height()
+        alpha = self._glow_alpha
+
+        # Draw multi-layered glowing border from outer boundary inward
+        layers = [
+            (0, 3, QColor(255, 23, 68, min(255, int(alpha * 1.0)))),      # crisp core border
+            (3, 3, QColor(255, 23, 68, min(255, int(alpha * 0.70)))),     # intense inner glow
+            (6, 4, QColor(255, 23, 68, min(255, int(alpha * 0.40)))),     # soft halo
+            (10, 6, QColor(255, 23, 68, min(255, int(alpha * 0.18)))),    # diffused atmospheric glow
+            (16, 8, QColor(255, 23, 68, min(255, int(alpha * 0.08)))),    # outermost ambient glow
+        ]
+
+        for offset, stroke, color in layers:
+            pen = QPen(color, stroke)
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRect(offset, offset, w - 2 * offset - 1, h - 2 * offset - 1)
+
+        # Top-center cybernetic HUD indicator pill
+        pill_w = 260
+        pill_h = 24
+        px = (w - pill_w) // 2
+        py = 6
+
+        # Draw pill background
+        painter.setPen(QPen(QColor(255, 23, 68, min(255, int(alpha * 0.85))), 1))
+        painter.setBrush(QColor(18, 3, 6, min(240, int(alpha * 0.95))))
+        painter.drawRoundedRect(px, py, pill_w, pill_h, 4, 4)
+
+        # Draw indicator text
+        painter.setPen(QColor(255, 255, 255, alpha))
+        painter.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
+        painter.drawText(px, py, pill_w, pill_h, Qt.AlignmentFlag.AlignCenter, "◉ VISION ACTIVE // DISPLAY")
+        painter.end()
+
+
 class LeftSearchDock(QWidget):
     """
     Floating pop-up panel for search results, briefings, document reviews,
@@ -5379,11 +5602,69 @@ class LeftSearchDock(QWidget):
         screen = QApplication.primaryScreen().availableGeometry()
         dock_w = min(480, max(380, screen.width() // 3))
         dock_h = min(580, screen.height() - 140)
+        self._dock_h = dock_h
+        self._collapsed = False
+        if hasattr(self._main_win, "_content_display"):
+            self._main_win._content_display.show()
+        if hasattr(self._main_win, "_content_sep"):
+            self._main_win._content_sep.show()
+        if hasattr(self._main_win, "_content_min_btn"):
+            self._main_win._content_min_btn.setText("MIN  —")
+            self._main_win._content_min_btn.setToolTip("Minimize search display")
+
+        if self._main_win and hasattr(self._main_win, "_search_dock_minimized_to_bar"):
+            self._main_win._search_dock_minimized_to_bar = False
+            self._main_win._update_dots_overlay()
+
         dock_x = screen.left() + 16
         dock_y = screen.top() + (screen.height() - dock_h) // 2
         self.setGeometry(dock_x, dock_y, dock_w, dock_h)
         self.show()
         self.raise_()
+
+    def minimize_to_dock(self):
+        self._collapsed = True
+        self.setFixedHeight(46)
+        if hasattr(self._main_win, "_content_display"):
+            self._main_win._content_display.hide()
+        if hasattr(self._main_win, "_content_sep"):
+            self._main_win._content_sep.hide()
+        if hasattr(self._main_win, "_content_min_btn"):
+            self._main_win._content_min_btn.setText("RESTORE  □")
+            self._main_win._content_min_btn.setToolTip("Restore search display")
+        self.hide()
+        if self._main_win:
+            self._main_win._search_dock_minimized_to_bar = True
+            self._main_win._update_dots_overlay()
+            if hasattr(self._main_win, "write_log"):
+                self._main_win.write_log("SYS: Search display minimized to left dock.")
+
+    def restore_from_dock(self):
+        self._collapsed = False
+        if hasattr(self._main_win, "_content_display"):
+            self._main_win._content_display.show()
+        if hasattr(self._main_win, "_content_sep"):
+            self._main_win._content_sep.show()
+        screen = QApplication.primaryScreen().availableGeometry()
+        dock_h = getattr(self, "_dock_h", min(580, screen.height() - 140))
+        self.setFixedHeight(dock_h)
+        if hasattr(self._main_win, "_content_min_btn"):
+            self._main_win._content_min_btn.setText("MIN  —")
+            self._main_win._content_min_btn.setToolTip("Minimize search display")
+        if self._main_win:
+            self._main_win._search_dock_minimized_to_bar = False
+            self._main_win._update_dots_overlay()
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        if self._main_win and hasattr(self._main_win, "write_log"):
+            self._main_win.write_log("SYS: Search display restored.")
+
+    def toggle_minimize(self):
+        if self.isVisible():
+            self.minimize_to_dock()
+        else:
+            self.restore_from_dock()
 
     def mousePressEvent(self, e):
         if e.button() == Qt.MouseButton.LeftButton:
@@ -5401,10 +5682,1477 @@ class LeftSearchDock(QWidget):
         self._drag_start = None
         self._win_start = None
         super().mouseReleaseEvent(e)
+
+
+class SlideDownAlert(QWidget):
+    """
+    Top-center slide-down system alert pop-up message.
+    Animates down from the top edge of the screen with a glowing JARVIS red background
+    and bold black text. Automatically slides back up after timeout or when dismissed.
+    """
+    def __init__(self, parent=None):
+        super().__init__(None)
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint |
+            Qt.WindowType.WindowStaysOnTopHint |
+            Qt.WindowType.Tool
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
+
+        self._pos_anim = None
+        self._timer = QTimer(self)
+        self._timer.setSingleShot(True)
+        self._timer.timeout.connect(self._slide_up)
+
+        self._build_ui()
+
+    def _build_ui(self):
+        self._frame = QFrame(self)
+        self._frame.setObjectName("SlideAlertFrame")
+        self._frame.setStyleSheet("""
+            QFrame#SlideAlertFrame {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #ff1744, stop:0.4 #d50000, stop:1.0 #b71c1c);
+                border: 2px solid #ff5252;
+                border-radius: 8px;
+            }
+        """)
+
+        glow = QGraphicsDropShadowEffect(self._frame)
+        glow.setBlurRadius(28)
+        glow.setColor(QColor(255, 23, 68, 220))
+        glow.setOffset(0, 3)
+        self._frame.setGraphicsEffect(glow)
+
+        main_lay = QVBoxLayout(self)
+        main_lay.setContentsMargins(12, 12, 12, 12)
+        main_lay.addWidget(self._frame)
+
+        lay = QHBoxLayout(self._frame)
+        lay.setContentsMargins(16, 10, 14, 10)
+        lay.setSpacing(12)
+
+        icon_lbl = QLabel("⚠")
+        icon_lbl.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
+        icon_lbl.setStyleSheet("color: #000000; background: transparent;")
+        lay.addWidget(icon_lbl)
+
+        v_text = QVBoxLayout()
+        v_text.setSpacing(2)
+
+        self._title_lbl = QLabel("SYSTEM ALERT")
+        self._title_lbl.setFont(QFont("Courier New", 9, QFont.Weight.Bold))
+        self._title_lbl.setStyleSheet("color: #000000; background: transparent; letter-spacing: 1px;")
+        v_text.addWidget(self._title_lbl)
+
+        self._msg_lbl = QLabel("")
+        self._msg_lbl.setFont(QFont("Courier New", 10, QFont.Weight.Bold))
+        self._msg_lbl.setStyleSheet("color: #000000; background: transparent;")
+        self._msg_lbl.setWordWrap(True)
+        v_text.addWidget(self._msg_lbl)
+        lay.addLayout(v_text, stretch=1)
+
+        close_btn = QPushButton("✕")
+        close_btn.setFont(QFont("Courier New", 9, QFont.Weight.Bold))
+        close_btn.setFixedSize(22, 22)
+        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn.setStyleSheet("""
+            QPushButton {
+                background: rgba(0, 0, 0, 0.18);
+                color: #000000;
+                border: 1px solid rgba(0, 0, 0, 0.4);
+                border-radius: 3px;
+            }
+            QPushButton:hover {
+                background: rgba(0, 0, 0, 0.45);
+                color: #ffffff;
+            }
+        """)
+        close_btn.clicked.connect(self._slide_up)
+        lay.addWidget(close_btn)
+
+    def popup_alert(self, title: str, message: str, duration_ms: int = 8500):
+        self._timer.stop()
+        self._title_lbl.setText((title or "SYSTEM ALERT").upper())
+        self._msg_lbl.setText(message)
+
+        screen = QApplication.primaryScreen().availableGeometry()
+        w = min(640, max(460, len(message) * 9 + 120))
+        h = 84
+        self.resize(w + 24, h + 24)
+
+        center_x = screen.left() + (screen.width() - self.width()) // 2
+        start_y = screen.top() - self.height() - 20
+        target_y = screen.top() + 16
+
+        self.move(center_x, start_y)
+        self.show()
+        self.raise_()
+
+        self._pos_anim = QPropertyAnimation(self, b"pos")
+        self._pos_anim.setDuration(360)
+        self._pos_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._pos_anim.setStartValue(QPoint(center_x, start_y))
+        self._pos_anim.setEndValue(QPoint(center_x, target_y))
+        self._pos_anim.start()
+
+        self._timer.start(duration_ms)
+
+    def _slide_up(self):
+        self._timer.stop()
+        screen = QApplication.primaryScreen().availableGeometry()
+        center_x = self.x()
+        start_y = self.y()
+        target_y = screen.top() - self.height() - 20
+
+        self._pos_anim = QPropertyAnimation(self, b"pos")
+        self._pos_anim.setDuration(280)
+        self._pos_anim.setEasingCurve(QEasingCurve.Type.InCubic)
+        self._pos_anim.setStartValue(QPoint(center_x, start_y))
+        self._pos_anim.setEndValue(QPoint(center_x, target_y))
+        self._pos_anim.finished.connect(self.hide)
+        self._pos_anim.start()
+
+
+class RemindersDisplayWindow(QWidget):
+    """
+    Dedicated floating display window for effectively managing and interpreting reminders.
+    Features:
+      - Interactive cards with due time, relative time badges, and recurrence labels
+      - Filter scopes: Upcoming, Today, All, Completed
+      - Action buttons on each card to Complete or Delete
+      - Quick-add input bar to create new reminders on the fly
+      - Collapsible to a sleek header bar with minimize/restore toggle
+    """
+    def __init__(self, main_win: "MainWindow" = None, parent=None):
+        super().__init__(parent)
+        self._main_win = main_win
+        self.setWindowTitle("JARVIS Reminders Matrix")
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint |
+            Qt.WindowType.WindowStaysOnTopHint |
+            Qt.WindowType.Tool
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setMinimumSize(420, 360)
+
+        self._active_scope = "upcoming"
+        self._collapsed = False
+        self._drag_start = None
+        self._win_start = None
+
+        screen = QApplication.primaryScreen().availableGeometry()
+        w = min(540, max(440, screen.width() // 3))
+        h = min(640, screen.height() - 120)
+        self._normal_h = h
+        x = max(screen.left() + 20, screen.center().x() - w // 2)
+        y = screen.top() + (screen.height() - h) // 2
+        self.setGeometry(x, y, w, h)
+
+        self._build_ui()
+
+    def _build_ui(self):
+        self._outer = QFrame(self)
+        self._outer.setObjectName("RemindersOuter")
+        self._outer.setStyleSheet(f"""
+            QFrame#RemindersOuter {{
+                background: rgba(12, 3, 6, 248);
+                border: 1px solid rgba(255, 23, 68, 0.45);
+                border-radius: 8px;
+            }}
+        """)
+        v_outer = QVBoxLayout(self)
+        v_outer.setContentsMargins(0, 0, 0, 0)
+        v_outer.addWidget(self._outer)
+
+        self._main_lay = QVBoxLayout(self._outer)
+        self._main_lay.setContentsMargins(12, 10, 12, 10)
+        self._main_lay.setSpacing(8)
+
+        # ── Header bar ──────────────────────────────────────────────────────
+        hdr = QHBoxLayout()
+        hdr.setSpacing(6)
+
+        dot = QLabel("◈")
+        dot.setFont(QFont("Courier New", 9, QFont.Weight.Bold))
+        dot.setStyleSheet(f"color: {C.PRI}; background: transparent;")
+        hdr.addWidget(dot)
+
+        title_lbl = QLabel("REMINDER MATRIX // SCHEDULE & TASKS")
+        title_lbl.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
+        title_lbl.setStyleSheet(f"color: {C.PRI}; background: transparent; letter-spacing: 1px;")
+        hdr.addWidget(title_lbl)
+
+        hdr.addStretch()
+
+        self._count_lbl = QLabel("[ 0 ACTIVE ]")
+        self._count_lbl.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
+        self._count_lbl.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
+        hdr.addWidget(self._count_lbl)
+
+        self._ref_btn = QPushButton("⟳")
+        self._ref_btn.setFont(QFont("Courier New", 9, QFont.Weight.Bold))
+        self._ref_btn.setFixedSize(22, 18)
+        self._ref_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._ref_btn.setToolTip("Refresh reminders")
+        self._ref_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: rgba(255, 23, 68, 0.12); color: {C.TEXT_DIM};
+                border: 1px solid rgba(255, 23, 68, 0.35); border-radius: 2px;
+            }}
+            QPushButton:hover {{ color: #ffffff; background: rgba(255, 23, 68, 0.35); border-color: {C.PRI}; }}
+        """)
+        self._ref_btn.clicked.connect(self.load_reminders)
+        hdr.addWidget(self._ref_btn)
+
+        self._min_btn = QPushButton("MIN  —")
+        self._min_btn.setFont(QFont("Courier New", 7))
+        self._min_btn.setFixedHeight(18)
+        self._min_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._min_btn.setToolTip("Minimize reminders display")
+        self._min_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: rgba(255, 23, 68, 0.12); color: {C.TEXT_DIM};
+                border: 1px solid rgba(255, 23, 68, 0.35); border-radius: 2px; padding: 0 5px;
+            }}
+            QPushButton:hover {{ color: #ffffff; background: rgba(255, 23, 68, 0.35); border-color: {C.PRI}; }}
+        """)
+        self._min_btn.clicked.connect(self.toggle_collapse)
+        hdr.addWidget(self._min_btn)
+
+        close_btn = QPushButton("DISMISS  ✕")
+        close_btn.setFont(QFont("Courier New", 7))
+        close_btn.setFixedHeight(18)
+        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: rgba(255, 23, 68, 0.12); color: {C.TEXT_DIM};
+                border: 1px solid rgba(255, 23, 68, 0.35); border-radius: 2px; padding: 0 5px;
+            }}
+            QPushButton:hover {{ color: #ffffff; background: rgba(255, 23, 68, 0.35); border-color: {C.PRI}; }}
+        """)
+        close_btn.clicked.connect(self.hide)
+        hdr.addWidget(close_btn)
+
+        self._main_lay.addLayout(hdr)
+
+        # ── Body container (hidden when collapsed) ───────────────────────────
+        self._body_widget = QWidget()
+        self._body_widget.setStyleSheet("background: transparent;")
+        b_lay = QVBoxLayout(self._body_widget)
+        b_lay.setContentsMargins(0, 0, 0, 0)
+        b_lay.setSpacing(8)
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet(f"color: {C.BORDER};")
+        b_lay.addWidget(sep)
+
+        # ── Filter Tabs ──────────────────────────────────────────────────────
+        tab_row = QHBoxLayout()
+        tab_row.setSpacing(6)
+
+        self._tab_btns = {}
+        for scope_name in ("UPCOMING", "TODAY", "ALL", "COMPLETED"):
+            btn = QPushButton(scope_name)
+            btn.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
+            btn.setFixedHeight(22)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(lambda _, s=scope_name.lower(): self._set_scope(s))
+            tab_row.addWidget(btn)
+            self._tab_btns[scope_name.lower()] = btn
+
+        b_lay.addLayout(tab_row)
+
+        # ── Scroll Area for Reminder Cards ───────────────────────────────────
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._scroll.setStyleSheet(f"""
+            QScrollArea {{
+                background: transparent;
+                border: 1px solid {C.BORDER};
+                border-radius: 4px;
+            }}
+            QScrollBar:vertical {{
+                background: {C.BG}; width: 6px; border: none;
+            }}
+            QScrollBar::handle:vertical {{
+                background: {C.BORDER_B}; border-radius: 3px; min-height: 16px;
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0; border: none;
+            }}
+        """)
+
+        self._cards_widget = QWidget()
+        self._cards_widget.setStyleSheet("background: transparent;")
+        self._cards_lay = QVBoxLayout(self._cards_widget)
+        self._cards_lay.setContentsMargins(6, 6, 6, 6)
+        self._cards_lay.setSpacing(6)
+        self._cards_lay.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self._scroll.setWidget(self._cards_widget)
+
+        b_lay.addWidget(self._scroll, stretch=1)
+
+        # ── Quick-Add Bar ────────────────────────────────────────────────────
+        add_frame = QFrame()
+        add_frame.setStyleSheet(f"""
+            QFrame {{
+                background: rgba(18, 4, 8, 220);
+                border: 1px solid rgba(255, 23, 68, 0.3);
+                border-radius: 4px;
+                padding: 4px;
+            }}
+        """)
+        add_lay = QHBoxLayout(add_frame)
+        add_lay.setContentsMargins(4, 2, 4, 2)
+        add_lay.setSpacing(6)
+
+        self._in_msg = QLineEdit()
+        self._in_msg.setPlaceholderText("Reminder note (e.g. Call client)...")
+        self._in_msg.setFont(QFont("Courier New", 8))
+        self._in_msg.setStyleSheet(f"""
+            QLineEdit {{
+                background: {C.DARK}; color: {C.TEXT};
+                border: 1px solid {C.BORDER}; border-radius: 3px; padding: 4px 6px;
+            }}
+        """)
+        add_lay.addWidget(self._in_msg, stretch=3)
+
+        self._in_when = QLineEdit()
+        self._in_when.setPlaceholderText("When (e.g. 5pm, tomorrow 10am)...")
+        self._in_when.setFont(QFont("Courier New", 8))
+        self._in_when.setStyleSheet(f"""
+            QLineEdit {{
+                background: {C.DARK}; color: {C.TEXT};
+                border: 1px solid {C.BORDER}; border-radius: 3px; padding: 4px 6px;
+            }}
+        """)
+        self._in_when.returnPressed.connect(self._on_quick_add)
+        self._in_msg.returnPressed.connect(self._on_quick_add)
+        add_lay.addWidget(self._in_when, stretch=2)
+
+        self._add_btn = QPushButton("+ ADD")
+        self._add_btn.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
+        self._add_btn.setFixedHeight(26)
+        self._add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._add_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: rgba(255, 23, 68, 0.25); color: #ffffff;
+                border: 1px solid {C.PRI}; border-radius: 3px; padding: 0 10px;
+            }}
+            QPushButton:hover {{ background: rgba(255, 23, 68, 0.55); }}
+        """)
+        self._add_btn.clicked.connect(self._on_quick_add)
+        add_lay.addWidget(self._add_btn)
+
+        b_lay.addWidget(add_frame)
+
+        self._main_lay.addWidget(self._body_widget, stretch=1)
+
+    def _set_scope(self, scope: str):
+        self._active_scope = scope
+        self.load_reminders()
+
+    def _update_tab_styles(self):
+        for s_name, btn in self._tab_btns.items():
+            if s_name == self._active_scope:
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background: rgba(255, 23, 68, 0.35); color: #ffffff;
+                        border: 1px solid {C.PRI}; border-radius: 3px;
+                    }}
+                """)
+            else:
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background: rgba(20, 4, 8, 200); color: {C.TEXT_DIM};
+                        border: 1px solid {C.BORDER}; border-radius: 3px;
+                    }}
+                    QPushButton:hover {{
+                        color: #ffffff; border-color: {C.PRI};
+                    }}
+                """)
+
+    def load_reminders(self):
+        self._update_tab_styles()
+
+        # Clear existing cards
+        while self._cards_lay.count():
+            item = self._cards_lay.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        from datetime import datetime, timedelta
+        from actions.reminder import _load_db
+
+        reminders = _load_db()
+        now = datetime.now()
+        today_date = now.date()
+        tomorrow_date = today_date + timedelta(days=1)
+
+        filtered = []
+        for r in reminders:
+            status = r.get("status", "pending")
+            if self._active_scope == "completed":
+                if status == "completed":
+                    filtered.append(r)
+                continue
+
+            if status != "pending" and self._active_scope != "all":
+                continue
+
+            try:
+                due = datetime.strptime(r.get("due_time", ""), "%Y-%m-%dT%H:%M:%S")
+            except Exception:
+                continue
+
+            if self._active_scope == "today":
+                if due.date() == today_date:
+                    filtered.append(r)
+            elif self._active_scope == "tomorrow":
+                if due.date() == tomorrow_date:
+                    filtered.append(r)
+            elif self._active_scope == "upcoming":
+                if due >= now or r.get("recurrence", "none") != "none":
+                    filtered.append(r)
+            else:  # all
+                filtered.append(r)
+
+        filtered.sort(key=lambda x: x.get("due_time", ""))
+
+        active_count = sum(1 for r in reminders if r.get("status") == "pending")
+        self._count_lbl.setText(f"[ {active_count} ACTIVE ]")
+
+        if not filtered:
+            empty_lbl = QLabel(f"◈ NO REMINDERS IN '{self._active_scope.upper()}' VIEW ◈\nAdd one below or ask JARVIS to schedule.")
+            empty_lbl.setFont(QFont("Courier New", 8))
+            empty_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            empty_lbl.setStyleSheet(f"color: {C.TEXT_DIM}; padding: 30px 10px;")
+            self._cards_lay.addWidget(empty_lbl)
+            return
+
+        for r in filtered:
+            card = self._create_reminder_card(r)
+            self._cards_lay.addWidget(card)
+
+    def _create_reminder_card(self, r: dict) -> QFrame:
+        from datetime import datetime, timedelta
+        card = QFrame()
+        status = r.get("status", "pending")
+        recurrence = r.get("recurrence", "none")
+        due_iso = r.get("due_time", "")
+        msg = r.get("message", "Reminder")
+        rem_id = r.get("id", "")
+
+        is_completed = (status == "completed")
+        border_accent = "#00e676" if is_completed else ("#ff9100" if recurrence != "none" else "#ff1744")
+
+        card.setStyleSheet(f"""
+            QFrame {{
+                background: rgba(22, 5, 10, 230);
+                border: 1px solid rgba(255, 23, 68, 0.25);
+                border-left: 4px solid {border_accent};
+                border-radius: 5px;
+            }}
+        """)
+
+        c_lay = QVBoxLayout(card)
+        c_lay.setContentsMargins(10, 8, 10, 8)
+        c_lay.setSpacing(4)
+
+        # Top row: Time + badge + countdown
+        top_row = QHBoxLayout()
+        top_row.setSpacing(6)
+
+        try:
+            dt = datetime.strptime(due_iso, "%Y-%m-%dT%H:%M:%S")
+            now = datetime.now()
+            today = now.date()
+
+            if dt.date() == today:
+                time_label = f"Today at {dt.strftime('%I:%M %p')}"
+            elif dt.date() == today + timedelta(days=1):
+                time_label = f"Tomorrow at {dt.strftime('%I:%M %p')}"
+            else:
+                time_label = dt.strftime("%b %d, %Y at %I:%M %p")
+
+            if is_completed:
+                countdown = "(Completed)"
+                c_color = "#00e676"
+            elif dt < now:
+                countdown = "(Overdue)"
+                c_color = "#ff1744"
+            else:
+                diff = dt - now
+                if diff.days > 0:
+                    countdown = f"(in {diff.days}d {diff.seconds // 3600}h)"
+                elif diff.seconds >= 3600:
+                    countdown = f"(in {diff.seconds // 3600}h {(diff.seconds % 3600) // 60}m)"
+                else:
+                    countdown = f"(in {max(1, diff.seconds // 60)}m)"
+                c_color = "#ff9100"
+        except Exception:
+            time_label = due_iso
+            countdown = ""
+            c_color = C.TEXT_DIM
+
+        t_lbl = QLabel(time_label)
+        t_lbl.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
+        t_lbl.setStyleSheet("color: #ffffff; background: transparent; border: none;")
+        top_row.addWidget(t_lbl)
+
+        if countdown:
+            cd_lbl = QLabel(countdown)
+            cd_lbl.setFont(QFont("Courier New", 7))
+            cd_lbl.setStyleSheet(f"color: {c_color}; background: transparent; border: none;")
+            top_row.addWidget(cd_lbl)
+
+        if recurrence != "none":
+            rec_lbl = QLabel(f"[{recurrence.upper()}]")
+            rec_lbl.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
+            rec_lbl.setStyleSheet("color: #ff9100; background: transparent; border: none;")
+            top_row.addWidget(rec_lbl)
+
+        top_row.addStretch()
+
+        if not is_completed:
+            done_btn = QPushButton("✓ DONE")
+            done_btn.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
+            done_btn.setFixedHeight(18)
+            done_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            done_btn.setStyleSheet("""
+                QPushButton {
+                    background: rgba(0, 230, 118, 0.15); color: #00e676;
+                    border: 1px solid rgba(0, 230, 118, 0.4); border-radius: 2px; padding: 0 5px;
+                }
+                QPushButton:hover { background: rgba(0, 230, 118, 0.45); color: #ffffff; }
+            """)
+            done_btn.clicked.connect(lambda _, rid=rem_id: self._on_complete(rid))
+            top_row.addWidget(done_btn)
+
+        del_btn = QPushButton("✕")
+        del_btn.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
+        del_btn.setFixedSize(18, 18)
+        del_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        del_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: rgba(255, 23, 68, 0.12); color: {C.TEXT_DIM};
+                border: 1px solid rgba(255, 23, 68, 0.35); border-radius: 2px;
+            }}
+            QPushButton:hover {{ color: #ffffff; background: rgba(255, 23, 68, 0.45); border-color: {C.PRI}; }}
+        """)
+        del_btn.clicked.connect(lambda _, rid=rem_id: self._on_delete(rid))
+        top_row.addWidget(del_btn)
+
+        c_lay.addLayout(top_row)
+
+        m_lbl = QLabel(msg)
+        m_lbl.setFont(QFont("Courier New", 9))
+        m_lbl.setStyleSheet(f"color: {'#aaaaaa' if is_completed else '#ffffff'}; background: transparent; border: none;")
+        m_lbl.setWordWrap(True)
+        c_lay.addWidget(m_lbl)
+
+        return card
+
+    def _on_complete(self, rem_id: str):
+        from actions.reminder import complete_reminder
+        res = complete_reminder(rem_id)
+        if self._main_win and hasattr(self._main_win, "write_log"):
+            self._main_win.write_log(f"SYS: Reminder marked completed.")
+        self.load_reminders()
+
+    def _on_delete(self, rem_id: str):
+        from actions.reminder import delete_reminder
+        res = delete_reminder(rem_id)
+        if self._main_win and hasattr(self._main_win, "write_log"):
+            self._main_win.write_log(f"SYS: Reminder deleted.")
+        self.load_reminders()
+
+    def _on_quick_add(self):
+        msg = self._in_msg.text().strip()
+        when = self._in_when.text().strip()
+        if not msg:
+            self._in_msg.setPlaceholderText("Please specify what to remember!")
+            return
+        if not when:
+            self._in_when.setPlaceholderText("Please specify when (e.g. 5pm)!")
+            return
+
+        from actions.reminder import parse_datetime, create_reminder
+        target_dt, _ = parse_datetime(date_str="", time_str=when, natural_text=when)
+        if not target_dt:
+            self._in_when.clear()
+            self._in_when.setPlaceholderText("Could not parse time! Try '5pm' or 'tomorrow 10am'")
+            return
+
+        res = create_reminder(message=msg, target_dt=target_dt)
+        self._in_msg.clear()
+        self._in_when.clear()
+        self._in_msg.setPlaceholderText("Reminder note (e.g. Call client)...")
+        self._in_when.setPlaceholderText("When (e.g. 5pm, tomorrow 10am)...")
+
+        if self._main_win and hasattr(self._main_win, "write_log"):
+            self._main_win.write_log(f"SYS: Reminder added for {target_dt.strftime('%I:%M %p')}.")
+        self.load_reminders()
+
+    def popup(self, scope: str = "upcoming"):
+        if self._main_win and hasattr(self._main_win, "_reminders_dock_minimized_to_bar"):
+            self._main_win._reminders_dock_minimized_to_bar = False
+            self._main_win._update_dots_overlay()
+        self._active_scope = (scope or "upcoming").lower()
+        self._collapsed = False
+        self._body_widget.show()
+        screen = QApplication.primaryScreen().availableGeometry()
+        h = getattr(self, "_normal_h", min(640, screen.height() - 120))
+        self.setFixedHeight(h)
+        self._min_btn.setText("MIN  —")
+        self.load_reminders()
+        self.show()
+        self.raise_()
+
+    def minimize_to_dock(self):
+        self._collapsed = True
+        self._body_widget.hide()
+        self.setFixedHeight(46)
+        self._min_btn.setText("RESTORE  □")
+        self._min_btn.setToolTip("Restore reminders display")
+        self.hide()
+        if self._main_win:
+            self._main_win._reminders_dock_minimized_to_bar = True
+            self._main_win._update_dots_overlay()
+            if hasattr(self._main_win, "write_log"):
+                self._main_win.write_log("SYS: Reminders display minimized to left dock.")
+
+    def restore_from_dock(self):
+        self._collapsed = False
+        self._body_widget.show()
+        screen = QApplication.primaryScreen().availableGeometry()
+        h = getattr(self, "_normal_h", min(640, screen.height() - 120))
+        self.setFixedHeight(h)
+        self._min_btn.setText("MIN  —")
+        self._min_btn.setToolTip("Minimize reminders display")
+        if self._main_win:
+            self._main_win._reminders_dock_minimized_to_bar = False
+            self._main_win._update_dots_overlay()
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        if self._main_win and hasattr(self._main_win, "write_log"):
+            self._main_win.write_log("SYS: Reminders display restored.")
+
+    def toggle_collapse(self):
+        if self.isVisible():
+            self.minimize_to_dock()
+        else:
+            self.restore_from_dock()
+
+    def mousePressEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            self._drag_start = e.globalPosition().toPoint()
+            self._win_start = self.pos()
+        super().mousePressEvent(e)
+
+    def mouseMoveEvent(self, e):
+        if self._drag_start and e.buttons() == Qt.MouseButton.LeftButton:
+            delta = e.globalPosition().toPoint() - self._drag_start
+            self.move(self._win_start + delta)
         super().mouseMoveEvent(e)
 
     def mouseReleaseEvent(self, e):
         self._drag_start = None
+        self._win_start = None
+        super().mouseReleaseEvent(e)
+
+
+class MemoryActionsDisplayWindow(QWidget):
+    """
+    Dedicated interactive management platform for inspecting, managing, editing,
+    and deleting JARVIS's long-term memory and viewing/controlling registered actions and permissions.
+    """
+    def __init__(self, main_win: "MainWindow" = None, parent=None):
+        super().__init__(parent)
+        self._main_win = main_win
+        self.setWindowTitle("JARVIS Memory & Actions Platform")
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint |
+            Qt.WindowType.WindowStaysOnTopHint |
+            Qt.WindowType.Tool
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setMinimumSize(560, 500)
+
+        self._active_tab = "memory"          # "memory" or "actions"
+        self._active_category = "all"        # "all" or specific category
+        self._active_risk = "all"            # "all" or specific risk level
+        self._collapsed = False
+        self._drag_start = None
+        self._win_start = None
+
+        screen = QApplication.primaryScreen().availableGeometry()
+        w = min(700, max(560, screen.width() // 2))
+        h = min(740, screen.height() - 100)
+        self._normal_h = h
+        x = max(screen.left() + 20, screen.center().x() - w // 2)
+        y = screen.top() + (screen.height() - h) // 2
+        self.setGeometry(x, y, w, h)
+
+        self._build_ui()
+
+    def _build_ui(self):
+        self._outer = QFrame(self)
+        self._outer.setObjectName("MemActOuter")
+        self._outer.setStyleSheet(f"""
+            QFrame#MemActOuter {{
+                background: rgba(12, 3, 6, 250);
+                border: 1px solid rgba(255, 23, 68, 0.45);
+                border-radius: 8px;
+            }}
+        """)
+        v_outer = QVBoxLayout(self)
+        v_outer.setContentsMargins(0, 0, 0, 0)
+        v_outer.addWidget(self._outer)
+
+        self._main_lay = QVBoxLayout(self._outer)
+        self._main_lay.setContentsMargins(14, 10, 14, 10)
+        self._main_lay.setSpacing(8)
+
+        # ── Header bar ──────────────────────────────────────────────────────
+        hdr = QHBoxLayout()
+        hdr.setSpacing(6)
+
+        dot = QLabel("◈")
+        dot.setFont(QFont("Courier New", 9, QFont.Weight.Bold))
+        dot.setStyleSheet(f"color: {C.PRI}; background: transparent;")
+        hdr.addWidget(dot)
+
+        title_lbl = QLabel("CORE MATRIX // MEMORY & ACTIONS PLATFORM")
+        title_lbl.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
+        title_lbl.setStyleSheet(f"color: {C.PRI}; background: transparent; letter-spacing: 1px;")
+        hdr.addWidget(title_lbl)
+
+        hdr.addStretch()
+
+        self._count_lbl = QLabel("[ READY ]")
+        self._count_lbl.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
+        self._count_lbl.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
+        hdr.addWidget(self._count_lbl)
+
+        self._ref_btn = QPushButton("⟳")
+        self._ref_btn.setFont(QFont("Courier New", 9, QFont.Weight.Bold))
+        self._ref_btn.setFixedSize(22, 18)
+        self._ref_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._ref_btn.setToolTip("Refresh data")
+        self._ref_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: rgba(255, 23, 68, 0.12); color: {C.TEXT_DIM};
+                border: 1px solid rgba(255, 23, 68, 0.35); border-radius: 2px;
+            }}
+            QPushButton:hover {{ color: #ffffff; background: rgba(255, 23, 68, 0.35); border-color: {C.PRI}; }}
+        """)
+        self._ref_btn.clicked.connect(self.load_data)
+        hdr.addWidget(self._ref_btn)
+
+        self._min_btn = QPushButton("MIN  —")
+        self._min_btn.setFont(QFont("Courier New", 7))
+        self._min_btn.setFixedHeight(18)
+        self._min_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._min_btn.setToolTip("Minimize platform display")
+        self._min_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: rgba(255, 23, 68, 0.12); color: {C.TEXT_DIM};
+                border: 1px solid rgba(255, 23, 68, 0.35); border-radius: 2px; padding: 0 5px;
+            }}
+            QPushButton:hover {{ color: #ffffff; background: rgba(255, 23, 68, 0.35); border-color: {C.PRI}; }}
+        """)
+        self._min_btn.clicked.connect(self.toggle_collapse)
+        hdr.addWidget(self._min_btn)
+
+        close_btn = QPushButton("DISMISS  ✕")
+        close_btn.setFont(QFont("Courier New", 7))
+        close_btn.setFixedHeight(18)
+        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: rgba(255, 23, 68, 0.12); color: {C.TEXT_DIM};
+                border: 1px solid rgba(255, 23, 68, 0.35); border-radius: 2px; padding: 0 5px;
+            }}
+            QPushButton:hover {{ color: #ffffff; background: rgba(255, 23, 68, 0.35); border-color: {C.PRI}; }}
+        """)
+        close_btn.clicked.connect(self.hide)
+        hdr.addWidget(close_btn)
+
+        self._main_lay.addLayout(hdr)
+
+        # ── Body container (hidden when collapsed) ───────────────────────────
+        self._body_widget = QWidget()
+        self._body_widget.setStyleSheet("background: transparent;")
+        b_lay = QVBoxLayout(self._body_widget)
+        b_lay.setContentsMargins(0, 0, 0, 0)
+        b_lay.setSpacing(8)
+
+        # ── Top Tab Switcher ────────────────────────────────────────────────
+        top_tabs = QHBoxLayout()
+        top_tabs.setSpacing(8)
+
+        self._btn_tab_mem = QPushButton("🧠  MEMORY MATRIX")
+        self._btn_tab_mem.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
+        self._btn_tab_mem.setFixedHeight(26)
+        self._btn_tab_mem.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_tab_mem.clicked.connect(lambda: self._switch_tab("memory"))
+        top_tabs.addWidget(self._btn_tab_mem, stretch=1)
+
+        self._btn_tab_act = QPushButton("⚡  ACTION REGISTRY & PERMISSIONS")
+        self._btn_tab_act.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
+        self._btn_tab_act.setFixedHeight(26)
+        self._btn_tab_act.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_tab_act.clicked.connect(lambda: self._switch_tab("actions"))
+        top_tabs.addWidget(self._btn_tab_act, stretch=1)
+
+        b_lay.addLayout(top_tabs)
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet(f"color: {C.BORDER};")
+        b_lay.addWidget(sep)
+
+        # ── Stacked Pages ───────────────────────────────────────────────────
+        self._stack = QStackedWidget()
+        self._stack.setStyleSheet("background: transparent;")
+
+        # Page 0: Memory Platform
+        self._mem_page = QWidget()
+        self._mem_page.setStyleSheet("background: transparent;")
+        m_page_lay = QVBoxLayout(self._mem_page)
+        m_page_lay.setContentsMargins(0, 0, 0, 0)
+        m_page_lay.setSpacing(8)
+
+        # Memory Search and Category Filters
+        m_filter_lay = QVBoxLayout()
+        m_filter_lay.setSpacing(6)
+
+        self._mem_search = QLineEdit()
+        self._mem_search.setPlaceholderText("Search memory (e.g. name, preferences, project, exam)...")
+        self._mem_search.setFont(QFont("Courier New", 8))
+        self._mem_search.setStyleSheet(f"""
+            QLineEdit {{
+                background: {C.DARK}; color: {C.TEXT};
+                border: 1px solid {C.BORDER}; border-radius: 3px; padding: 4px 8px;
+            }}
+            QLineEdit:focus {{ border-color: {C.PRI}; }}
+        """)
+        self._mem_search.textChanged.connect(self.load_memory)
+        m_filter_lay.addWidget(self._mem_search)
+
+        m_cats_lay = QHBoxLayout()
+        m_cats_lay.setSpacing(4)
+        self._cat_btns = {}
+        for c in ("ALL", "IDENTITY", "PREFERENCES", "PROJECTS", "RELATIONSHIPS", "WISHES", "NOTES"):
+            btn = QPushButton(c)
+            btn.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
+            btn.setFixedHeight(20)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(lambda _, cat=c.lower(): self._set_category(cat))
+            m_cats_lay.addWidget(btn)
+            self._cat_btns[c.lower()] = btn
+        m_filter_lay.addLayout(m_cats_lay)
+        m_page_lay.addLayout(m_filter_lay)
+
+        # Memory Cards Scroll Area
+        self._mem_scroll = QScrollArea()
+        self._mem_scroll.setWidgetResizable(True)
+        self._mem_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._mem_scroll.setStyleSheet(f"""
+            QScrollArea {{
+                background: transparent;
+                border: 1px solid {C.BORDER};
+                border-radius: 4px;
+            }}
+            QScrollBar:vertical {{
+                background: {C.BG}; width: 6px; border: none;
+            }}
+            QScrollBar::handle:vertical {{
+                background: {C.BORDER_B}; border-radius: 3px; min-height: 16px;
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0; border: none;
+            }}
+        """)
+        self._mem_cards_widget = QWidget()
+        self._mem_cards_widget.setStyleSheet("background: transparent;")
+        self._mem_cards_lay = QVBoxLayout(self._mem_cards_widget)
+        self._mem_cards_lay.setContentsMargins(6, 6, 6, 6)
+        self._mem_cards_lay.setSpacing(6)
+        self._mem_cards_lay.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self._mem_scroll.setWidget(self._mem_cards_widget)
+        m_page_lay.addWidget(self._mem_scroll, stretch=1)
+
+        # Memory Quick Add Bar
+        add_frame = QFrame()
+        add_frame.setStyleSheet(f"""
+            QFrame {{
+                background: rgba(18, 4, 8, 220);
+                border: 1px solid rgba(255, 23, 68, 0.3);
+                border-radius: 4px;
+                padding: 4px;
+            }}
+        """)
+        add_lay = QHBoxLayout(add_frame)
+        add_lay.setContentsMargins(4, 2, 4, 2)
+        add_lay.setSpacing(6)
+
+        self._add_cat_combo = QComboBox()
+        self._add_cat_combo.addItems(["notes", "preferences", "projects", "relationships", "wishes", "identity"])
+        self._add_cat_combo.setFont(QFont("Courier New", 8))
+        self._add_cat_combo.setFixedWidth(115)
+        self._add_cat_combo.setStyleSheet(f"""
+            QComboBox {{
+                background: {C.DARK}; color: {C.TEXT};
+                border: 1px solid {C.BORDER}; border-radius: 3px; padding: 2px 4px;
+            }}
+            QComboBox QAbstractItemView {{
+                background: #0d0205; color: #ffffff; selection-background-color: {C.PRI};
+            }}
+        """)
+        add_lay.addWidget(self._add_cat_combo)
+
+        self._add_key_in = QLineEdit()
+        self._add_key_in.setPlaceholderText("key (e.g. favorite_ide)...")
+        self._add_key_in.setFont(QFont("Courier New", 8))
+        self._add_key_in.setStyleSheet(f"""
+            QLineEdit {{
+                background: {C.DARK}; color: {C.TEXT};
+                border: 1px solid {C.BORDER}; border-radius: 3px; padding: 4px 6px;
+            }}
+        """)
+        add_lay.addWidget(self._add_key_in, stretch=2)
+
+        self._add_val_in = QLineEdit()
+        self._add_val_in.setPlaceholderText("value (e.g. Antigravity IDE)...")
+        self._add_val_in.setFont(QFont("Courier New", 8))
+        self._add_val_in.setStyleSheet(f"""
+            QLineEdit {{
+                background: {C.DARK}; color: {C.TEXT};
+                border: 1px solid {C.BORDER}; border-radius: 3px; padding: 4px 6px;
+            }}
+        """)
+        self._add_key_in.returnPressed.connect(self._on_add_memory)
+        self._add_val_in.returnPressed.connect(self._on_add_memory)
+        add_lay.addWidget(self._add_val_in, stretch=3)
+
+        self._add_mem_btn = QPushButton("+ REMEMBER")
+        self._add_mem_btn.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
+        self._add_mem_btn.setFixedHeight(26)
+        self._add_mem_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._add_mem_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: rgba(255, 23, 68, 0.25); color: #ffffff;
+                border: 1px solid {C.PRI}; border-radius: 3px; padding: 0 8px;
+            }}
+            QPushButton:hover {{ background: rgba(255, 23, 68, 0.55); }}
+        """)
+        self._add_mem_btn.clicked.connect(self._on_add_memory)
+        add_lay.addWidget(self._add_mem_btn)
+
+        m_page_lay.addWidget(add_frame)
+        self._stack.addWidget(self._mem_page)
+
+        # Page 1: Action Registry Platform
+        self._act_page = QWidget()
+        self._act_page.setStyleSheet("background: transparent;")
+        a_page_lay = QVBoxLayout(self._act_page)
+        a_page_lay.setContentsMargins(0, 0, 0, 0)
+        a_page_lay.setSpacing(8)
+
+        # Action Filters
+        a_filter_lay = QVBoxLayout()
+        a_filter_lay.setSpacing(6)
+
+        self._act_search = QLineEdit()
+        self._act_search.setPlaceholderText("Filter actions by name, keyword, or tool...")
+        self._act_search.setFont(QFont("Courier New", 8))
+        self._act_search.setStyleSheet(f"""
+            QLineEdit {{
+                background: {C.DARK}; color: {C.TEXT};
+                border: 1px solid {C.BORDER}; border-radius: 3px; padding: 4px 8px;
+            }}
+            QLineEdit:focus {{ border-color: {C.PRI}; }}
+        """)
+        self._act_search.textChanged.connect(self.load_actions)
+        a_filter_lay.addWidget(self._act_search)
+
+        a_risk_lay = QHBoxLayout()
+        a_risk_lay.setSpacing(4)
+        self._risk_btns = {}
+        for r in ("ALL", "IMMEDIATE", "CONFIRMATION", "HIGH_IMPACT", "FORBIDDEN"):
+            btn = QPushButton(r.replace("_", " "))
+            btn.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
+            btn.setFixedHeight(20)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(lambda _, risk=r.lower(): self._set_risk(risk))
+            a_risk_lay.addWidget(btn)
+            self._risk_btns[r.lower()] = btn
+        a_filter_lay.addLayout(a_risk_lay)
+        a_page_lay.addLayout(a_filter_lay)
+
+        # Action Cards Scroll Area
+        self._act_scroll = QScrollArea()
+        self._act_scroll.setWidgetResizable(True)
+        self._act_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._act_scroll.setStyleSheet(f"""
+            QScrollArea {{
+                background: transparent;
+                border: 1px solid {C.BORDER};
+                border-radius: 4px;
+            }}
+            QScrollBar:vertical {{
+                background: {C.BG}; width: 6px; border: none;
+            }}
+            QScrollBar::handle:vertical {{
+                background: {C.BORDER_B}; border-radius: 3px; min-height: 16px;
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0; border: none;
+            }}
+        """)
+        self._act_cards_widget = QWidget()
+        self._act_cards_widget.setStyleSheet("background: transparent;")
+        self._act_cards_lay = QVBoxLayout(self._act_cards_widget)
+        self._act_cards_lay.setContentsMargins(6, 6, 6, 6)
+        self._act_cards_lay.setSpacing(6)
+        self._act_cards_lay.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self._act_scroll.setWidget(self._act_cards_widget)
+        a_page_lay.addWidget(self._act_scroll, stretch=1)
+
+        self._stack.addWidget(self._act_page)
+
+        b_lay.addWidget(self._stack, stretch=1)
+        self._main_lay.addWidget(self._body_widget, stretch=1)
+
+        self._switch_tab("memory")
+
+    def _switch_tab(self, tab: str):
+        self._active_tab = tab.lower()
+        if self._active_tab == "actions":
+            self._stack.setCurrentIndex(1)
+            self._btn_tab_act.setStyleSheet(f"""
+                QPushButton {{
+                    background: rgba(255, 23, 68, 0.4); color: #ffffff;
+                    border: 1px solid {C.PRI}; border-radius: 3px;
+                }}
+            """)
+            self._btn_tab_mem.setStyleSheet(f"""
+                QPushButton {{
+                    background: rgba(255, 23, 68, 0.1); color: {C.TEXT_DIM};
+                    border: 1px solid rgba(255, 23, 68, 0.25); border-radius: 3px;
+                }}
+                QPushButton:hover {{ color: #ffffff; background: rgba(255, 23, 68, 0.25); }}
+            """)
+            self.load_actions()
+        else:
+            self._stack.setCurrentIndex(0)
+            self._btn_tab_mem.setStyleSheet(f"""
+                QPushButton {{
+                    background: rgba(255, 23, 68, 0.4); color: #ffffff;
+                    border: 1px solid {C.PRI}; border-radius: 3px;
+                }}
+            """)
+            self._btn_tab_act.setStyleSheet(f"""
+                QPushButton {{
+                    background: rgba(255, 23, 68, 0.1); color: {C.TEXT_DIM};
+                    border: 1px solid rgba(255, 23, 68, 0.25); border-radius: 3px;
+                }}
+                QPushButton:hover {{ color: #ffffff; background: rgba(255, 23, 68, 0.25); }}
+            """)
+            self.load_memory()
+
+    def _set_category(self, cat: str):
+        self._active_category = cat.lower()
+        self._update_category_buttons()
+        self.load_memory()
+
+    def _update_category_buttons(self):
+        for c_name, btn in self._cat_btns.items():
+            if c_name == self._active_category:
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background: rgba(255, 23, 68, 0.35); color: #ffffff;
+                        border: 1px solid {C.PRI}; border-radius: 2px; padding: 0 4px;
+                    }}
+                """)
+            else:
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background: rgba(255, 23, 68, 0.08); color: {C.TEXT_DIM};
+                        border: 1px solid rgba(255, 23, 68, 0.25); border-radius: 2px; padding: 0 4px;
+                    }}
+                    QPushButton:hover {{ color: #ffffff; background: rgba(255, 23, 68, 0.25); }}
+                """)
+
+    def _set_risk(self, risk: str):
+        self._active_risk = risk.lower()
+        self._update_risk_buttons()
+        self.load_actions()
+
+    def _update_risk_buttons(self):
+        for r_name, btn in self._risk_btns.items():
+            if r_name == self._active_risk:
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background: rgba(255, 23, 68, 0.35); color: #ffffff;
+                        border: 1px solid {C.PRI}; border-radius: 2px; padding: 0 4px;
+                    }}
+                """)
+            else:
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background: rgba(255, 23, 68, 0.08); color: {C.TEXT_DIM};
+                        border: 1px solid rgba(255, 23, 68, 0.25); border-radius: 2px; padding: 0 4px;
+                    }}
+                    QPushButton:hover {{ color: #ffffff; background: rgba(255, 23, 68, 0.25); }}
+                """)
+
+    def load_data(self):
+        if self._active_tab == "actions":
+            self.load_actions()
+        else:
+            self.load_memory()
+
+    def load_memory(self):
+        from memory.memory_manager import all_entries_for_ui
+
+        # Clear existing cards
+        while self._mem_cards_lay.count():
+            item = self._mem_cards_lay.takeAt(0)
+            w = item.widget()
+            if w:
+                w.deleteLater()
+
+        self._update_category_buttons()
+        entries = all_entries_for_ui()
+        search_q = self._mem_search.text().strip().lower()
+        cat_filter = self._active_category.lower()
+
+        displayed = 0
+        for e in entries:
+            cat = str(e.get("category", "notes")).lower()
+            key = str(e.get("key", ""))
+            val = str(e.get("value", ""))
+            upd = str(e.get("updated", ""))
+
+            if cat_filter != "all" and cat != cat_filter:
+                continue
+
+            if search_q:
+                hay = f"{cat} {key} {val}".lower()
+                if search_q not in hay:
+                    continue
+
+            card = self._create_memory_card(cat, key, val, upd)
+            self._mem_cards_lay.addWidget(card)
+            displayed += 1
+
+        self._count_lbl.setText(f"[ {displayed} MEMORY ENTRIES ]")
+        if displayed == 0:
+            empty = QLabel("No memory items found matching the filter.")
+            empty.setFont(QFont("Courier New", 9))
+            empty.setStyleSheet(f"color: {C.TEXT_DIM}; padding: 16px;")
+            self._mem_cards_lay.addWidget(empty)
+
+    def _create_memory_card(self, cat: str, key: str, val: str, updated: str) -> QFrame:
+        card = QFrame()
+        card.setStyleSheet(f"""
+            QFrame {{
+                background: rgba(20, 5, 10, 210);
+                border: 1px solid rgba(255, 23, 68, 0.25);
+                border-radius: 4px;
+                padding: 6px;
+            }}
+            QFrame:hover {{
+                border-color: rgba(255, 23, 68, 0.6);
+            }}
+        """)
+        c_lay = QVBoxLayout(card)
+        c_lay.setContentsMargins(8, 6, 8, 6)
+        c_lay.setSpacing(4)
+
+        top_row = QHBoxLayout()
+        top_row.setSpacing(6)
+
+        cat_badge = QLabel(f"[{cat.upper()}]")
+        cat_badge.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
+        cat_badge.setStyleSheet("color: #ff5252; background: transparent; border: none;")
+        top_row.addWidget(cat_badge)
+
+        k_lbl = QLabel(key)
+        k_lbl.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
+        k_lbl.setStyleSheet("color: #ffffff; background: transparent; border: none;")
+        top_row.addWidget(k_lbl)
+
+        if updated:
+            u_lbl = QLabel(f"({updated})")
+            u_lbl.setFont(QFont("Courier New", 7))
+            u_lbl.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent; border: none;")
+            top_row.addWidget(u_lbl)
+
+        top_row.addStretch()
+
+        edit_btn = QPushButton("✎ EDIT")
+        edit_btn.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
+        edit_btn.setFixedHeight(18)
+        edit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        edit_btn.setStyleSheet("""
+            QPushButton {
+                background: rgba(0, 230, 118, 0.15); color: #00e676;
+                border: 1px solid rgba(0, 230, 118, 0.4); border-radius: 2px; padding: 0 5px;
+            }
+            QPushButton:hover { background: rgba(0, 230, 118, 0.45); color: #ffffff; }
+        """)
+        edit_btn.clicked.connect(lambda _, c=cat, k=key, v=val: self._on_edit_memory(c, k, v))
+        top_row.addWidget(edit_btn)
+
+        del_btn = QPushButton("✕")
+        del_btn.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
+        del_btn.setFixedSize(18, 18)
+        del_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        del_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: rgba(255, 23, 68, 0.12); color: {C.TEXT_DIM};
+                border: 1px solid rgba(255, 23, 68, 0.35); border-radius: 2px;
+            }}
+            QPushButton:hover {{ color: #ffffff; background: rgba(255, 23, 68, 0.45); border-color: {C.PRI}; }}
+        """)
+        del_btn.clicked.connect(lambda _, c=cat, k=key: self._on_forget_memory(c, k))
+        top_row.addWidget(del_btn)
+
+        c_lay.addLayout(top_row)
+
+        v_lbl = QLabel(val)
+        v_lbl.setFont(QFont("Courier New", 8))
+        v_lbl.setStyleSheet("color: #e0e0e0; background: transparent; border: none;")
+        v_lbl.setWordWrap(True)
+        c_lay.addWidget(v_lbl)
+
+        return card
+
+    def _on_edit_memory(self, cat: str, key: str, cur_val: str):
+        from memory.memory_manager import remember
+        new_val, ok = QInputDialog.getText(
+            self,
+            "Edit Memory Entry",
+            f"Update memory for [{cat.upper()}] {key}:",
+            text=cur_val
+        )
+        if ok and new_val.strip():
+            remember(key, new_val.strip(), cat)
+            if self._main_win and hasattr(self._main_win, "write_log"):
+                self._main_win.write_log(f"SYS: Updated memory '{key}'.")
+            self.load_memory()
+
+    def _on_forget_memory(self, cat: str, key: str):
+        from memory.memory_manager import forget
+        forget(key, cat)
+        if self._main_win and hasattr(self._main_win, "write_log"):
+            self._main_win.write_log(f"SYS: Forgotten memory '{key}'.")
+        self.load_memory()
+
+    def _on_add_memory(self):
+        cat = self._add_cat_combo.currentText().strip().lower()
+        key = self._add_key_in.text().strip().replace(" ", "_").lower()
+        val = self._add_val_in.text().strip()
+
+        if not key:
+            self._add_key_in.setPlaceholderText("Specify key name!")
+            return
+        if not val:
+            self._add_val_in.setPlaceholderText("Specify value!")
+            return
+
+        from memory.memory_manager import remember
+        remember(key, val, cat)
+        self._add_key_in.clear()
+        self._add_val_in.clear()
+        if self._main_win and hasattr(self._main_win, "write_log"):
+            self._main_win.write_log(f"SYS: Remembered {cat}/{key}.")
+        self.load_memory()
+
+    def load_actions(self):
+        from pathlib import Path
+        from core.action_loader import discover_actions
+        from core.permissions import ActionPermissionManager, ActionRiskLevel
+
+        while self._act_cards_lay.count():
+            item = self._act_cards_lay.takeAt(0)
+            w = item.widget()
+            if w:
+                w.deleteLater()
+
+        self._update_risk_buttons()
+
+        try:
+            registry = discover_actions(Path("actions"))
+            actions_dict = registry._actions if hasattr(registry, "_actions") else {}
+        except Exception:
+            actions_dict = {}
+
+        try:
+            from core.plugin_loader import discover_plugins
+            p_reg = discover_plugins()
+            plugins_dict = p_reg._plugins if hasattr(p_reg, "_plugins") else {}
+        except Exception:
+            plugins_dict = {}
+
+        search_q = self._act_search.text().strip().lower()
+        risk_filter = self._active_risk.lower()
+
+        all_actions = []
+        for name, rec in actions_dict.items():
+            all_actions.append((name, rec.description, rec.parameters, rec.file, "Builtin Action"))
+        for name, prec in plugins_dict.items():
+            all_actions.append((name, prec.description, prec.parameters, prec.file, "Plugin"))
+
+        all_actions.sort(key=lambda x: x[0])
+
+        displayed = 0
+        for name, desc, params, src_file, kind in all_actions:
+            risk = ActionPermissionManager.get_risk_level(name)
+            risk_val = risk.value.lower()
+
+            if risk_filter != "all" and risk_filter not in risk_val:
+                continue
+
+            if search_q:
+                hay = f"{name} {desc} {src_file} {kind} {risk_val}".lower()
+                if search_q not in hay:
+                    continue
+
+            card = self._create_action_card(name, desc, params, src_file, kind, risk)
+            self._act_cards_lay.addWidget(card)
+            displayed += 1
+
+        self._count_lbl.setText(f"[ {displayed} ACTIONS & PLUGINS ]")
+        if displayed == 0:
+            empty = QLabel("No actions matching the active filter.")
+            empty.setFont(QFont("Courier New", 9))
+            empty.setStyleSheet(f"color: {C.TEXT_DIM}; padding: 16px;")
+            self._act_cards_lay.addWidget(empty)
+
+    def _create_action_card(self, name: str, desc: str, params: dict, src_file: str, kind: str, risk) -> QFrame:
+        from core.permissions import ActionRiskLevel
+
+        card = QFrame()
+        card.setStyleSheet(f"""
+            QFrame {{
+                background: rgba(20, 5, 10, 210);
+                border: 1px solid rgba(255, 23, 68, 0.25);
+                border-radius: 4px;
+                padding: 6px;
+            }}
+            QFrame:hover {{
+                border-color: rgba(255, 23, 68, 0.6);
+            }}
+        """)
+        c_lay = QVBoxLayout(card)
+        c_lay.setContentsMargins(8, 6, 8, 6)
+        c_lay.setSpacing(4)
+
+        top_row = QHBoxLayout()
+        top_row.setSpacing(6)
+
+        name_lbl = QLabel(name)
+        name_lbl.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
+        name_lbl.setStyleSheet("color: #ff5252; background: transparent; border: none;")
+        top_row.addWidget(name_lbl)
+
+        # Risk badge
+        if risk == ActionRiskLevel.IMMEDIATE:
+            r_text, r_color, r_bg = "⚡ LEVEL 1: IMMEDIATE", "#00e676", "rgba(0, 230, 118, 0.15)"
+        elif risk == ActionRiskLevel.CONFIRMATION_REQUIRED:
+            r_text, r_color, r_bg = "🛡️ LEVEL 2: CONFIRMATION", "#ffd600", "rgba(255, 214, 0, 0.15)"
+        elif risk == ActionRiskLevel.HIGH_IMPACT:
+            r_text, r_color, r_bg = "⚠️ LEVEL 3: HIGH IMPACT", "#ff6d00", "rgba(255, 109, 0, 0.18)"
+        else:
+            r_text, r_color, r_bg = "⛔ FORBIDDEN", "#d50000", "rgba(213, 0, 0, 0.22)"
+
+        risk_badge = QLabel(r_text)
+        risk_badge.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
+        risk_badge.setStyleSheet(f"color: {r_color}; background: {r_bg}; border-radius: 2px; padding: 2px 5px;")
+        top_row.addWidget(risk_badge)
+
+        top_row.addStretch()
+
+        src_lbl = QLabel(f"{kind} ({src_file or 'core'})")
+        src_lbl.setFont(QFont("Courier New", 7))
+        src_lbl.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent; border: none;")
+        top_row.addWidget(src_lbl)
+
+        c_lay.addLayout(top_row)
+
+        d_lbl = QLabel(desc or "No description provided.")
+        d_lbl.setFont(QFont("Courier New", 8))
+        d_lbl.setStyleSheet("color: #d0d0d0; background: transparent; border: none;")
+        d_lbl.setWordWrap(True)
+        c_lay.addWidget(d_lbl)
+
+        # Parameters summary
+        props = (params or {}).get("properties", {})
+        req = (params or {}).get("required", [])
+        if props:
+            param_list = [f"{p}{'*' if p in req else ''}" for p in props.keys()]
+            p_summary = f"params: {', '.join(param_list)}"
+        else:
+            p_summary = "params: none"
+
+        p_lbl = QLabel(p_summary)
+        p_lbl.setFont(QFont("Courier New", 7))
+        p_lbl.setStyleSheet("color: #80cbc4; background: transparent; border: none;")
+        c_lay.addWidget(p_lbl)
+
+        return card
+
+    def popup(self, tab: str = "memory"):
+        self._collapsed = False
+        self._body_widget.show()
+        screen = QApplication.primaryScreen().availableGeometry()
+        h = getattr(self, "_normal_h", min(740, screen.height() - 100))
+        self.setFixedHeight(h)
+        self._min_btn.setText("MIN  —")
+        self._switch_tab(tab or "memory")
+        self.show()
+        self.raise_()
+
+    def toggle_collapse(self):
+        self._collapsed = not self._collapsed
+        if self._collapsed:
+            self._body_widget.hide()
+            self.setFixedHeight(46)
+            self._min_btn.setText("RESTORE  □")
+            self._min_btn.setToolTip("Restore platform display")
+        else:
+            self._body_widget.show()
+            screen = QApplication.primaryScreen().availableGeometry()
+            h = getattr(self, "_normal_h", min(740, screen.height() - 100))
+            self.setFixedHeight(h)
+            self._min_btn.setText("MIN  —")
+            self._min_btn.setToolTip("Minimize platform display")
+
+    def mousePressEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            self._drag_start = e.globalPosition().toPoint()
+            self._win_start = self.pos()
+        super().mousePressEvent(e)
+
+    def mouseMoveEvent(self, e):
+        if self._drag_start and e.buttons() == Qt.MouseButton.LeftButton:
+            delta = e.globalPosition().toPoint() - self._drag_start
+            self.move(self._win_start + delta)
+        super().mouseMoveEvent(e)
+
+    def mouseReleaseEvent(self, e):
+        self._drag_start = None
+        self._win_start = None
         super().mouseReleaseEvent(e)
 
 
@@ -5722,7 +7470,7 @@ class ArmouryCrateTelemetryWidget(QWidget):
 
 
 class MinimizedDisplayPill(QPushButton):
-    def __init__(self, display_id: int, title: str, content_type: str = "image", parent=None):
+    def __init__(self, display_id, title: str, content_type: str = "image", parent=None):
         super().__init__(parent)
         self.display_id = display_id
         self.display_title = title or f"Display {display_id}"
@@ -5730,7 +7478,12 @@ class MinimizedDisplayPill(QPushButton):
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setMouseTracking(True)
 
-        self.setToolTip(f"Display {self.display_id}: {self.display_title}\n(Click to open)")
+        if self.display_id == "search":
+            self.setToolTip("Search & Intel Display (Click to restore)")
+        elif self.display_id == "reminders":
+            self.setToolTip("Reminders Matrix (Click to restore)")
+        else:
+            self.setToolTip(f"Display {self.display_id}: {self.display_title}\n(Click to open)")
 
         self.setFixedHeight(34)
         self._collapsed_w = 40
@@ -5742,13 +7495,19 @@ class MinimizedDisplayPill(QPushButton):
         self._update_text()
 
     def _update_text(self):
+        icon_or_id = str(self.display_id)
+        if self.display_id == "search":
+            icon_or_id = "🔍"
+        elif self.display_id == "reminders":
+            icon_or_id = "⏰"
+
         if self._is_hovered:
             clean_title = self.display_title.strip()
             if len(clean_title) > 24:
                 clean_title = clean_title[:22] + "..."
-            self.setText(f" {self.display_id} │ {clean_title} ")
+            self.setText(f" {icon_or_id} │ {clean_title} ")
         else:
-            self.setText(str(self.display_id))
+            self.setText(icon_or_id)
 
     def _update_style(self):
         if self._is_hovered:
@@ -5808,7 +7567,7 @@ class MinimizedDisplayPill(QPushButton):
 
 
 class MinimizedDisplaysDock(QWidget):
-    dot_clicked = pyqtSignal(int)
+    dot_clicked = pyqtSignal(object)
 
     def __init__(self, parent_main_win=None):
         super().__init__(None)
@@ -5822,9 +7581,9 @@ class MinimizedDisplaysDock(QWidget):
         self._vbox.setSpacing(6)
         self._vbox.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
 
-        self._buttons: dict[int, MinimizedDisplayPill] = {}
+        self._buttons: dict[object, MinimizedDisplayPill] = {}
 
-    def update_displays(self, display_items: list[tuple[int, str, str]]):
+    def update_displays(self, display_items: list[tuple[object, str, str]]):
         while self._vbox.count():
             item = self._vbox.takeAt(0)
             if item.widget():
@@ -5835,7 +7594,17 @@ class MinimizedDisplaysDock(QWidget):
             self.hide()
             return
 
-        for disp_id, disp_title, c_type in sorted(display_items, key=lambda x: x[0]):
+        def _sort_key(item):
+            did = item[0]
+            if isinstance(did, int):
+                return (0, did)
+            if did == "search":
+                return (1, 0)
+            if did == "reminders":
+                return (1, 1)
+            return (2, str(did))
+
+        for disp_id, disp_title, c_type in sorted(display_items, key=_sort_key):
             pill = MinimizedDisplayPill(disp_id, disp_title, c_type, self)
             pill.clicked.connect(lambda _, did=disp_id: self.dot_clicked.emit(did))
             self._vbox.addWidget(pill)
@@ -6652,6 +8421,11 @@ class MainWindow(QMainWindow):
     _close_display_sig = pyqtSignal(int)            # (display_id)
     _stream_user_sig = pyqtSignal(str)              # (streamed user transcript)
     _stream_reply_sig = pyqtSignal(str)             # (streamed assistant transcript)
+    _jarvis_window_sig = pyqtSignal(str)            # ("minimize" | "maximize" | "restore")
+    _slide_alert_sig = pyqtSignal(str, str)         # (title, message)
+    _reminders_sig   = pyqtSignal(str)              # (scope)
+    _memory_actions_sig = pyqtSignal(str)          # (tab: "memory" | "actions")
+    _screen_glow_sig = pyqtSignal(int)              # (duration_ms)
 
     def __init__(self, face_path: str):
         super().__init__()
@@ -6915,6 +8689,17 @@ class MainWindow(QMainWindow):
         self._review_sig.connect(self._show_review)
         self._stream_user_sig.connect(self._on_stream_user)
         self._stream_reply_sig.connect(self._on_stream_reply)
+        self._jarvis_window_sig.connect(self._on_jarvis_window_control)
+        self._slide_alert_sig.connect(self._show_slide_alert)
+        self._reminders_sig.connect(self._show_reminders)
+        self._memory_actions_sig.connect(self._show_memory_actions)
+        self._screen_glow_sig.connect(self._on_screen_glow)
+        self._screen_glow_overlay = ScreenGlowOverlay(self)
+        self._search_dock_minimized_to_bar = False
+        self._reminders_dock_minimized_to_bar = False
+        self._slide_alert = None
+        self._reminders_dock = None
+        self._memory_actions_dock = None
         self._displays: dict[int, JarvisDisplayWindow] = {}
         self._display_counter: int = 0
         self._reserved_display_ids: set[int] = set()
@@ -7149,7 +8934,21 @@ class MainWindow(QMainWindow):
         self._minimized_display_ids.add(d_id)
         self._update_dots_overlay()
 
-    def _on_restore_display(self, d_id: int):
+    def _on_restore_display(self, d_id):
+        if d_id == "search":
+            self._search_dock_minimized_to_bar = False
+            self._update_dots_overlay()
+            if hasattr(self, "left_search_dock") and self.left_search_dock:
+                self.left_search_dock.restore_from_dock()
+            return
+
+        if d_id == "reminders":
+            self._reminders_dock_minimized_to_bar = False
+            self._update_dots_overlay()
+            if hasattr(self, "_reminders_dock") and self._reminders_dock:
+                self._reminders_dock.restore_from_dock()
+            return
+
         self._minimized_display_ids.discard(d_id)
         win = self._displays.get(d_id)
         if win:
@@ -7175,7 +8974,19 @@ class MainWindow(QMainWindow):
             title = win.title_text if win else f"Display {did}"
             c_type = win.content_type if win else "image"
             items.append((did, title, c_type))
+
+        if getattr(self, "_search_dock_minimized_to_bar", False):
+            s_title = self._content_title_lbl.text() if hasattr(self, "_content_title_lbl") else "Search Intel"
+            items.append(("search", s_title, "search"))
+
+        if getattr(self, "_reminders_dock_minimized_to_bar", False):
+            items.append(("reminders", "Reminders Matrix", "reminders"))
+
         self._dots_overlay.update_displays(items)
+
+    def _on_screen_glow(self, duration_ms: int = 2500):
+        if hasattr(self, "_screen_glow_overlay"):
+            self._screen_glow_overlay.trigger_glow(duration_ms)
 
     def _update_dots_overlay_position(self):
         if hasattr(self, "_dots_overlay") and self._dots_overlay.isVisible():
@@ -7391,6 +9202,14 @@ class MainWindow(QMainWindow):
         self._hud_chat_btn = _btn("CHAT", "Toggle Bottom Chat Log Dock")
         self._hud_chat_btn.clicked.connect(self.toggle_chat_dock)
         lay.addWidget(self._hud_chat_btn)
+
+        self._hud_rem_btn = _btn("REMIND", "Open Reminders Management Matrix")
+        self._hud_rem_btn.clicked.connect(lambda: self._show_reminders("upcoming"))
+        lay.addWidget(self._hud_rem_btn)
+
+        self._hud_mem_btn = _btn("MEM/ACT", "Open Memory & Actions Platform")
+        self._hud_mem_btn.clicked.connect(lambda: self._show_memory_actions("memory"))
+        lay.addWidget(self._hud_mem_btn)
 
         self._hud_mini_btn = _btn("MINI", "Minimize Arc Reactor to bottom-left (Favicon size)")
         self._hud_mini_btn.clicked.connect(self.toggle_minimize_top)
@@ -8932,6 +10751,21 @@ class MainWindow(QMainWindow):
         self._content_ts_lbl.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
         hdr.addWidget(self._content_ts_lbl)
 
+        self._content_min_btn = QPushButton("MIN  —")
+        self._content_min_btn.setFont(QFont("Courier New", 7))
+        self._content_min_btn.setFixedHeight(18)
+        self._content_min_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._content_min_btn.setToolTip("Minimize search display")
+        self._content_min_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: rgba(255, 23, 68, 0.12); color: {C.TEXT_DIM};
+                border: 1px solid rgba(255, 23, 68, 0.35); border-radius: 2px; padding: 0 5px;
+            }}
+            QPushButton:hover {{ color: #ffffff; background: rgba(255, 23, 68, 0.35); border-color: {C.PRI}; }}
+        """)
+        self._content_min_btn.clicked.connect(self._toggle_search_dock_minimize)
+        hdr.addWidget(self._content_min_btn)
+
         dismiss = QPushButton("DISMISS  ✕")
         dismiss.setFont(QFont("Courier New", 7))
         dismiss.setFixedHeight(18)
@@ -8950,6 +10784,7 @@ class MainWindow(QMainWindow):
         # ── separator ─────────────────────────────────────────────────────────
         sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
         sep.setStyleSheet(f"color: {C.BORDER};"); lay.addWidget(sep)
+        self._content_sep = sep
 
         # ── text display ──────────────────────────────────────────────────────
         self._content_display = QTextEdit()
@@ -8983,18 +10818,53 @@ class MainWindow(QMainWindow):
         return w
 
     def _show_content(self, title: str, text: str):
-        """Slot — runs on Qt main thread. Updates and shows the content panel."""
+        """Slot — runs on Qt main thread. Updates and shows the content panel with visual HTML interpretation."""
         import time as _time
         self.hud.glance(0.0, -0.85, hold=1.3)
         self._content_title_lbl.setText(title.upper()[:48])
         self._content_ts_lbl.setText(_time.strftime("%I:%M:%S %p"))
-        self._content_display.setPlainText(text)
+        visual_html = format_visual_content_html(text)
+        self._content_display.setHtml(visual_html)
         self._content_display.moveCursor(
             self._content_display.textCursor().MoveOperation.Start
         )
         self._content_panel.show()
         if hasattr(self, "left_search_dock"):
             self.left_search_dock.popup(title, _time.strftime("%I:%M:%S %p"))
+
+    def _toggle_search_dock_minimize(self):
+        if hasattr(self, "left_search_dock") and self.left_search_dock:
+            self.left_search_dock.toggle_minimize()
+
+    def _on_jarvis_window_control(self, action: str):
+        action = (action or "").lower().strip()
+        if action == "minimize":
+            if not getattr(self, "_is_minimized_top", False):
+                self.toggle_minimize_top()
+            else:
+                self.showMinimized()
+        elif action in ("maximize", "restore"):
+            if getattr(self, "_is_minimized_top", False):
+                self.toggle_minimize_top()
+            if self.isMinimized():
+                self.showNormal()
+            self.raise_()
+            self.activateWindow()
+
+    def _show_slide_alert(self, title: str, message: str):
+        if getattr(self, "_slide_alert", None) is None:
+            self._slide_alert = SlideDownAlert(self)
+        self._slide_alert.popup_alert(title, message)
+
+    def _show_reminders(self, scope: str = "upcoming"):
+        if getattr(self, "_reminders_dock", None) is None:
+            self._reminders_dock = RemindersDisplayWindow(self)
+        self._reminders_dock.popup(scope)
+
+    def _show_memory_actions(self, tab: str = "memory"):
+        if getattr(self, "_memory_actions_dock", None) is None:
+            self._memory_actions_dock = MemoryActionsDisplayWindow(self)
+        self._memory_actions_dock.popup(tab)
 
     # ── the coding agent, live ───────────────────────────────────────────────
     # The panel under the head shows a folder job while it runs: what was asked,
@@ -10756,3 +12626,68 @@ class JarvisUI:
             return res
         except (RuntimeError, AttributeError):
             return []
+
+    def show_screen_glow(self, duration_ms: int = 2500):
+        """Thread-safe: Trigger red glowing screen edge overlay indicating screen observation."""
+        try:
+            if self._is_alive():
+                self._win._screen_glow_sig.emit(int(duration_ms))
+        except (RuntimeError, AttributeError):
+            pass
+
+    def show_memory_actions_display(self, tab: str = "memory"):
+        """Thread-safe: Open the dedicated Memory and Actions management platform."""
+        try:
+            if self._is_alive():
+                self._win._memory_actions_sig.emit(str(tab))
+        except (RuntimeError, AttributeError):
+            pass
+
+    def show_slide_alert(self, message: str, title: str = "SYSTEM ALERT"):
+        """Thread-safe: Trigger sliding down HUD system alert."""
+        try:
+            if self._is_alive():
+                self._win._slide_alert_sig.emit(str(title), str(message))
+        except (RuntimeError, AttributeError):
+            pass
+
+    def show_reminders(self, scope: str = "upcoming"):
+        """Thread-safe: Show or update reminders dock."""
+        try:
+            if self._is_alive():
+                self._win._reminders_sig.emit(str(scope))
+        except (RuntimeError, AttributeError):
+            pass
+
+    def toggle_search_dock_minimize(self):
+        """Thread-safe: Toggle minimizing / restoring the search dock."""
+        try:
+            if self._is_alive():
+                self._win._search_dock_min_sig.emit()
+        except (RuntimeError, AttributeError):
+            pass
+
+    def jarvis_window_control(self, action: str):
+        """Thread-safe: Control JARVIS main window (minimize/maximize/restore)."""
+        try:
+            if self._is_alive():
+                self._win._jarvis_window_ctrl_sig.emit(str(action))
+        except (RuntimeError, AttributeError):
+            pass
+
+    def minimize_jarvis(self):
+        """Thread-safe: Minimize JARVIS."""
+        self.jarvis_window_control("minimize")
+
+    def maximize_jarvis(self):
+        """Thread-safe: Maximize / restore JARVIS."""
+        self.jarvis_window_control("maximize")
+
+    def is_jarvis_minimized(self) -> bool:
+        """Query if JARVIS is currently minimized."""
+        try:
+            if not self._is_alive():
+                return False
+            return bool(getattr(self._win, "_is_minimized_top", False) or self._win.isMinimized())
+        except (RuntimeError, AttributeError):
+            return False

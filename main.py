@@ -639,6 +639,9 @@ class JarvisLive:
         self.ui.on_interrupt      = self.interrupt
         self.ui.on_voice_change   = self._on_voice_change     # voice picker → rebuild session
         self.ui.on_audio_device_change = self._on_audio_device_change
+        if hasattr(self.ui, "show_screen_glow"):
+            from actions import screen_processor
+            screen_processor.set_screen_glow_callback(lambda dur=2500: self.ui.show_screen_glow(dur))
         self._reconnect_event: asyncio.Event | None = None
         self._reconnect_keep = True   # False → next rebuild drops the resumption handle
 
@@ -1402,7 +1405,8 @@ class JarvisLive:
         name = fc.name
         args = dict(fc.args or {})
 
-        print(f"[JARVIS] 🔧 {name}  {args}")
+        _ts_now = time.strftime("%I:%M:%S %p")
+        print(f"[{_ts_now}] [JARVIS] 🔧 {name}  {args}")
         _t_tool = time.monotonic()
         self.ui.set_state("THINKING")
 
@@ -1461,6 +1465,8 @@ class JarvisLive:
                         print(f"[Vision] 📷 Camera: {len(img_b):,} bytes")
                         _stall = "camera"
                     else:
+                        if self.ui and hasattr(self.ui, "show_screen_glow"):
+                            self.ui.show_screen_glow(2500)
                         img_b, mime_t = await loop.run_in_executor(None, _capture_screen)
                         print(f"[Vision] 🖥️  Screen: {len(img_b):,} bytes")
                         _stall = "screen"
@@ -1596,7 +1602,8 @@ class JarvisLive:
         # How long the tool itself took. A long silence after a tool call is
         # either this number or the model's own time before and after it — and
         # without it the two look identical from the outside.
-        print(f"[JARVIS] 📤 {name} ({(time.monotonic() - _t_tool) * 1000:.0f} ms) "
+        _ts_done = time.strftime("%I:%M:%S %p")
+        print(f"[{_ts_done}] [JARVIS] 📤 {name} ({(time.monotonic() - _t_tool) * 1000:.0f} ms) "
               f"→ {str(result)[:80]}")
 
         # A tool that declared itself NON_BLOCKING also says when its answer may
@@ -2218,20 +2225,43 @@ class JarvisLive:
         while True:
             await asyncio.sleep(10)
             alert = await asyncio.to_thread(self._sys_monitor.check)
-            if not alert or not self.session or not self._awake:
+            if not alert:
                 continue
-            # Don't interrupt an active conversation
+
+            clean_alert = alert.replace("[SYSTEM_ALERT]", "").strip()
+
+            # 1. Slide-down pop message from top center (glowing red background, black text)
+            if hasattr(self.ui, "show_slide_alert"):
+                self.ui.show_slide_alert(clean_alert, title="SYSTEM ALERT")
+
+            # 2. If JARVIS is minimized and muted, unmute himself
+            is_min = getattr(self.ui, "is_jarvis_minimized", lambda: False)()
+            is_mut = getattr(self.ui, "muted", False)
+            if is_min and is_mut:
+                self.ui.muted = False
+                self.ui.write_log("SYS: JARVIS unmuted automatically for system alert.")
+
+            # 3. Tell about the system alert
             with self._speaking_lock:
                 speaking = self._is_speaking
-            if speaking or (time.monotonic() - self._last_user_speech) < 10:
-                continue
-            try:
-                await self.session.send_client_content(
-                    turns={"role": "user", "parts": [{"text": alert}]},
-                    turn_complete=True,
-                )
-            except Exception as e:
-                print(f"[Monitor] ⚠️ Could not send alert: {e}")
+            if not speaking and (time.monotonic() - self._last_user_speech) >= 5:
+                self._awake = True
+                try:
+                    if self.session:
+                        msg = (
+                            f"{alert}\n\n"
+                            "Inform the user immediately and clearly about this system alert in English. "
+                            "One brief sentence only."
+                        )
+                        await self.session.send_client_content(
+                            turns={"role": "user", "parts": [{"text": msg}]},
+                            turn_complete=True,
+                        )
+                    else:
+                        self.speak(f"System alert: {clean_alert}")
+                except Exception as e:
+                    _ts = time.strftime("%I:%M:%S %p")
+                    print(f"[{_ts}] [Monitor] ⚠️ Could not send alert: {e}")
 
     # ── Background monitor ──────────────────────────────────────────────────────
 

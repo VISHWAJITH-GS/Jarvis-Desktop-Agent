@@ -100,6 +100,8 @@ def _has_error(output: str) -> bool:
 def _take_screenshot() -> Path | None:
     try:
         import pyautogui
+        from actions.screen_processor import trigger_screen_glow
+        trigger_screen_glow(2500)
         screenshot_path = Path.home() / "Desktop" / f"jarvis_debug_{int(time.time())}.png"
         screenshot = pyautogui.screenshot()
         screenshot.save(str(screenshot_path))

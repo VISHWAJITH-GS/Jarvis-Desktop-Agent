@@ -58,14 +58,21 @@ def _paste_text(text: str) -> None:
         pyautogui.write(text, interval=0.03)
 
 
-def _clear_and_paste(text: str) -> None:
+def _empty_search_bar() -> None:
+    """Explicitly empty the active search bar completely before typing any contact/query."""
     _require_pyautogui()
     os_name = _get_os()
     select_all = ("command", "a") if os_name == "mac" else ("ctrl", "a")
     pyautogui.hotkey(*select_all)
-    time.sleep(0.1)
+    time.sleep(0.08)
+    pyautogui.press("backspace")
+    time.sleep(0.05)
     pyautogui.press("delete")
-    time.sleep(0.1)
+    time.sleep(0.12)
+
+
+def _clear_and_paste(text: str) -> None:
+    _empty_search_bar()
     _paste_text(text)
 
 def _open_app(app_name: str) -> bool:
@@ -134,9 +141,12 @@ def _search_in_app(query: str) -> None:
     os_name = _get_os()
     search_hotkey = ("command", "f") if os_name == "mac" else ("ctrl", "f")
 
+    # Focus search bar
     pyautogui.hotkey(*search_hotkey)
-    time.sleep(0.5)
-    _clear_and_paste(query)
+    time.sleep(0.4)
+    # Explicitly empty search bar before typing contact name
+    _empty_search_bar()
+    _paste_text(query)
     time.sleep(1.0)
 
 def _desktop_send(app_name: str, receiver: str, message: str) -> str:

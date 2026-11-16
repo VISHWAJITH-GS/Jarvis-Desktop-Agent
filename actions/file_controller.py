@@ -475,41 +475,257 @@ def write_file(path: str, name: str = "", content: str = "",
         return f"Could not write file: {e}"
 
 
+SKIP_SEARCH_DIRS = {
+    "node_modules", ".git", ".svn", ".hg", "appdata", "__pycache__",
+    "$recycle.bin", "system volume information", "venv", ".venv", "env",
+    ".cache", "temp", "tmp", "windows", "program files", "program files (x86)",
+    ".gemini", ".idea", ".vscode", "dist", "build", ".next", ".nuget"
+}
+
+
+def _clean_tokens(s: str) -> list[str]:
+    """Split string into lowercase alphanumeric tokens."""
+    import re
+    cleaned = re.sub(r'[\W_]+', ' ', (s or '').lower()).strip()
+    return [t for t in cleaned.split() if t]
+
+
+def _score_file_match(filename: str, query: str, query_ext: str = "") -> tuple[float, bool]:
+    """
+    Score filename against query.
+    Returns (score: float, is_exact: bool).
+    score is between 0.0 and 1.0.
+    """
+    import difflib
+    import re
+
+    f_lower = filename.lower()
+    q_lower = (query or "").lower().strip()
+    if not q_lower:
+        return 0.0, False
+
+    # 1. Exact literal substring match
+    if q_lower in f_lower:
+        return 1.0, True
+
+    # 2. Clean alphanumeric match (ignoring symbols and underscores)
+    f_clean = re.sub(r'[\W_]+', ' ', f_lower).strip()
+    q_clean = re.sub(r'[\W_]+', ' ', q_lower).strip()
+    if q_clean and (q_clean in f_clean or f_clean in q_clean):
+        return 0.95, True
+
+    stem = Path(filename).stem.lower()
+    stem_clean = re.sub(r'[\W_]+', ' ', stem).strip()
+    ext = Path(filename).suffix.lower()
+
+    q_tokens = _clean_tokens(query)
+    stem_tokens = set(_clean_tokens(stem))
+
+    if not q_tokens:
+        return 0.0, False
+
+    # Filter trivial stop words unless query consists only of stop words
+    stop_words = {"and", "the", "in", "of", "to", "a", "an", "for", "with", "or"}
+    significant_q = [t for t in q_tokens if t not in stop_words] or q_tokens
+
+    # Extension correlation (e.g. user said "Cat 1 text" or extension=".txt")
+    ext_matched = False
+    if query_ext and ext == query_ext.lower():
+        ext_matched = True
+    elif "text" in q_tokens and ext in (".txt", ".md", ".log", ".rtf"):
+        ext_matched = True
+    elif "doc" in q_tokens and ext in (".docx", ".doc", ".pdf", ".odt"):
+        ext_matched = True
+    elif "pdf" in q_tokens and ext == ".pdf":
+        ext_matched = True
+
+    # Token overlap calculation
+    overlap = [t for t in significant_q if t in stem_tokens or any(t in st for st in stem_tokens)]
+    overlap_ratio = len(overlap) / max(len(significant_q), 1)
+
+    # Sequence similarity ratio
+    seq_ratio = difflib.SequenceMatcher(None, q_clean, stem_clean).ratio()
+
+    # Composite similarity score
+    composite = (overlap_ratio * 0.60) + (seq_ratio * 0.40)
+    if ext_matched:
+        composite = min(1.0, composite + 0.15)
+
+    # High-confidence multi-token match
+    if len(overlap) == len(significant_q) and len(significant_q) >= 2:
+        return max(0.85, composite), False
+
+    return composite, False
+
+
 def find_files(name: str = "", extension: str = "",
                path: str = "home", max_results: int = 20) -> str:
+    """
+    Search for files with multi-tier fallback, fast directory pruning, and fuzzy matching.
+    If exact file name is not found in the initial location, searches common user locations
+    and returns similar files ranked by similarity.
+    """
+    import os
+    import time
+
     try:
-        search_path = _resolve_path(path)
-        if not _is_safe_path(search_path):
-            return f"Access denied: {search_path}"
-        if not search_path.exists():
-            return f"Search path not found: {path}"
+        max_results = min(max(1, int(max_results)), 50)
+        norm_path = (path or "").lower().strip()
+        is_global = norm_path in ("global", "all", "computer", "system", "everywhere", "anywhere", "root")
 
-        results    = []
-        dir_count  = 0
-        max_dirs   = 500  # performance + safety limit
+        # Determine roots to scan
+        search_roots: list[Path] = []
+        if is_global:
+            # Global search: prioritize common user folders, then root drives
+            candidate_roots = [
+                _get_desktop(),
+                _get_documents(),
+                _get_downloads(),
+                _get_pictures(),
+                _get_videos(),
+                _get_music(),
+                Path.cwd(),
+                Path.home(),
+            ]
+            if _OS == "Windows":
+                for _d in string.ascii_uppercase:
+                    _dp = Path(f"{_d}:\\")
+                    if _dp.exists() and _dp not in candidate_roots:
+                        candidate_roots.append(_dp)
+            for r in candidate_roots:
+                if r.exists() and _is_safe_path(r) and r not in search_roots:
+                    search_roots.append(r)
+        else:
+            primary_path = _resolve_path(path)
+            if not _is_safe_path(primary_path):
+                return f"Access denied: {primary_path}"
+            if not primary_path.exists():
+                return f"Search path not found: {path}"
+            search_roots.append(primary_path)
 
-        for item in search_path.rglob("*"):
-            if item.is_dir():
+        def _scan_directory(root: Path, max_dirs: int = 1500, time_limit_sec: float = 4.0):
+            exact_hits = []
+            similar_hits = []
+            dir_count = 0
+            start_time = time.monotonic()
+
+            for dirpath, dirnames, filenames in os.walk(str(root), topdown=True):
+                # Prune heavy/unnecessary system and cache directories in-place
+                dirnames[:] = [
+                    d for d in dirnames
+                    if d.lower() not in SKIP_SEARCH_DIRS and not d.startswith('.')
+                ]
                 dir_count += 1
-                if dir_count > max_dirs:
+                if dir_count > max_dirs or (time.monotonic() - start_time) > time_limit_sec:
                     break
-                continue
-            if not item.is_file():
-                continue
-            if extension and item.suffix.lower() != extension.lower():
-                continue
-            if name and name.lower() not in item.name.lower():
-                continue
-            size = _format_size(item.stat().st_size)
-            results.append(f"📄 {item.name} ({size}) — {item.parent}")
-            if len(results) >= max_results:
+
+                for fname in filenames:
+                    if fname.startswith('.'):
+                        continue
+                    item_path = Path(dirpath) / fname
+                    item_ext = item_path.suffix.lower()
+
+                    if extension and item_ext != extension.lower():
+                        continue
+
+                    if not name:
+                        # Extension or general listing search
+                        try:
+                            size = _format_size(item_path.stat().st_size)
+                        except Exception:
+                            size = "unknown"
+                        exact_hits.append((1.0, f"📄 {fname} ({size}) — {dirpath}"))
+                        if len(exact_hits) >= max_results:
+                            return exact_hits, similar_hits
+                        continue
+
+                    score, is_exact = _score_file_match(fname, name, extension)
+                    if is_exact:
+                        try:
+                            size = _format_size(item_path.stat().st_size)
+                        except Exception:
+                            size = "unknown"
+                        exact_hits.append((1.0, f"📄 {fname} ({size}) — {dirpath}"))
+                        if len(exact_hits) >= max_results:
+                            return exact_hits, similar_hits
+                    elif score >= 0.38:
+                        try:
+                            size = _format_size(item_path.stat().st_size)
+                        except Exception:
+                            size = "unknown"
+                        pct = int(score * 100)
+                        similar_hits.append((score, f"📄 {fname} ({size}, ~match: {pct}%) — {dirpath}"))
+
+            return exact_hits, similar_hits
+
+        all_exact = []
+        all_similar = []
+        scanned_roots = []
+
+        for r in search_roots:
+            scanned_roots.append(r.name or str(r))
+            ex, sim = _scan_directory(r)
+            all_exact.extend(ex)
+            all_similar.extend(sim)
+            if len(all_exact) >= max_results:
                 break
 
-        if not results:
-            query = name or extension or "files"
-            return f"No {query} found in {search_path.name}/"
+        # Fallback expansion: if specific local path had 0 exact matches and 0 similar matches,
+        # broaden automatically to common user folders
+        if not is_global and not all_exact and not all_similar:
+            expanded_roots = [
+                _get_desktop(),
+                _get_documents(),
+                _get_downloads(),
+                Path.cwd(),
+                Path.home(),
+            ]
+            for exp_r in expanded_roots:
+                if exp_r not in search_roots and exp_r.exists() and _is_safe_path(exp_r):
+                    scanned_roots.append(exp_r.name or str(exp_r))
+                    ex, sim = _scan_directory(exp_r, max_dirs=800, time_limit_sec=2.5)
+                    all_exact.extend(ex)
+                    all_similar.extend(sim)
+                    if len(all_exact) >= max_results:
+                        break
 
-        return f"Found {len(results)} file(s):\n" + "\n".join(results)
+        # If exact matches found:
+        if all_exact:
+            # Deduplicate by line
+            seen = set()
+            dedup_exact = []
+            for _, line in all_exact:
+                if line not in seen:
+                    seen.add(line)
+                    dedup_exact.append(line)
+                    if len(dedup_exact) >= max_results:
+                        break
+            return f"Found {len(dedup_exact)} file(s):\n" + "\n".join(dedup_exact)
+
+        # If no exact match, but similar files found:
+        if all_similar:
+            all_similar.sort(key=lambda x: x[0], reverse=True)
+            seen = set()
+            dedup_sim = []
+            for _, line in all_similar:
+                if line not in seen:
+                    seen.add(line)
+                    dedup_sim.append(line)
+                    if len(dedup_sim) >= max_results:
+                        break
+            query_str = f"'{name}'" if name else "your query"
+            return (
+                f"Exact match for {query_str} was not found, but found {len(dedup_sim)} similar file(s):\n"
+                + "\n".join(dedup_sim)
+            )
+
+        # Neither exact nor similar found
+        query = name or extension or "files"
+        searched_desc = ", ".join(scanned_roots[:4])
+        return (
+            f"No exact or similar files matching '{query}' were found in {searched_desc}. "
+            f"Would you like me to search globally across the entire system or try a different keyword?"
+        )
 
     except Exception as e:
         return f"Search error: {e}"
@@ -756,7 +972,7 @@ def file_controller(
 # ── Tool declaration (auto-discovered by core/action_loader.py) ──────────────
 TOOL = {
     "name": "file_controller",
-    "description": "Manages files and folders: list, create, delete, move, copy, rename, read, write, find, disk usage.",
+    "description": "Manages files and folders: list, create, delete, move, copy, rename, read, write, find (with fuzzy & similar matching across system or global paths), disk usage.",
     "parameters": {
         "type": "OBJECT",
         "properties": {
@@ -766,7 +982,7 @@ TOOL = {
             },
             "path": {
                 "type": "STRING",
-                "description": "File/folder path or shortcut: desktop, downloads, documents, home"
+                "description": "File/folder path or shortcut: desktop, downloads, documents, home, global/all for entire computer"
             },
             "destination": {
                 "type": "STRING",

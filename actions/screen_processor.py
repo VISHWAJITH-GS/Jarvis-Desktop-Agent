@@ -89,10 +89,31 @@ def _compress(img_bytes: bytes, source_format: str = "PNG") -> tuple[bytes, str]
         return img_bytes, f"image/{source_format.lower()}"
 
 
+_glow_notifier = None
+
+
+def set_screen_glow_callback(fn) -> None:
+    """Register a callable(duration_ms) that displays a red glowing border around the screen edge."""
+    global _glow_notifier
+    _glow_notifier = fn
+
+
+def trigger_screen_glow(duration_ms: int = 2500) -> None:
+    """Trigger red glowing border along screen edges indicating JARVIS is seeing the display."""
+    if _glow_notifier:
+        try:
+            _glow_notifier(duration_ms)
+        except Exception as e:
+            print(f"[Vision] ⚠️ Screen glow notify error: {e}")
+
+
 def _capture_screen() -> tuple[bytes, str]:
 
     if not _MSS:
         raise RuntimeError("mss is not installed. Run: pip install mss")
+
+    # Notify UI that screen is being observed / captured
+    trigger_screen_glow(2500)
 
     with mss.mss() as sct:
         monitors = sct.monitors          # [0] = all combined, [1..n] = real screens
