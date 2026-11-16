@@ -186,6 +186,26 @@ class TestRemindersAlertsWindowControls(unittest.TestCase):
             self.assertIn("[ComputerControl] test message", printed_str)
             self.assertTrue(printed_str.startswith("["))
 
+    def test_08_remind_and_mem_act_in_expanded_drawer(self):
+        """Remind and Mem/Act buttons removed from collapse bar, present in expanded drawer."""
+        # 1. Collapsed bar buttons: MIC, EXPAND, CHAT, MINI, CLOSE
+        btn_texts = [
+            self.win.hud_ctrl_bar.layout().itemAt(i).widget().text()
+            for i in range(self.win.hud_ctrl_bar.layout().count())
+            if self.win.hud_ctrl_bar.layout().itemAt(i).widget()
+        ]
+        self.assertNotIn("REMIND", btn_texts)
+        self.assertNotIn("MEM/ACT", btn_texts)
+        self.assertIn("MIC", btn_texts)
+        self.assertIn("EXPAND", btn_texts)
+        self.assertIn("CHAT", btn_texts)
+
+        # 2. Expanded drawer has the buttons in header
+        self.assertTrue(hasattr(self.win, "_drawer_rem_btn"))
+        self.assertTrue(hasattr(self.win, "_drawer_mem_btn"))
+        self.assertEqual(self.win._drawer_rem_btn.text(), "REMIND")
+        self.assertEqual(self.win._drawer_mem_btn.text(), "MEM/ACT")
+
 
 if __name__ == "__main__":
     unittest.main()

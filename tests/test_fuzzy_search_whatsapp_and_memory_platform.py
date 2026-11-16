@@ -168,6 +168,25 @@ class TestMemoryAndActionsPlatform(unittest.TestCase):
         self.assertIsNotNone(self.win._memory_actions_dock)
         self.assertTrue(self.win._memory_actions_dock.isVisible())
 
+    def test_memory_actions_minimizes_to_left_dock(self):
+        self.player.show_memory_actions_display(tab="memory")
+        QApplication.processEvents()
+        mem_win = self.win._memory_actions_dock
+
+        # Minimize to left dock
+        mem_win.minimize_to_dock()
+        QApplication.processEvents()
+        self.assertFalse(mem_win.isVisible())
+        self.assertTrue(self.win._memory_actions_dock_minimized_to_bar)
+        self.assertIn("memory_actions", self.win._dots_overlay._buttons)
+        self.assertEqual(self.win._dots_overlay._buttons["memory_actions"].text(), "💾")
+
+        # Restore from left dock
+        self.win._on_restore_display("memory_actions")
+        QApplication.processEvents()
+        self.assertTrue(mem_win.isVisible())
+        self.assertFalse(self.win._memory_actions_dock_minimized_to_bar)
+
 
 if __name__ == "__main__":
     unittest.main()

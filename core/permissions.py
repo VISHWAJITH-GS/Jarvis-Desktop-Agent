@@ -761,7 +761,7 @@ def get_action_permission(action_name: str, parameters: dict | None = None) -> s
         return DESTRUCTIVE
     if risk == ActionRiskLevel.CONFIRMATION_REQUIRED:
         return SENSITIVE
-    return NORMAL
+    return ACTION_PERMISSIONS.get(str(action_name or "").lower().strip(), NORMAL)
 
 
 def requires_confirmation(action_name: str, parameters: dict | None = None, from_untrusted: bool | None = None) -> bool:

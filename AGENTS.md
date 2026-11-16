@@ -88,7 +88,7 @@ a small built-in fallback — instead of crashing.
   connect it to a slot in `__init__`, and add a thin public method on
   `JarvisUI` that only emits the signal. `show_content` / `_content_sig` /
   `_show_content` is the pattern to copy.
-- Colours come from the `C` palette class; fonts are `QFont("Courier New", size)`.
+- Colours come from the `C` palette class; fonts are `QFont("Montserrat", size)`.
 
 ## General
 

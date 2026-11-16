@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>JARVIS</title>
+  <link rel="stylesheet" href="https://cdn-uicons.flaticon.com/2.6.0/uicons-regular-rounded/css/uicons-regular-rounded.css">
+  <link rel="stylesheet" href="https://cdn-uicons.flaticon.com/2.6.0/uicons-solid-straight/css/uicons-solid-straight.css">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -65,7 +67,7 @@
       color: var(--text);
       font-size: 30px;
       font-weight: 700;
-      font-family: 'Courier New', monospace;
+      font-family: 'Montserrat', 'Courier New', monospace;
       text-align: center;
       letter-spacing: 10px;
       text-transform: uppercase;
@@ -121,7 +123,7 @@
       background: rgba(255,255,255,0.07);
       padding: 1px 4px;
       border-radius: 3px;
-      font-family: 'Courier New', monospace;
+      font-family: 'Montserrat', 'Courier New', monospace;
       font-size: 9px;
     }
     #reconnecting {
@@ -146,7 +148,7 @@
     <div class="err" id="err"></div>
     <button class="btn" onclick="doLogin()">CONNECT</button>
     <p class="voice-note">
-      🎤 <strong style="color:var(--text)">Voice commands:</strong> open
+      <i class="fi fi-ss-circle-microphone" style="margin-right:2px;"></i> <strong style="color:var(--text)">Voice commands:</strong> open
       <code>chrome://flags</code> on your phone, search
       <code>Insecure origins treated as secure</code>, add your JARVIS URL, tap Relaunch.
     </p>
