@@ -91,6 +91,7 @@ ACTION_PERMISSIONS: dict[str, str] = {
     "notification_center": NORMAL,
     "skill_learner": NORMAL,
     "browser_qa": NORMAL,
+    "browser_profile": NORMAL,
 
     # Sensitive tools (Require confirmation by default unless sub-action is immediate)
     "computer_control": SENSITIVE,
@@ -311,6 +312,7 @@ class ActionPermissionManager:
                            "minimize_jarvis", "maximize_jarvis", "restore_jarvis",
                            "show_memory", "manage_memory", "memory_platform",
                            "show_actions", "manage_actions", "action_registry",
+                           "toggle_ducking", "enable_ducking", "disable_ducking",
                            "brightness_up", "brightness_down", "set_brightness", "brightness",
                            "lock_screen", "lock_laptop", "lock"):
                 return ActionRiskLevel.IMMEDIATE
@@ -761,7 +763,7 @@ def get_action_permission(action_name: str, parameters: dict | None = None) -> s
         return DESTRUCTIVE
     if risk == ActionRiskLevel.CONFIRMATION_REQUIRED:
         return SENSITIVE
-    return ACTION_PERMISSIONS.get(str(action_name or "").lower().strip(), NORMAL)
+    return ACTION_PERMISSIONS.get(str(action_name or "").lower().strip(), SENSITIVE)
 
 
 def requires_confirmation(action_name: str, parameters: dict | None = None, from_untrusted: bool | None = None) -> bool:

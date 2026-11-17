@@ -298,25 +298,44 @@ def _install_dependencies(dependencies: list[str], project_dir: Path) -> str:
         return f"Install error (non-fatal): {e}"
 
 def _open_vscode(project_dir: Path) -> bool:
+    import shutil
     vscode_candidates = [
         "code",
         rf"C:\Users\{Path.home().name}\AppData\Local\Programs\Microsoft VS Code\bin\code.cmd",
         r"C:\Program Files\Microsoft VS Code\bin\code.cmd",
+        rf"C:\Users\{Path.home().name}\AppData\Local\Programs\Microsoft VS Code\Code.exe",
+        r"C:\Program Files\Microsoft VS Code\Code.exe",
     ]
-    for cmd in vscode_candidates:
-        try:
-            subprocess.Popen(
-                [cmd, str(project_dir)],
-                shell=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
-            )
-            time.sleep(1.5)
-            print(f"[DevAgent] 💻 VSCode opened: {project_dir}")
-            return True
-        except Exception:
-            continue
-    return False
+    resolved_cmd = None
+    for cand in vscode_candidates:
+        which_res = shutil.which(cand)
+        if which_res:
+            resolved_cmd = which_res
+            break
+
+    if not resolved_cmd:
+        print("[DevAgent] ⚠️ VS Code executable not found via shutil.which.")
+        return False
+
+    try:
+        proc = subprocess.Popen(
+            [resolved_cmd, str(project_dir)],
+            shell=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        time.sleep(1.0)
+        ret = proc.poll()
+        if ret is not None and ret != 0:
+            err = proc.stderr.read().decode("utf-8", errors="replace") if proc.stderr else ""
+            print(f"[DevAgent] ⚠️ VS Code exited prematurely with code {ret}: {err}")
+            return False
+
+        print(f"[DevAgent] 💻 VSCode opened: {project_dir}")
+        return True
+    except Exception as e:
+        print(f"[DevAgent] ⚠️ Failed to launch VS Code: {e}")
+        return False
 
 def _run_project(run_command: str, project_dir: Path, timeout: int = 30) -> str:
     print(f"[DevAgent] 🚀 Running: {run_command}")

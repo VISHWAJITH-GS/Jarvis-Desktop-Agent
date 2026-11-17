@@ -167,9 +167,7 @@
           body: JSON.stringify({ device_token: devTok }),
         });
         const d = await r.json();
-        if (d.ok && d.token) {
-          sessionStorage.setItem('jarvis_key', d.key);
-          sessionStorage.setItem('jarvis_token', d.token);
+        if (d.ok) {
           location.replace('/');
           return;
         }
@@ -203,9 +201,7 @@
         document.getElementById('err').textContent = 'Connection error';
         shake(); return;
       }
-      if (data.ok && data.token) {
-        sessionStorage.setItem('jarvis_key', key);
-        sessionStorage.setItem('jarvis_token', data.token);
+      if (data.ok) {
         location.href = '/';
       } else {
         inp.value = '';

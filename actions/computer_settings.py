@@ -703,7 +703,23 @@ def shutdown_computer():
     else:
         subprocess.run(["systemctl", "poweroff"], capture_output=True)
 
+def toggle_ducking(action_name: str = "toggle_ducking"):
+    from memory.config_manager import get_ducking_enabled, save_ducking_enabled
+    if "enable" in action_name or "on" in action_name:
+        new_val = True
+    elif "disable" in action_name or "off" in action_name:
+        new_val = False
+    else:
+        new_val = not get_ducking_enabled()
+    save_ducking_enabled(new_val)
+    status = "enabled" if new_val else "disabled"
+    return f"Audio ducking is now {status}."
+
+
 ACTION_MAP: dict[str, callable] = {
+    "toggle_ducking":      toggle_ducking,
+    "enable_ducking":      lambda: toggle_ducking("enable_ducking"),
+    "disable_ducking":     lambda: toggle_ducking("disable_ducking"),
     "volume_up":           volume_up,
     "volume_down":         volume_down,
     "mute":                volume_mute,
@@ -820,6 +836,9 @@ _ALIASES = {
     "dark_mode":       ("night mode", "light mode", "toggle theme"),
     "wifi_status":     ("check wifi", "wifi status", "is wifi on", "is wifi turned on", "is wi-fi on", "is wifi off", "wifi turned on or off", "check my wifi", "check the wifi", "check if wifi", "turned on or turned off", "is it turned on or off", "is it on or off"),
     "toggle_wifi":     ("toggle wifi", "switch wifi", "turn on wifi", "turn off wifi", "disable wifi", "enable wifi", "disconnect wifi", "connect wifi", "internet off", "internet on"),
+    "toggle_ducking":  ("toggle ducking", "ducking", "duck audio", "toggle audio ducking"),
+    "enable_ducking":  ("enable ducking", "turn on ducking", "audio ducking on"),
+    "disable_ducking": ("disable ducking", "turn off ducking", "audio ducking off"),
     "task_manager":    ("processes", "task list"),
     "screenshot":      ("capture screen", "take a screenshot", "snip"),
     "refresh_page":    ("refresh", "reload page"),
@@ -1231,7 +1250,7 @@ TOOL = {
                 "type": "STRING",
                 "description": (
                     "The exact action. Prefer this over `description` — pick one of: "
-                    "wifi_status | toggle_wifi | volume_up | volume_down | volume_set | mute | "
+                    "wifi_status | toggle_wifi | toggle_ducking | enable_ducking | disable_ducking | volume_up | volume_down | volume_set | mute | "
                     "mute_jarvis | unmute_jarvis | minimize_jarvis | maximize_jarvis | restore_jarvis | "
                     "brightness_up | brightness_down | sleep_display | "
                     "pause_video | close_window | full_screen | "

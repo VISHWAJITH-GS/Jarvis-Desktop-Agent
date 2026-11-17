@@ -62,6 +62,23 @@ class TestDashboardAuthHardened(unittest.TestCase):
         )
         self.assertEqual(cmd_resp.status_code, 200)
 
+        # Cookie-only authentication (no Authorization header)
+        cookie_cmd_resp = self.client.post(
+            "/api/command",
+            cookies={"jarvis_auth_token": token},
+            json={"text": "cookie check"},
+        )
+        self.assertEqual(cookie_cmd_resp.status_code, 200)
+
+    def test_auto_login_does_not_leak_tokens_to_web_storage(self):
+        """Verify /auto-login does not write auth tokens to sessionStorage or localStorage."""
+        key = self.server.new_key(expiry_secs=60)
+        resp = self.client.get(f"/auto-login?k={key}")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.text
+        self.assertNotIn("sessionStorage.setItem('jarvis_token'", html)
+        self.assertNotIn("localStorage.setItem('jarvis_device_token'", html)
+
     def test_invalid_pin_and_rate_limiting(self):
         # 1 invalid attempt
         resp1 = self.client.post("/login", json={"pin": "WRONGPIN"})

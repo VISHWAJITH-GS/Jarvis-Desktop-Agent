@@ -605,6 +605,82 @@ def save_output_device(name: str) -> None:
     _patch_config(output_device=(name or "").strip())
 
 
+# ── Audio Input Routing & Bluetooth Mode Settings ──────────────────────────
+
+def get_audio_input_mode() -> str:
+    """Input selection mode: 'auto' (avoid Bluetooth mic if BT output is active) or 'manual'."""
+    val = str(load_api_keys().get("audio_input_mode", "auto") or "auto").strip().lower()
+    return "manual" if val == "manual" else "auto"
+
+
+def save_audio_input_mode(mode: str) -> None:
+    norm = "manual" if str(mode or "").strip().lower() == "manual" else "auto"
+    _patch_config(audio_input_mode=norm)
+
+
+def get_allow_bluetooth_mic() -> bool:
+    """Whether user explicitly permits Bluetooth HFP microphone usage."""
+    return bool(load_api_keys().get("allow_bluetooth_mic", False))
+
+
+def save_allow_bluetooth_mic(allowed: bool) -> None:
+    _save_flag("allow_bluetooth_mic", bool(allowed))
+
+
+# ── Audio Ducking Settings ──────────────────────────────────────────────────
+
+def get_ducking_enabled() -> bool:
+    """Whether JARVIS ducks background applications while speaking. Default True on Windows."""
+    import platform
+    default = (platform.system() == "Windows")
+    return bool(load_api_keys().get("ducking_enabled", default))
+
+
+def save_ducking_enabled(enabled: bool) -> None:
+    _save_flag("ducking_enabled", bool(enabled))
+
+
+def get_ducking_level() -> int:
+    """Target percentage volume for background apps while ducking (default 25%)."""
+    val = load_api_keys().get("ducking_level", 25)
+    try:
+        lvl = int(val)
+        return max(0, min(100, lvl))
+    except (ValueError, TypeError):
+        return 25
+
+
+def save_ducking_level(level: int) -> None:
+    try:
+        lvl = max(0, min(100, int(level)))
+    except (ValueError, TypeError):
+        lvl = 25
+    _patch_config(ducking_level=lvl)
+
+
+_DEFAULT_DUCKING_EXCLUDES = [
+    "teams.exe",
+    "ms-teams.exe",
+    "zoom.exe",
+    "discord.exe",
+    "skype.exe",
+    "slack.exe",
+]
+
+
+def get_ducking_exclude_apps() -> list[str]:
+    """List of executable process names that audio ducking will never attenuate."""
+    val = load_api_keys().get("ducking_exclude_apps")
+    if isinstance(val, list) and val:
+        return [str(x).strip().lower() for x in val if str(x).strip()]
+    return list(_DEFAULT_DUCKING_EXCLUDES)
+
+
+def save_ducking_exclude_apps(apps: list[str]) -> None:
+    cleaned = [str(x).strip().lower() for x in (apps or []) if str(x).strip()]
+    _patch_config(ducking_exclude_apps=cleaned)
+
+
 def get_plugin_enabled(plugin_name: str) -> bool:
     """Plugins are enabled by default the moment they're discovered (opt-out model)."""
     return load_api_keys().get("plugins_enabled", {}).get(plugin_name, True)

@@ -552,11 +552,201 @@ def measure_input(name: str, seconds: float = 3.0, on_level=None) -> dict:
             "level": min(1.0, peak / 12000.0), "verdict": verdict}
 
 
+_bt_detection_cache: dict[str, tuple[bool, float]] = {}
+_bt_detection_lock = threading.Lock()
+_BT_CACHE_TTL = 15.0  # seconds
+
+
+def _detect_bluetooth_via_endpoint_metadata(name: str) -> bool | None:
+    """Check endpoint bus / enumerator metadata via Windows pycaw."""
+    if _platform_is() != "Windows" or not name:
+        return None
+    try:
+        from pycaw.pycaw import AudioUtilities
+        wanted = _fold(name)
+        if not wanted:
+            return None
+
+        for dev in AudioUtilities.GetAllDevices():
+            try:
+                friendly = _fold(getattr(dev, "FriendlyName", "") or "")
+            except Exception:
+                continue
+            if not friendly:
+                continue
+
+            if friendly == wanted or friendly.startswith(wanted) or wanted.startswith(friendly):
+                props = getattr(dev, "properties", {})
+                for _k, v in props.items():
+                    if isinstance(v, str):
+                        v_u = v.upper()
+                        if any(b in v_u for b in ("BTHENUM", "BTHHFENUM", "BTH\\", "BTHLE\\", "MICROSOFT_BLUETOOTH", "BTHA2DPSRC")):
+                            return True
+                        if "HDAUDIO\\" in v_u or v_u == "HDAUDIO" or "USB\\" in v_u or v_u == "USB":
+                            return False
+
+                dev_id = str(getattr(dev, "id", "")).upper()
+                if "BTHENUM" in dev_id or "BTHHFENUM" in dev_id or "BTH\\" in dev_id:
+                    return True
+
+                fn_low = getattr(dev, "FriendlyName", "").lower()
+                if "hands-free" in fn_low or "bluetooth" in fn_low:
+                    return True
+    except Exception as e:
+        logger.debug("CoreAudio Bluetooth metadata check error: %s", e)
+    return None
+
+
 def is_bluetooth_device(name: str) -> bool:
-    """Check if device name or endpoint refers to a Bluetooth device."""
-    low = (name or "").lower()
-    bt_keywords = ("bluetooth", "buds", "headset", "airpods", "freebuds", "bth", "oppo", "wireless", "hands-free")
-    return any(k in low for k in bt_keywords)
+    """
+    Check if device name or endpoint refers to a Bluetooth device.
+    Uses Windows endpoint metadata (pycaw/MMDevice enumerators and properties)
+    with a short cache, falling back to name heuristics.
+    """
+    wanted = (name or "").strip()
+    if not wanted or wanted == DEFAULT_LABEL:
+        return False
+
+    with _bt_detection_lock:
+        now = time.monotonic()
+        if wanted in _bt_detection_cache:
+            res, ts = _bt_detection_cache[wanted]
+            if (now - ts) < _BT_CACHE_TTL:
+                return res
+
+    # 1. Primary: Endpoint metadata from Windows CoreAudio
+    meta_result = None
+    try:
+        meta_result = _detect_bluetooth_via_endpoint_metadata(wanted)
+    except Exception:
+        meta_result = None
+
+    if meta_result is not None:
+        with _bt_detection_lock:
+            _bt_detection_cache[wanted] = (meta_result, time.monotonic())
+        return meta_result
+
+    # 2. Fallback: Keyword-based heuristics (safe against false positives)
+    low = wanted.lower()
+    # Explicit USB wired / USB dongle without Bluetooth branding -> not Bluetooth
+    if "usb" in low and not ("bluetooth" in low or "bth" in low):
+        res = False
+    else:
+        # High-confidence Bluetooth indicators (excluding generic 'wireless' or 'headset' which match USB peripherals)
+        bt_keywords = (
+            "bluetooth", "bth", "hands-free", "oppo", "airpods",
+            "freebuds", "galaxy buds", "pixel buds", "enco buds"
+        )
+        res = any(k in low for k in bt_keywords)
+
+    with _bt_detection_lock:
+        _bt_detection_cache[wanted] = (res, time.monotonic())
+    return res
+
+
+def is_output_bluetooth(output_name: str) -> bool:
+    """Check if the specified output (or system default output if empty) is Bluetooth."""
+    wanted = (output_name or "").strip()
+    if wanted and wanted != DEFAULT_LABEL:
+        return is_bluetooth_device(wanted)
+
+    if _platform_is() == "Windows":
+        try:
+            from pycaw.pycaw import AudioUtilities
+            spk = AudioUtilities.GetSpeakers()
+            if spk is not None:
+                fname = getattr(spk, "FriendlyName", "")
+                if fname:
+                    return is_bluetooth_device(fname)
+        except Exception:
+            pass
+    return False
+
+
+def select_best_input(
+    requested_input: str,
+    output_name: str,
+    input_mode: str = "auto",
+    allow_bluetooth_mic: bool = False,
+) -> dict:
+    """
+    Select the optimal input device to avoid Bluetooth HFP call mode conflicts.
+    """
+    wanted = (requested_input or "").strip()
+    is_explicit = bool(wanted and wanted != DEFAULT_LABEL)
+    out_is_bt = is_output_bluetooth(output_name)
+
+    # 1. If output is NOT Bluetooth, no A2DP/HFP profile conflict exists
+    if not out_is_bt:
+        return {
+            "device": wanted if is_explicit else None,
+            "reason": f"Output is not Bluetooth; using {'requested device ' + wanted if is_explicit else 'system default input'}",
+            "is_bluetooth": is_bluetooth_device(wanted) if is_explicit else False,
+            "quality_drop_warning": False,
+        }
+
+    # 2. Output IS Bluetooth:
+    # If user explicitly picked a specific non-Bluetooth device, respect it!
+    if is_explicit and not is_bluetooth_device(wanted):
+        return {
+            "device": wanted,
+            "reason": f"Explicit non-Bluetooth user selection '{wanted}' respected",
+            "is_bluetooth": False,
+            "quality_drop_warning": False,
+        }
+
+    # If user explicitly opted in to allow Bluetooth mic:
+    if allow_bluetooth_mic:
+        dev_name = wanted if is_explicit else None
+        return {
+            "device": dev_name,
+            "reason": f"Bluetooth mic {'(' + wanted + ')' if is_explicit else '(system default)'} allowed by user setting",
+            "is_bluetooth": True,
+            "quality_drop_warning": True,
+        }
+
+    # If input mode is manual and user picked a specific device (even BT):
+    if input_mode == "manual" and is_explicit:
+        is_bt = is_bluetooth_device(wanted)
+        return {
+            "device": wanted,
+            "reason": f"Manual mode: user selection '{wanted}' used (Bluetooth={is_bt})",
+            "is_bluetooth": is_bt,
+            "quality_drop_warning": is_bt,
+        }
+
+    # In 'auto' mode: avoid Bluetooth microphone!
+    available_inputs = list_devices("input")
+    non_bt_inputs = [dev for dev in available_inputs if not is_bluetooth_device(dev)]
+
+    if non_bt_inputs:
+        def _rank(dev_name: str) -> int:
+            low = dev_name.lower()
+            if "array" in low:
+                return 0
+            if any(k in low for k in ("built-in", "internal", "integrated", "realtek", "conexant", "intel")):
+                return 1
+            if "usb" in low:
+                return 2
+            return 3
+
+        non_bt_inputs.sort(key=_rank)
+        chosen = non_bt_inputs[0]
+        return {
+            "device": chosen,
+            "reason": f"Auto-selected non-Bluetooth input '{chosen}' to preserve Bluetooth A2DP stereo playback",
+            "is_bluetooth": False,
+            "quality_drop_warning": False,
+        }
+
+    # No non-Bluetooth mic found anywhere
+    fallback_dev = wanted if is_explicit else None
+    return {
+        "device": fallback_dev,
+        "reason": f"No non-Bluetooth mic found; falling back to {'headset mic ' + wanted if is_explicit else 'system default'}",
+        "is_bluetooth": True,
+        "quality_drop_warning": True,
+    }
 
 
 def get_device_status(name: str, kind: str) -> dict:

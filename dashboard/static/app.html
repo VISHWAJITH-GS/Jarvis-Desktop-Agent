@@ -240,18 +240,22 @@
   </footer>
 
   <script>
-    // ── Auth — bearer token ───────────────────────────────────────────────────
-    const _authToken  = sessionStorage.getItem('jarvis_token');
-    const _sessionKey = sessionStorage.getItem('jarvis_key');
+    // ── Auth — HttpOnly cookie (with optional session fallback) ───────────────
+    const _authToken  = sessionStorage.getItem('jarvis_token') || '';
+    const _sessionKey = sessionStorage.getItem('jarvis_key') || '';
 
-    if (!_authToken) {
-      location.replace('/login');
-    }
-
-    function _authHeader() { return { 'Authorization': `Bearer ${_authToken}` }; }
+    function _authHeader() { return _authToken ? { 'Authorization': `Bearer ${_authToken}` } : {}; }
     function _authFetch(url, opts = {}) {
-      opts.headers = Object.assign({}, opts.headers, _authHeader());
-      return fetch(url, opts);
+      opts.credentials = 'same-origin';
+      if (_authToken) {
+        opts.headers = Object.assign({}, opts.headers, _authHeader());
+      }
+      return fetch(url, opts).then(resp => {
+        if (resp.status === 401) {
+          location.replace('/login');
+        }
+        return resp;
+      });
     }
 
     // ── AES-256-GCM encryption (Web Crypto) ──────────────────────────────────

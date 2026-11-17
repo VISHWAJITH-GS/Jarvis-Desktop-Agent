@@ -181,6 +181,11 @@ class VoiceStateManager:
                 self._on_interrupt()
             except Exception as e:
                 logger.warning("Error in on_interrupt callback: %s", e)
+        try:
+            from core.ducking import restore_background_audio
+            restore_background_audio()
+        except Exception:
+            pass
 
     def _transition_to(self, new_state: VoiceState) -> None:
         old_state = self._state
@@ -189,6 +194,16 @@ class VoiceStateManager:
         self._state = new_state
         self._last_state_change = time.monotonic()
         logger.info("[VoiceState] %s -> %s (gen=%d)", old_state.value, new_state.value, self._generation_id)
+
+        try:
+            from core.ducking import notify_speech_activity
+            if new_state == VoiceState.SPEAKING:
+                notify_speech_activity(True)
+            elif old_state == VoiceState.SPEAKING:
+                notify_speech_activity(False)
+        except Exception:
+            pass
+
         if self._on_state_change:
             try:
                 self._on_state_change(old_state, new_state)

@@ -43,7 +43,12 @@ class TestPermissionsFailClosed(unittest.TestCase):
                 PERMISSION_LEVELS,
                 f"Action '{name}' has missing or invalid permission tier '{tier}'",
             )
-            # Ensure ACTION_PERMISSIONS also maps it or it equals rec.permission
+            # Ensure ACTION_PERMISSIONS has an explicit tier declared for every registered action
+            self.assertIn(
+                name.lower(),
+                ACTION_PERMISSIONS,
+                f"Action '{name}' has no explicit tier in ACTION_PERMISSIONS table!",
+            )
             effective = get_action_permission(name)
             self.assertIn(
                 effective,

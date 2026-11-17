@@ -7,6 +7,10 @@
   "ui_color": "#00d4ff",
   "hud_style": "core",
   "push_to_talk_enabled": false,
-  "morning_brief_enabled": false
+  "morning_brief_enabled": false,
+  "audio_input_mode": "auto",
+  "allow_bluetooth_mic": false,
+  "ducking_enabled": true,
+  "ducking_level": 25
 }
 

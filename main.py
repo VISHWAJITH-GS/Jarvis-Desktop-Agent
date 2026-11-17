@@ -663,6 +663,7 @@ class JarvisLive:
         self._turn_done_event: asyncio.Event | None = None
         self._dashboard     = None
         self._briefing_sent    = False          # morning briefing fires once per process
+        self._bt_quality_warned = False         # Bluetooth HFP mono fallback warning shown once per session
         self._sys_monitor      = SystemMonitor()  # persistent cooldown state
         self._proactive        = ProactiveEngine()
         self._last_user_speech = time.monotonic()  # updated on every user utterance
@@ -1015,6 +1016,11 @@ class JarvisLive:
     def set_speaking(self, value: bool):
         with self._speaking_lock:
             self._is_speaking = value
+        try:
+            from core.ducking import notify_speech_activity
+            notify_speech_activity(bool(value))
+        except Exception:
+            pass
         if value:
             self._tail_until = 0.0
         else:
@@ -1125,6 +1131,11 @@ class JarvisLive:
                 if drained:
                     print(f"[JARVIS] ✋ Interrupted — {drained} audio chunks discarded")
             self.set_speaking(False)
+            try:
+                from core.ducking import restore_background_audio
+                restore_background_audio()
+            except Exception:
+                pass
             # The words we were about to mouth are never going to be spoken now.
             self._visemes.reset()
             self._play_cursor = 0.0     # next batch starts a fresh timeline
@@ -1733,33 +1744,91 @@ class JarvisLive:
                     callback=callback,
                 )
 
-            # Which microphone. resolve() returns None for "system default" and
-            # for a saved device that is no longer present — so a headset
-            # unplugged since the last run falls back to the built-in mic
-            # instead of raising on startup and taking the session with it.
-            _mic_name = get_input_device()
-            _mic_dev  = audio_devices.resolve(_mic_name, "input")
+            # Which microphone. Auto-avoid Bluetooth HFP conflicts when Bluetooth
+            # output is in use, while respecting explicit user selections.
+            _req_mic = get_input_device()
+            _req_spk = get_output_device()
+            from memory.config_manager import (
+                get_audio_input_mode,
+                get_allow_bluetooth_mic,
+                get_push_to_talk_enabled,
+            )
+            _in_mode = get_audio_input_mode()
+            _allow_bt = get_allow_bluetooth_mic()
+
+            decision = audio_devices.select_best_input(
+                requested_input=_req_mic,
+                output_name=_req_spk,
+                input_mode=_in_mode,
+                allow_bluetooth_mic=_allow_bt,
+            )
+            _mic_name = decision.get("device")
+            _reason = decision.get("reason", "Standard input routing")
+            _is_bt_mic = decision.get("is_bluetooth", False)
+            _ptt_opted = get_push_to_talk_enabled()
+
+            # One-line log of routing choice and justification
+            print(f"[JARVIS] 🎤 Mic routing: {_reason}")
+            self.ui.write_log(f"SYS: 🎤 Mic routing: {_reason}")
+
+            if decision.get("quality_drop_warning") and not getattr(self, "_bt_quality_warned", False):
+                self._bt_quality_warned = True
+                _warn_msg = "Bluetooth microphone active — audio playback quality will drop to call mode."
+                print(f"[JARVIS] ⚠️  {_warn_msg}")
+                self.ui.write_log(f"SYS: ⚠️ {_warn_msg}")
+                if hasattr(self.ui, "show_content"):
+                    self.ui.show_content("AUDIO ADVISORY", _warn_msg)
+
+            _mic_dev = audio_devices.resolve(_mic_name, "input") if _mic_name else None
             if _mic_dev is not None:
                 print(f"[JARVIS] 🎤 Input device: {_mic_name} (index #{_mic_dev})")
             else:
                 print(f"[JARVIS] 🎤 Input device: System Default")
-            try:
-                _mic_stream = _open_mic(_mic_dev)
-                if _mic_dev is not None:
-                    self.ui.write_log(f"SYS: 🎤 Mic active: {_mic_name}")
-            except Exception as _e:
-                if _mic_dev is None:
-                    raise
-                print(f"[JARVIS] ⚠️  Mic '{_mic_name}' failed: {_e} — using default")
-                self.ui.write_log(
-                    f"SYS: Microphone '{_mic_name}' unavailable — using system default."
-                )
-                _mic_stream = _open_mic(None)
 
-            with _mic_stream:
-                print("[JARVIS] 🎤 Mic stream open")
+            # Task 1C: If the headset mic is active and push-to-talk is enabled,
+            # gate the mic stream so it opens only while PTT is held, allowing
+            # the headset to switch back to high-fidelity stereo playback when idle.
+            _headset_ptt_gating = bool(_is_bt_mic and _ptt_opted)
+            if _headset_ptt_gating:
+                print("[JARVIS] 🎤 Headset PTT gating active: mic opens only while push-to-talk is held")
+                self.ui.write_log("SYS: 🎤 Headset PTT gating active: keeping stereo playback when idle.")
                 while True:
-                    await asyncio.sleep(0.1)
+                    while not getattr(self, "_ptt_held", False):
+                        await asyncio.sleep(0.05)
+                    try:
+                        _stream = _open_mic(_mic_dev)
+                        _stream.start()
+                    except Exception as _e:
+                        print(f"[JARVIS] ⚠️  PTT mic stream open error: {_e}")
+                        _stream = _open_mic(None)
+                        _stream.start()
+                    try:
+                        while getattr(self, "_ptt_held", False):
+                            await asyncio.sleep(0.05)
+                    finally:
+                        try:
+                            _stream.stop()
+                            _stream.close()
+                        except Exception:
+                            pass
+            else:
+                try:
+                    _mic_stream = _open_mic(_mic_dev)
+                    if _mic_dev is not None:
+                        self.ui.write_log(f"SYS: 🎤 Mic active: {_mic_name}")
+                except Exception as _e:
+                    if _mic_dev is None:
+                        raise
+                    print(f"[JARVIS] ⚠️  Mic '{_mic_name}' failed: {_e} — using default")
+                    self.ui.write_log(
+                        f"SYS: Microphone '{_mic_name}' unavailable — using system default."
+                    )
+                    _mic_stream = _open_mic(None)
+
+                with _mic_stream:
+                    print("[JARVIS] 🎤 Mic stream open")
+                    while True:
+                        await asyncio.sleep(0.1)
         except Exception as e:
             print(f"[JARVIS] ❌ Mic: {e}")
             raise

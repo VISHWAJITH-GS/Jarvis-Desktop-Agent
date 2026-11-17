@@ -18,7 +18,7 @@ Built with **Google Gemini API as the sole reasoning engine**, Mark LVI delivers
 1. **Sole AI Reasoning Engine:**
    - **Google Gemini API** handles all high-level planning, tool selection, natural language understanding, and visual inspection.
    - **Gemini Live API** powers real-time bi-directional audio streaming with instant acknowledgment and native voice synthesis.
-   - No local LLMs (Ollama, Llama, Qwen) or third-party inference fallbacks.
+   - Built primarily for Google Gemini; supports user-configured opt-in local or third-party provider fallbacks (via the providers drawer) when explicitly configured.
    - Local Python, Windows APIs, UI Automation, and Playwright handle execution and deterministic verification.
 
 2. **Unified Tool Execution Architecture:**
@@ -217,6 +217,25 @@ Every automated probe in `core/audio_devices.py` runs on silence, which is what 
 There is also an **output volume slider**, and it belongs to the device chosen two lines above it rather than to the system default. Somebody puts the assistant on their speakers and keeps everything else in their headphones; a slider labelled with one device that moves the other is worse than no slider.
 
 > Two real bugs surfaced while building it. Volume could not be read at all on current pycaw — `GetSpeakers()` returns a wrapper without the `.Activate` the code called, so every read raised and was swallowed, and undo for volume had quietly stopped registering. And Windows keeps NotPresent devices under the **same friendly name** as live ones: the panel read 100% for a speaker that was actually at 10%, which is why it sounded so quiet.
+
+### 🎧 Bluetooth Conflict Prevention & Auto-Avoidance
+
+When you connect Bluetooth headphones or earbuds, Windows switches them from high-fidelity A2DP stereo playback into low-bandwidth mono "Hands-Free" (HFP) call mode the moment an application opens their microphone. This makes music (Spotify, YouTube) sound muffled.
+
+- **Input Mode (`audio_input_mode: "auto"`)**: When Bluetooth headphones are active as the output device and input is set to System Default or a Bluetooth microphone, JARVIS automatically selects the best non-Bluetooth microphone (laptop microphone array first, then wired USB).
+- **Explicit Override (`allow_bluetooth_mic: false`)**: If you explicitly want to use the Bluetooth headset microphone, you can opt in via the setting or panel checkbox.
+- **Push-to-Talk Gating for Headset-Mic-Only Users**: If a Bluetooth headset microphone is the only available input device and push-to-talk is enabled, JARVIS keeps the microphone stream closed during idle periods—opening it only while the push-to-talk hotkey is held—so your headphones stay in A2DP stereo mode whenever JARVIS is not recording.
+
+### 🔇 Per-Application Audio Ducking (`core/ducking.py`)
+
+When JARVIS speaks, background applications (Spotify, YouTube, media players) automatically duck so JARVIS's voice stands out clearly:
+
+- **Per-Application Volume**: Attenuates external media sessions via Windows `pycaw` (`ISimpleAudioVolume`) without changing system master volume.
+- **Configurable Level (`ducking_level: 25`)**: Reduces background audio to 25% of its current level by default with smooth ~150 ms fade-down and ~400 ms fade-up transitions.
+- **App Exclusions (`ducking_exclude_apps`)**: Communication software (`teams.exe`, `zoom.exe`, `discord.exe`, etc.) and JARVIS's own processes are strictly excluded from ducking.
+- **Crash Recovery & Watchdog**: Active session volume snapshots are saved to a local state file and safely restored on startup if a prior crash occurred. If ducking stays active for over 60 seconds without speech, a watchdog automatically restores volume.
+- **Inter-Sentence Debounce**: Pauses under 600 ms between spoken sentences do not trigger volume pumping.
+- **Control**: Toggleable via settings or voice command (`toggle ducking`).
 
 ### 📱 The phone dashboard
 

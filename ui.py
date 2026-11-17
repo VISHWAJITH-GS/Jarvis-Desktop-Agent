@@ -50,7 +50,7 @@ except Exception as _e:            # noqa: BLE001 - reported, never fatal
     print(f"[Video] playback unavailable ({_e}) — the HUD will not show video.")
 
 from PyQt6.QtWidgets import (
-    QApplication, QComboBox, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMenu,
+    QApplication, QCheckBox, QComboBox, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMenu,
     QMainWindow, QPushButton, QScrollArea, QSizePolicy, QSplitter,
     QGraphicsScene, QGraphicsView, QGraphicsDropShadowEffect,
     QStackedWidget, QTextEdit, QVBoxLayout, QWidget, QProgressBar, QSlider,
@@ -2943,6 +2943,29 @@ class AudioDeviceOverlay(_HudOverlay):
         self._out_box.currentIndexChanged.connect(lambda _i: self._update_profile_info())
         self._update_profile_info()
 
+        # ── Bluetooth Options & Audio Routing Controls ───────────────────────
+        from memory.config_manager import (
+            get_audio_input_mode,
+            get_allow_bluetooth_mic,
+        )
+        self._auto_avoid_box = QCheckBox("Auto-avoid Bluetooth mic (preserves stereo music quality)")
+        self._auto_avoid_box.setFont(QFont("Montserrat", 7))
+        self._auto_avoid_box.setStyleSheet(f"color: {C.TEXT_MED};")
+        self._auto_avoid_box.setChecked(get_audio_input_mode() == "auto")
+        lay.addWidget(self._auto_avoid_box)
+
+        self._allow_bt_box = QCheckBox("Allow Bluetooth mic (Warning: drops playback to mono call mode)")
+        self._allow_bt_box.setFont(QFont("Montserrat", 7))
+        self._allow_bt_box.setStyleSheet(f"color: {C.TEXT_DIM};")
+        self._allow_bt_box.setChecked(get_allow_bluetooth_mic())
+        lay.addWidget(self._allow_bt_box)
+
+        hint = QLabel("💡 Tip: If you hear unexpected volume dipping, open Windows Sound settings > Communications and choose 'Do nothing' so Windows ducking does not stack with JARVIS ducking.")
+        hint.setWordWrap(True)
+        hint.setFont(QFont("Montserrat", 7))
+        hint.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent; margin-top: 2px;")
+        lay.addWidget(hint)
+
         # ── Output volume, beside the output device ──────────────────────────
         #
         # Choosing "Realtek(R) Audio" here and finding it far too quiet used to
@@ -3161,11 +3184,16 @@ class AudioDeviceOverlay(_HudOverlay):
     def _apply(self):
         from memory.config_manager import (
             save_input_device, save_output_device,
+            save_audio_input_mode, save_allow_bluetooth_mic,
         )
         new_in  = self._in_box.currentData()  or ""
         new_out = self._out_box.currentData() or ""
         save_input_device(new_in)
         save_output_device(new_out)
+        if hasattr(self, "_auto_avoid_box"):
+            save_audio_input_mode("auto" if self._auto_avoid_box.isChecked() else "manual")
+        if hasattr(self, "_allow_bt_box"):
+            save_allow_bluetooth_mic(self._allow_bt_box.isChecked())
         self.hide()
         # Always emit picked so the session reconnects and streams re-bind directly to hardware
         self.picked.emit()
@@ -5750,48 +5778,48 @@ class SlideDownAlert(QWidget):
             QFrame#SlideAlertFrame {
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
                     stop:0 #ff1744, stop:0.4 #d50000, stop:1.0 #b71c1c);
-                border: 2px solid #ff5252;
-                border-radius: 8px;
+                border: 1.5px solid #ff5252;
+                border-radius: 6px;
             }
         """)
 
         glow = QGraphicsDropShadowEffect(self._frame)
-        glow.setBlurRadius(28)
-        glow.setColor(QColor(255, 23, 68, 220))
-        glow.setOffset(0, 3)
+        glow.setBlurRadius(20)
+        glow.setColor(QColor(255, 23, 68, 200))
+        glow.setOffset(0, 2)
         self._frame.setGraphicsEffect(glow)
 
         main_lay = QVBoxLayout(self)
-        main_lay.setContentsMargins(12, 12, 12, 12)
+        main_lay.setContentsMargins(10, 10, 10, 10)
         main_lay.addWidget(self._frame)
 
         lay = QHBoxLayout(self._frame)
-        lay.setContentsMargins(16, 10, 14, 10)
-        lay.setSpacing(12)
+        lay.setContentsMargins(12, 6, 10, 6)
+        lay.setSpacing(10)
 
         icon_lbl = QLabel("⚠")
-        icon_lbl.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
+        icon_lbl.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
         icon_lbl.setStyleSheet("color: #000000; background: transparent;")
         lay.addWidget(icon_lbl)
 
         v_text = QVBoxLayout()
-        v_text.setSpacing(2)
+        v_text.setSpacing(1)
 
         self._title_lbl = QLabel("SYSTEM ALERT")
-        self._title_lbl.setFont(QFont("Montserrat", 9, QFont.Weight.Bold))
-        self._title_lbl.setStyleSheet("color: #000000; background: transparent; letter-spacing: 1px;")
+        self._title_lbl.setFont(QFont("Montserrat", 8, QFont.Weight.Bold))
+        self._title_lbl.setStyleSheet("color: #000000; background: transparent; letter-spacing: 0.5px;")
         v_text.addWidget(self._title_lbl)
 
         self._msg_lbl = QLabel("")
-        self._msg_lbl.setFont(QFont("Montserrat", 10, QFont.Weight.Bold))
+        self._msg_lbl.setFont(QFont("Montserrat", 9, QFont.Weight.Bold))
         self._msg_lbl.setStyleSheet("color: #000000; background: transparent;")
         self._msg_lbl.setWordWrap(True)
         v_text.addWidget(self._msg_lbl)
         lay.addLayout(v_text, stretch=1)
 
         close_btn = QPushButton("✕")
-        close_btn.setFont(QFont("Montserrat", 9, QFont.Weight.Bold))
-        close_btn.setFixedSize(22, 22)
+        close_btn.setFont(QFont("Montserrat", 8, QFont.Weight.Bold))
+        close_btn.setFixedSize(18, 18)
         close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         close_btn.setStyleSheet("""
             QPushButton {
@@ -5811,13 +5839,25 @@ class SlideDownAlert(QWidget):
     def popup_alert(self, title: str, message: str, duration_ms: int = 8500):
         self._timer.stop()
         clean_title = (title or "SYSTEM ALERT").replace("//", "-").strip()
+        clean_msg = str(message or "").replace("//", "-").strip()
         self._title_lbl.setText(clean_title.upper())
-        self._msg_lbl.setText(str(message or "").replace("//", "-"))
+        self._msg_lbl.setText(clean_msg)
 
         screen = QApplication.primaryScreen().availableGeometry()
-        w = min(640, max(460, len(message) * 9 + 120))
-        h = 84
-        self.resize(w + 24, h + 24)
+        fm_msg = self._msg_lbl.fontMetrics()
+        fm_title = self._title_lbl.fontMetrics()
+        text_w = max(
+            fm_title.horizontalAdvance(self._title_lbl.text()),
+            fm_msg.horizontalAdvance(clean_msg)
+        )
+        inner_w = text_w + 72
+        w = min(460, max(280, inner_w))
+
+        max_text_w = max(180, w - 72)
+        text_rect = fm_msg.boundingRect(QRect(0, 0, max_text_w, 1000), int(Qt.TextFlag.TextWordWrap), clean_msg)
+        h = max(48, text_rect.height() + 30)
+
+        self.resize(w + 20, h + 20)
 
         center_x = screen.left() + (screen.width() - self.width()) // 2
         start_y = screen.top() - self.height() - 20

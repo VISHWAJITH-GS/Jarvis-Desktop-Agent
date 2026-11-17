@@ -93,6 +93,96 @@ class TestAudioRoutingAndBluetooth(unittest.TestCase):
         audio_devices.invalidate_cache()
         self.assertIsNone(audio_devices._cache)
 
+    def test_bluetooth_output_default_input_auto_selects_non_bt_mic(self):
+        """Bluetooth output + System Default input in auto mode -> a non-Bluetooth input is chosen."""
+        with patch.object(audio_devices, "is_output_bluetooth", return_value=True), \
+             patch.object(audio_devices, "list_devices", return_value=[
+                 "Headset (OPPO Enco Buds2)",
+                 "Microphone Array (Realtek(R) Audio)",
+             ]):
+            decision = audio_devices.select_best_input(
+                requested_input="",
+                output_name="Headphones (OPPO Enco Buds2)",
+                input_mode="auto",
+                allow_bluetooth_mic=False,
+            )
+            self.assertEqual(decision["device"], "Microphone Array (Realtek(R) Audio)")
+            self.assertFalse(decision["is_bluetooth"])
+            self.assertFalse(decision["quality_drop_warning"])
+            self.assertIn("Auto-selected non-Bluetooth input", decision["reason"])
+
+    def test_bluetooth_mic_never_chosen_in_auto_mode_unless_allowed(self):
+        """Bluetooth mic never chosen in auto mode; chosen only when allow_bluetooth_mic is true."""
+        with patch.object(audio_devices, "is_output_bluetooth", return_value=True), \
+             patch.object(audio_devices, "list_devices", return_value=[
+                 "Headset (OPPO Enco Buds2)",
+                 "Microphone Array (Realtek(R) Audio)",
+             ]):
+            # 1. In auto mode with allow_bluetooth_mic=False -> overrides BT mic with non-BT mic
+            dec_auto = audio_devices.select_best_input(
+                requested_input="Headset (OPPO Enco Buds2)",
+                output_name="Headphones (OPPO Enco Buds2)",
+                input_mode="auto",
+                allow_bluetooth_mic=False,
+            )
+            self.assertEqual(dec_auto["device"], "Microphone Array (Realtek(R) Audio)")
+            self.assertFalse(dec_auto["is_bluetooth"])
+
+            # 2. In auto mode with allow_bluetooth_mic=True -> permits BT mic
+            dec_allowed = audio_devices.select_best_input(
+                requested_input="Headset (OPPO Enco Buds2)",
+                output_name="Headphones (OPPO Enco Buds2)",
+                input_mode="auto",
+                allow_bluetooth_mic=True,
+            )
+            self.assertEqual(dec_allowed["device"], "Headset (OPPO Enco Buds2)")
+            self.assertTrue(dec_allowed["is_bluetooth"])
+            self.assertTrue(dec_allowed["quality_drop_warning"])
+
+    def test_explicit_non_bluetooth_user_choice_is_respected(self):
+        """Explicit non-Bluetooth user choice is respected and never overridden."""
+        with patch.object(audio_devices, "is_output_bluetooth", return_value=True):
+            decision = audio_devices.select_best_input(
+                requested_input="Microphone Array (Realtek(R) Audio)",
+                output_name="Headphones (OPPO Enco Buds2)",
+                input_mode="auto",
+                allow_bluetooth_mic=False,
+            )
+            self.assertEqual(decision["device"], "Microphone Array (Realtek(R) Audio)")
+            self.assertFalse(decision["is_bluetooth"])
+            self.assertIn("Explicit non-Bluetooth user selection", decision["reason"])
+
+    def test_fallback_path_when_no_non_bluetooth_mic_exists(self):
+        """Fallback path when no non-Bluetooth mic exists falls back and warns."""
+        with patch.object(audio_devices, "is_output_bluetooth", return_value=True), \
+             patch.object(audio_devices, "list_devices", return_value=[
+                 "Headset (OPPO Enco Buds2)"
+             ]):
+            decision = audio_devices.select_best_input(
+                requested_input="",
+                output_name="Headphones (OPPO Enco Buds2)",
+                input_mode="auto",
+                allow_bluetooth_mic=False,
+            )
+            self.assertTrue(decision["quality_drop_warning"])
+            self.assertTrue(decision["is_bluetooth"])
+            self.assertIn("falling back", decision["reason"])
+
+    def test_bluetooth_detection_false_positives_and_negatives(self):
+        """Verify reliable Bluetooth detection fixes false positives and negatives."""
+        # Non-Bluetooth false positive candidates (USB wireless dongles, wired USB headsets)
+        self.assertFalse(audio_devices.is_bluetooth_device("Logitech USB Wireless Headset"))
+        self.assertFalse(audio_devices.is_bluetooth_device("HyperX Cloud II Wireless USB"))
+        self.assertFalse(audio_devices.is_bluetooth_device("Corsair Void USB Headset"))
+        self.assertFalse(audio_devices.is_bluetooth_device("Microphone Array (Realtek(R) Audio)"))
+
+        # True Bluetooth devices
+        self.assertTrue(audio_devices.is_bluetooth_device("Headphones (OPPO Enco Buds2)"))
+        self.assertTrue(audio_devices.is_bluetooth_device("Headset (OPPO Enco Buds2)"))
+        self.assertTrue(audio_devices.is_bluetooth_device("Hands-Free AG Audio"))
+        self.assertTrue(audio_devices.is_bluetooth_device("AirPods Pro"))
+        self.assertTrue(audio_devices.is_bluetooth_device("Galaxy Buds2 Pro"))
+
 
 if __name__ == "__main__":
     unittest.main()
