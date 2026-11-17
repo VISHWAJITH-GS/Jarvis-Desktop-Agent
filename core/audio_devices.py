@@ -391,6 +391,16 @@ def list_devices(kind: str, refresh: bool = False) -> list[str]:
     return list(cached.get(kind, []))
 
 
+def get_input_devices(refresh: bool = False) -> list[str]:
+    """Return all available input device names, starting with DEFAULT_LABEL."""
+    return [DEFAULT_LABEL] + list_devices("input", refresh=refresh)
+
+
+def get_output_devices(refresh: bool = False) -> list[str]:
+    """Return all available output device names, starting with DEFAULT_LABEL."""
+    return [DEFAULT_LABEL] + list_devices("output", refresh=refresh)
+
+
 def resolve(name: str, kind: str):
     """Turn a saved device name into something sounddevice accepts.
 
@@ -682,6 +692,131 @@ def is_output_bluetooth(output_name: str) -> bool:
         except Exception:
             pass
     return False
+
+
+def get_current_default_endpoint(kind: str = "output") -> tuple[str | None, str | None]:
+    """Return (endpoint_id, friendly_name) for current default Windows audio device."""
+    if _platform_is() != "Windows":
+        return (None, None)
+    try:
+        import comtypes
+        comtypes.CoInitialize()
+        try:
+            from pycaw.pycaw import AudioUtilities
+            if kind == "output":
+                dev = AudioUtilities.GetSpeakers()
+            else:
+                dev = AudioUtilities.GetMicrophone()
+            if dev is not None:
+                return (getattr(dev, "id", None), getattr(dev, "FriendlyName", None))
+        finally:
+            try:
+                comtypes.CoUninitialize()
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return (None, None)
+
+
+def get_connected_endpoints_snapshot() -> set[str]:
+    """Return set of connected endpoint IDs and friendly names."""
+    snapshot: set[str] = set()
+    if _platform_is() != "Windows":
+        return snapshot
+    try:
+        import comtypes
+        comtypes.CoInitialize()
+        try:
+            from pycaw.pycaw import AudioUtilities
+            for dev in AudioUtilities.GetAllDevices():
+                d_id = getattr(dev, "id", None)
+                if d_id:
+                    snapshot.add(str(d_id))
+                fn = getattr(dev, "FriendlyName", None)
+                if fn:
+                    snapshot.add(str(fn))
+        finally:
+            try:
+                comtypes.CoUninitialize()
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return snapshot
+
+
+def set_default_endpoint(device_name_or_id: str, kind: str = "output") -> bool:
+    """Set the Windows default audio endpoint (Console, Multimedia, Communications).
+
+    Accepts an endpoint ID (e.g. '{0.0.0.00000000}.{...}') or a friendly device name.
+    Degrades safely on non-Windows platforms.
+    """
+    if _platform_is() != "Windows":
+        return False
+    target = (device_name_or_id or "").strip()
+    if not target or target.lower() == DEFAULT_LABEL.lower():
+        return False
+
+    try:
+        import ctypes
+        import comtypes
+        import comtypes.client
+        from comtypes import GUID, COMMETHOD, IUnknown
+        from pycaw.pycaw import AudioUtilities
+
+        class IPolicyConfig(IUnknown):
+            _iid_ = GUID('{f8679f50-850a-41cf-9c72-430f290290c8}')
+            _methods_ = [
+                COMMETHOD([], ctypes.HRESULT, 'GetMixFormat',
+                          (['in'], ctypes.c_wchar_p, 'pwszDeviceId'),
+                          (['out'], ctypes.c_void_p, 'ppFormat')),
+                COMMETHOD([], ctypes.HRESULT, 'GetDeviceFormat'),
+                COMMETHOD([], ctypes.HRESULT, 'ResetDeviceFormat'),
+                COMMETHOD([], ctypes.HRESULT, 'SetDeviceFormat'),
+                COMMETHOD([], ctypes.HRESULT, 'GetProcessingPeriod'),
+                COMMETHOD([], ctypes.HRESULT, 'SetProcessingPeriod'),
+                COMMETHOD([], ctypes.HRESULT, 'GetShareMode'),
+                COMMETHOD([], ctypes.HRESULT, 'SetShareMode'),
+                COMMETHOD([], ctypes.HRESULT, 'GetPropertyValue'),
+                COMMETHOD([], ctypes.HRESULT, 'SetPropertyValue'),
+                COMMETHOD([], ctypes.HRESULT, 'SetDefaultEndpoint',
+                          (['in'], ctypes.c_wchar_p, 'pwszDeviceId'),
+                          (['in'], ctypes.c_uint, 'role')),
+                COMMETHOD([], ctypes.HRESULT, 'SetEndpointVisibility'),
+            ]
+
+        comtypes.CoInitialize()
+        try:
+            target_id = None
+            if target.startswith("{") and "}" in target:
+                target_id = target
+            else:
+                target_low = _fold(target)
+                for dev in AudioUtilities.GetAllDevices():
+                    dev_fn = _fold(getattr(dev, "FriendlyName", "") or "")
+                    if target_low in dev_fn or dev_fn in target_low:
+                        target_id = getattr(dev, "id", None)
+                        break
+
+            if not target_id:
+                return False
+
+            CLSID_PolicyConfigClient = GUID('{870af99c-171d-4f9e-af0d-e63df40c2bc9}')
+            policy = comtypes.client.CreateObject(CLSID_PolicyConfigClient, interface=IPolicyConfig)
+            # 0: eConsole, 1: eMultimedia, 2: eCommunications
+            for role in (0, 1, 2):
+                policy.SetDefaultEndpoint(target_id, role)
+            invalidate_cache()
+            return True
+        finally:
+            try:
+                comtypes.CoUninitialize()
+            except Exception:
+                pass
+    except Exception as e:
+        logger.debug("Failed to set default endpoint via IPolicyConfig: %s", e)
+        return False
 
 
 def _is_wasapi_endpoint(name: str) -> bool:

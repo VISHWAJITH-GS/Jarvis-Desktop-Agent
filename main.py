@@ -977,6 +977,62 @@ class JarvisLive:
         )
         raise _ReconnectSignal(keep_context=keep)
 
+    async def _watch_audio_device_changes(self):
+        """Session-scoped monitor: detects OS audio endpoint changes (e.g. Bluetooth headphones
+        connected or disconnected after startup) and seamlessly updates audio routing."""
+        try:
+            from core import audio_devices
+            initial_spk_id, initial_spk_name = audio_devices.get_current_default_endpoint("output")
+            last_snapshot = audio_devices.get_connected_endpoints_snapshot()
+            check_count = 0
+
+            while True:
+                await asyncio.sleep(1.5)
+                check_count += 1
+
+                # 1. Check if default Windows playback device changed
+                cur_spk_id, cur_spk_name = audio_devices.get_current_default_endpoint("output")
+                default_changed = bool(
+                    cur_spk_id
+                    and initial_spk_id
+                    and cur_spk_id != initial_spk_id
+                )
+
+                # 2. Check every ~3s if device topology changed
+                topology_changed = False
+                if check_count % 2 == 0:
+                    cur_snapshot = audio_devices.get_connected_endpoints_snapshot()
+                    if cur_snapshot and last_snapshot and cur_snapshot != last_snapshot:
+                        diff = cur_snapshot - last_snapshot
+                        saved_spk = get_output_device()
+                        if saved_spk and saved_spk != audio_devices.DEFAULT_LABEL:
+                            if any(saved_spk.lower() in item.lower() for item in diff):
+                                topology_changed = True
+                        else:
+                            if any(audio_devices.is_bluetooth_device(item) for item in diff):
+                                topology_changed = True
+                    last_snapshot = cur_snapshot
+
+                if default_changed or topology_changed:
+                    # Let Windows finish registering audio endpoints
+                    await asyncio.sleep(1.0)
+                    audio_devices.invalidate_cache()
+
+                    new_spk_id, new_spk_name = audio_devices.get_current_default_endpoint("output")
+                    active_label = new_spk_name or cur_spk_name or "New Device"
+
+                    print(f"[JARVIS] 🎧 Audio device change detected ('{active_label}') — switching audio routing")
+                    self.ui.write_log(f"SYS: 🎧 Audio device change detected ('{active_label}') — switching audio routing.")
+                    if hasattr(self.ui, "refresh_audio_devices"):
+                        self.ui.refresh_audio_devices()
+
+                    self.request_reconnect(keep_context=True, reason="audio device change")
+                    break
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            print(f"[JARVIS] Audio device watcher notice: {e}")
+
     def _make_remote_key(self):
         """Called from Qt main thread when user presses Remote Control."""
         if self._dashboard is None:
@@ -2775,6 +2831,7 @@ class JarvisLive:
                     self._reconnect_event.clear()  # ignore requests from before this session
                     tg.create_task(self._watch_reconnect())
                     tg.create_task(self._watch_stall())
+                    tg.create_task(self._watch_audio_device_changes())
                     tg.create_task(self._send_realtime())
                     tg.create_task(self._listen_audio())
                     tg.create_task(self._receive_audio())

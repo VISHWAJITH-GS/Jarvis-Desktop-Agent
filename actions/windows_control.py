@@ -289,9 +289,17 @@ def list_bluetooth_devices() -> list[dict]:
 
 def connect_bluetooth_device(device_name: str) -> dict:
     """Connect a paired Bluetooth device (e.g. OPPO Enco Buds 2, headphones)."""
+    # Auto-enable Bluetooth radio if currently Off
+    st_init = get_bluetooth_status()
+    if not st_init.get("enabled"):
+        set_bluetooth_enabled("on")
+        time.sleep(1.0)
+
     devices = list_bluetooth_devices()
     matched = None
-    clean_target = device_name.lower().replace(" ", "").replace("-", "")
+    clean_target = device_name.lower().replace(" ", "").replace("-", "").strip()
+
+    # 1. Exact or substring match
     for d in devices:
         fname = d.get("Name") or d.get("FriendlyName", "")
         clean_fname = fname.lower().replace(" ", "").replace("-", "")
@@ -299,10 +307,26 @@ def connect_bluetooth_device(device_name: str) -> dict:
             matched = d
             break
 
-    target_name = (matched.get("Name") or matched.get("FriendlyName")) if matched else device_name
-    safe_name = re.sub(r'[^a-zA-Z0-9_\-\. ]', '', str(target_name)).strip()
+    # 2. Generic audio aliases (earphones, earbuds, headphones, headset, buds)
+    if not matched:
+        is_audio_term = any(k in clean_target for k in ("earphone", "earbud", "headphone", "headset", "bud"))
+        audio_keywords = ("bud", "enco", "oppo", "headphone", "headset", "earphone", "earbud", "wireless", "audio")
+        for d in devices:
+            fname = (d.get("Name") or d.get("FriendlyName", "")).lower()
+            if is_audio_term and any(ak in fname for ak in audio_keywords):
+                matched = d
+                break
 
-    # Enable and trigger device via Windows PnP and AudioEndpoint
+    # 3. If only one paired device exists, select it
+    if not matched and len(devices) == 1:
+        matched = devices[0]
+
+    target_name = (matched.get("Name") or matched.get("FriendlyName")) if matched else device_name
+    dev_id = matched.get("Id") if matched else ""
+    safe_name = re.sub(r'[^a-zA-Z0-9_\-\. ]', '', str(target_name)).strip()
+    safe_id = re.sub(r'[^a-zA-Z0-9_\-\.#:]', '', str(dev_id or "")).strip()
+
+    # Enable and trigger device via Windows PnP, WinRT, and AudioEndpoint
     ps = f"""
 $name = "{safe_name}"
 $dev = Get-PnpDevice -Class Bluetooth -FriendlyName "*$name*" -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -313,19 +337,46 @@ $audio = Get-PnpDevice -Class AudioEndpoint -FriendlyName "*$name*" -ErrorAction
 if ($audio) {{
     Enable-PnpDevice -InstanceId $audio.InstanceId -Confirm:$false -ErrorAction SilentlyContinue
 }}
+try {{
+    Add-Type -AssemblyName System.Runtime.WindowsRuntime
+    $asTaskGeneric = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {{
+        $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1'
+    }})[0]
+    $devId = "{safe_id}"
+    if ($devId) {{
+        $op = [Windows.Devices.Bluetooth.BluetoothDevice]::FromIdAsync($devId)
+        $task = $asTaskGeneric.MakeGenericMethod([Windows.Devices.Bluetooth.BluetoothDevice]).Invoke($null, @($op))
+        $task.Wait(4000)
+        $bt = $task.Result
+        if ($bt) {{
+            $rfOp = $bt.GetRfcommServicesAsync()
+            $rfTask = $asTaskGeneric.MakeGenericMethod([Windows.Devices.Bluetooth.Rfcomm.RfcommDeviceServicesResult]).Invoke($null, @($rfOp))
+            $rfTask.Wait(4000)
+        }}
+    }}
+}} catch {{}}
 """
-    _run_ps(ps, timeout=10)
+    _run_ps(ps, timeout=12)
 
-    # Verify actual connection status via WinRT
-    st = get_bluetooth_status()
+    # Poll verification of active connection status
     verified = False
-    for d in (st.get("connected_devices") or []):
-        if target_name.lower() in (d.get("Name") or "").lower():
-            verified = True
+    for _ in range(3):
+        time.sleep(1.0)
+        st = get_bluetooth_status()
+        for d in (st.get("connected_devices") or []):
+            if target_name.lower() in (d.get("Name") or "").lower():
+                verified = True
+                break
+        if verified:
             break
 
-    # If audio output device, set default playback device
+    # If audio output device, set default playback device and invalidate audio caches
     if verified:
+        try:
+            from core.audio_devices import invalidate_cache
+            invalidate_cache()
+        except Exception:
+            pass
         set_default_playback_device(target_name)
 
     return {
@@ -334,7 +385,7 @@ if ($audio) {{
         "action": "connect_bluetooth_device",
         "device": target_name,
         "verified": verified,
-        "message": f"Connected to {target_name} successfully." if verified else f"Connection command sent to '{target_name}', but active connected state could not be verified.",
+        "message": f"Connected to {target_name} successfully." if verified else f"Connection command sent to '{target_name}', but active connected state could not be verified. Please ensure the earphones are powered on and in range.",
         "error": None if verified else f"Device '{target_name}' is not in connected state.",
     }
 
@@ -697,16 +748,25 @@ def list_audio_devices() -> dict:
     playback = []
     recording = []
     try:
-        import sounddevice as sd
-        devs = sd.query_devices()
-        for idx, d in enumerate(devs):
-            entry = {"id": idx, "name": d["name"], "channels": d["max_output_channels"]}
-            if d.get("max_output_channels", 0) > 0:
-                playback.append(entry)
-            if d.get("max_input_channels", 0) > 0:
-                recording.append(entry)
-    except Exception as e:
+        from core.audio_devices import invalidate_cache, list_devices
+        invalidate_cache()
+        playback = [{"id": i, "name": name, "channels": 2} for i, name in enumerate(list_devices("output", refresh=True))]
+        recording = [{"id": i, "name": name, "channels": 1} for i, name in enumerate(list_devices("input", refresh=True))]
+    except Exception:
         pass
+
+    if not playback and not recording:
+        try:
+            import sounddevice as sd
+            devs = sd.query_devices()
+            for idx, d in enumerate(devs):
+                entry = {"id": idx, "name": d["name"], "channels": d["max_output_channels"]}
+                if d.get("max_output_channels", 0) > 0:
+                    playback.append(entry)
+                if d.get("max_input_channels", 0) > 0:
+                    recording.append(entry)
+        except Exception:
+            pass
 
     return {
         "playback_devices": playback,
@@ -718,8 +778,30 @@ def list_audio_devices() -> dict:
 
 def set_default_playback_device(device_name: str) -> dict:
     """Switch Windows default audio playback output to named device."""
-    safe_name = re.sub(r'[^a-zA-Z0-9_\-\. ]', '', str(device_name)).strip()
-    ps = f"""
+    from core import audio_devices
+    from memory import config_manager
+
+    target = str(device_name or "").strip()
+    clean_t = target.lower()
+
+    # If generic name like "earphones", "earbuds", "headphones", look for matching device in output list
+    matched_target = None
+    if any(k in clean_t for k in ("earphone", "earbud", "headphone", "headset", "bud")):
+        try:
+            for dev in audio_devices.list_devices("output", refresh=True):
+                dev_low = dev.lower()
+                if any(w in dev_low for w in ("bud", "enco", "oppo", "headphone", "headset", "wireless", "audio")):
+                    matched_target = dev
+                    break
+        except Exception:
+            pass
+
+    resolved_name = matched_target or target
+    success = audio_devices.set_default_endpoint(resolved_name, "output")
+
+    if not success:
+        safe_name = re.sub(r'[^a-zA-Z0-9_\-\. ]', '', str(resolved_name)).strip()
+        ps = f"""
 $name = "{safe_name}"
 $dev = Get-PnpDevice -Class AudioEndpoint -FriendlyName "*$name*" -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($dev) {{
@@ -729,14 +811,57 @@ if ($dev) {{
     Write-Output "NOT_FOUND"
 }}
 """
-    code, stdout, _ = _run_ps(ps, timeout=8)
-    verified = "ENDPOINT_ENABLED" in stdout
+        code, stdout, _ = _run_ps(ps, timeout=8)
+        success = "ENDPOINT_ENABLED" in stdout
+
+    if success:
+        try:
+            config_manager.set_output_device(resolved_name)
+        except Exception:
+            pass
+
     return {
-        "success": verified,
+        "success": success,
         "action": "set_default_playback_device",
-        "device": device_name,
-        "verified": verified,
-        "message": f"Audio output configured for '{device_name}'." if verified else f"Audio endpoint '{device_name}' not found.",
+        "device": resolved_name,
+        "verified": success,
+        "message": f"Audio output configured for '{resolved_name}'." if success else f"Audio endpoint '{resolved_name}' not found.",
+    }
+
+
+def set_default_recording_device(device_name: str) -> dict:
+    """Switch Windows default audio recording/microphone input to named device."""
+    from core import audio_devices
+    from memory import config_manager
+
+    target = str(device_name or "").strip()
+    clean_t = target.lower()
+
+    matched_target = None
+    if any(k in clean_t for k in ("earphone", "earbud", "headphone", "headset", "bud")):
+        try:
+            for dev in audio_devices.list_devices("input", refresh=True):
+                dev_low = dev.lower()
+                if any(w in dev_low for w in ("bud", "enco", "oppo", "headphone", "headset", "wireless", "audio")):
+                    matched_target = dev
+                    break
+        except Exception:
+            pass
+
+    resolved_name = matched_target or target
+    success = audio_devices.set_default_endpoint(resolved_name, "input")
+    if success:
+        try:
+            config_manager.set_input_device(resolved_name)
+        except Exception:
+            pass
+
+    return {
+        "success": success,
+        "action": "set_default_recording_device",
+        "device": resolved_name,
+        "verified": success,
+        "message": f"Audio input configured for '{resolved_name}'." if success else f"Audio input endpoint '{resolved_name}' not found.",
     }
 
 
@@ -1090,7 +1215,26 @@ def windows_control(parameters: dict = None, player=None, **kwargs) -> str:
         if not target:
             return outcome.failed("windows_control", "target device name required")
         res = set_default_playback_device(target)
+        if player and hasattr(player, "refresh_audio_devices"):
+            player.refresh_audio_devices()
         return outcome.done("windows_control", **res)
+
+    if action in ("set_audio_input", "switch_audio_input", "set_default_recording_device"):
+        if not target:
+            return outcome.failed("windows_control", "target device name required")
+        res = set_default_recording_device(target)
+        if player and hasattr(player, "refresh_audio_devices"):
+            player.refresh_audio_devices()
+        return outcome.done("windows_control", **res)
+
+    if action in ("set_audio_device", "switch_audio_device", "switch_audio"):
+        if not target:
+            return outcome.failed("windows_control", "target device name required")
+        res_out = set_default_playback_device(target)
+        res_in = set_default_recording_device(target)
+        if player and hasattr(player, "refresh_audio_devices"):
+            player.refresh_audio_devices()
+        return outcome.done("windows_control", playback=res_out, recording=res_in)
 
     # Display & Power
     if action in ("set_brightness", "brightness"):

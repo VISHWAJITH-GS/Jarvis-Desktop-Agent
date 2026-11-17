@@ -314,6 +314,8 @@ class ActionPermissionManager:
                            "show_actions", "manage_actions", "action_registry",
                            "toggle_ducking", "enable_ducking", "disable_ducking",
                            "brightness_up", "brightness_down", "set_brightness", "brightness",
+                           "list_audio_devices", "audio_devices", "sound_devices", "get_audio_devices",
+                           "list_sound_devices", "audio_status",
                            "lock_screen", "lock_laptop", "lock"):
                 return ActionRiskLevel.IMMEDIATE
 

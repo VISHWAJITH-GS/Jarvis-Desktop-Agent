@@ -206,6 +206,102 @@ class TestRemindersAlertsWindowControls(unittest.TestCase):
         self.assertEqual(self.win._drawer_rem_btn.text().strip(), "REMIND")
         self.assertEqual(self.win._drawer_mem_btn.text().strip(), "MEM/ACT")
 
+    def test_09_frameless_window_resizing_and_scrollbars(self):
+        """Frameless windows support edge and corner resizing (shrink & expand) like native Windows apps."""
+        from PyQt6.QtCore import QPoint, Qt
+        from PyQt6.QtGui import QMouseEvent
+        from ui import (
+            _ResizeEdge,
+            _detect_resize_edge,
+            _cursor_for_edge,
+            _FramelessWindowResizeMixin,
+            JarvisDisplayWindow,
+            BottomChatDock,
+            _NO_SCROLLBAR_STYLE,
+        )
+
+        # 1. No scrollbar stylesheet is present and applied
+        self.assertIn("QScrollBar:vertical", _NO_SCROLLBAR_STYLE)
+        self.assertIn("width: 0px !important", _NO_SCROLLBAR_STYLE)
+
+        # 2. All display windows inherit _FramelessWindowResizeMixin
+        self.assertTrue(issubclass(MainWindow, _FramelessWindowResizeMixin))
+        self.assertTrue(issubclass(JarvisDisplayWindow, _FramelessWindowResizeMixin))
+        self.assertTrue(issubclass(LeftSearchDock, _FramelessWindowResizeMixin))
+        self.assertTrue(issubclass(RemindersDisplayWindow, _FramelessWindowResizeMixin))
+        self.assertTrue(issubclass(BottomChatDock, _FramelessWindowResizeMixin))
+
+        # 3. Create a test JarvisDisplayWindow
+        disp = JarvisDisplayWindow(101, "TEST_DISP", "text", "Sample content for resize test")
+        disp.resize(600, 400)
+        disp.setMinimumSize(300, 200)
+
+        # Edge detection tests (margin = 8)
+        # Corners
+        self.assertEqual(_detect_resize_edge(disp, QPoint(2, 2)), _ResizeEdge.TOP_LEFT)
+        self.assertEqual(_detect_resize_edge(disp, QPoint(598, 2)), _ResizeEdge.TOP_RIGHT)
+        self.assertEqual(_detect_resize_edge(disp, QPoint(2, 398)), _ResizeEdge.BOTTOM_LEFT)
+        self.assertEqual(_detect_resize_edge(disp, QPoint(598, 398)), _ResizeEdge.BOTTOM_RIGHT)
+
+        # Borders
+        self.assertEqual(_detect_resize_edge(disp, QPoint(2, 200)), _ResizeEdge.LEFT)
+        self.assertEqual(_detect_resize_edge(disp, QPoint(598, 200)), _ResizeEdge.RIGHT)
+        self.assertEqual(_detect_resize_edge(disp, QPoint(300, 2)), _ResizeEdge.TOP)
+        self.assertEqual(_detect_resize_edge(disp, QPoint(300, 398)), _ResizeEdge.BOTTOM)
+
+        # Inside (no edge)
+        self.assertEqual(_detect_resize_edge(disp, QPoint(300, 200)), _ResizeEdge.NONE)
+
+        # 4. Cursor mapping
+        self.assertEqual(_cursor_for_edge(_ResizeEdge.TOP_LEFT), Qt.CursorShape.SizeFDiagCursor)
+        self.assertEqual(_cursor_for_edge(_ResizeEdge.BOTTOM_RIGHT), Qt.CursorShape.SizeFDiagCursor)
+        self.assertEqual(_cursor_for_edge(_ResizeEdge.TOP_RIGHT), Qt.CursorShape.SizeBDiagCursor)
+        self.assertEqual(_cursor_for_edge(_ResizeEdge.BOTTOM_LEFT), Qt.CursorShape.SizeBDiagCursor)
+        self.assertEqual(_cursor_for_edge(_ResizeEdge.LEFT), Qt.CursorShape.SizeHorCursor)
+        self.assertEqual(_cursor_for_edge(_ResizeEdge.RIGHT), Qt.CursorShape.SizeHorCursor)
+        self.assertEqual(_cursor_for_edge(_ResizeEdge.TOP), Qt.CursorShape.SizeVerCursor)
+        self.assertEqual(_cursor_for_edge(_ResizeEdge.BOTTOM), Qt.CursorShape.SizeVerCursor)
+
+        # 5. Resizing right edge: expanding and shrinking
+        disp.setGeometry(100, 100, 600, 400)
+        disp._active_resize_edge = _ResizeEdge.RIGHT
+        disp._drag_start_pos = QPoint(700, 300)
+        disp._drag_start_geom = disp.geometry()
+
+        # Expand width by +50px
+        mock_event_expand = MagicMock()
+        mock_event_expand.buttons.return_value = Qt.MouseButton.LeftButton
+        mock_event_expand.globalPosition().toPoint.return_value = QPoint(750, 300)
+        disp._handle_mouse_move(mock_event_expand)
+        self.assertEqual(disp.width(), 650)
+        self.assertEqual(disp.height(), 400)
+
+        # Shrink width by -100px (to 550px)
+        mock_event_shrink = MagicMock()
+        mock_event_shrink.buttons.return_value = Qt.MouseButton.LeftButton
+        mock_event_shrink.globalPosition().toPoint.return_value = QPoint(650, 300)
+        disp._handle_mouse_move(mock_event_shrink)
+        self.assertEqual(disp.width(), 550)
+
+        # Resizing bottom edge: expanding and shrinking
+        disp._active_resize_edge = _ResizeEdge.BOTTOM
+        disp._drag_start_pos = QPoint(300, 500)
+        disp._drag_start_geom = disp.geometry()
+
+        # Expand height by +80px
+        mock_event_down = MagicMock()
+        mock_event_down.buttons.return_value = Qt.MouseButton.LeftButton
+        mock_event_down.globalPosition().toPoint.return_value = QPoint(300, 580)
+        disp._handle_mouse_move(mock_event_down)
+        self.assertEqual(disp.height(), 480)
+
+        # Release mouse resets active resize edge
+        disp._handle_mouse_release(MagicMock())
+        self.assertEqual(disp._active_resize_edge, _ResizeEdge.NONE)
+
+        # Clean up
+        disp.close()
+
 
 if __name__ == "__main__":
     unittest.main()

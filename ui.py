@@ -198,6 +198,199 @@ def apply_ui_accent(accent_hex: str) -> bool:
     return True
 
 
+_NO_SCROLLBAR_STYLE = """
+QScrollBar:vertical, QScrollBar:horizontal {
+    background: transparent !important;
+    width: 0px !important;
+    height: 0px !important;
+    max-width: 0px !important;
+    max-height: 0px !important;
+    border: none !important;
+    margin: 0px !important;
+}
+QScrollBar::handle:vertical, QScrollBar::handle:horizontal {
+    background: transparent !important;
+    width: 0px !important;
+    height: 0px !important;
+    border: none !important;
+}
+QScrollBar::add-line, QScrollBar::sub-line, QScrollBar::add-page, QScrollBar::sub-page {
+    width: 0px !important;
+    height: 0px !important;
+    background: none !important;
+    border: none !important;
+}
+"""
+
+_RESIZE_MARGIN = 8
+
+
+class _ResizeEdge:
+    NONE = 0
+    LEFT = 1
+    RIGHT = 2
+    TOP = 4
+    BOTTOM = 8
+    TOP_LEFT = TOP | LEFT
+    TOP_RIGHT = TOP | RIGHT
+    BOTTOM_LEFT = BOTTOM | LEFT
+    BOTTOM_RIGHT = BOTTOM | RIGHT
+
+
+def _detect_resize_edge(widget: QWidget, pos: QPoint, margin: int = _RESIZE_MARGIN) -> int:
+    edge = _ResizeEdge.NONE
+    x, y = pos.x(), pos.y()
+    w, h = widget.width(), widget.height()
+
+    if x < margin:
+        edge |= _ResizeEdge.LEFT
+    elif x >= w - margin:
+        edge |= _ResizeEdge.RIGHT
+
+    if y < margin:
+        edge |= _ResizeEdge.TOP
+    elif y >= h - margin:
+        edge |= _ResizeEdge.BOTTOM
+
+    return edge
+
+
+def _cursor_for_edge(edge: int) -> Qt.CursorShape:
+    if edge in (_ResizeEdge.TOP_LEFT, _ResizeEdge.BOTTOM_RIGHT):
+        return Qt.CursorShape.SizeFDiagCursor
+    elif edge in (_ResizeEdge.TOP_RIGHT, _ResizeEdge.BOTTOM_LEFT):
+        return Qt.CursorShape.SizeBDiagCursor
+    elif edge in (_ResizeEdge.LEFT, _ResizeEdge.RIGHT):
+        return Qt.CursorShape.SizeHorCursor
+    elif edge in (_ResizeEdge.TOP, _ResizeEdge.BOTTOM):
+        return Qt.CursorShape.SizeVerCursor
+    return Qt.CursorShape.ArrowCursor
+
+
+class _FramelessWindowResizeMixin:
+    """Provides native edge and corner resizing (shrink & expand) and window moving for frameless windows."""
+
+    def _init_frameless_resize(self):
+        self.setMouseTracking(True)
+        self._active_resize_edge = _ResizeEdge.NONE
+        self._drag_start_pos = None
+        self._drag_start_geom = None
+        self._drag_start = None
+        self._win_start = None
+
+    def _handle_mouse_press(self, e) -> bool:
+        if e.button() == Qt.MouseButton.LeftButton:
+            pos = e.position().toPoint()
+            is_max = getattr(self, "_is_maximized_disp", False) or getattr(self, "_is_fullscreen", False) or getattr(self, "_collapsed", False)
+            edge = _detect_resize_edge(self, pos) if not is_max else _ResizeEdge.NONE
+            if edge != _ResizeEdge.NONE:
+                self._active_resize_edge = edge
+                self._drag_start_pos = e.globalPosition().toPoint()
+                self._drag_start_geom = self.geometry()
+                e.accept()
+                return True
+            else:
+                self._active_resize_edge = _ResizeEdge.NONE
+                self._drag_start = e.globalPosition().toPoint()
+                self._win_start = self.pos()
+        return False
+
+    def _handle_mouse_move(self, e) -> bool:
+        is_max = getattr(self, "_is_maximized_disp", False) or getattr(self, "_is_fullscreen", False) or getattr(self, "_collapsed", False)
+        if e.buttons() & Qt.MouseButton.LeftButton:
+            edge = getattr(self, "_active_resize_edge", _ResizeEdge.NONE)
+            if edge != _ResizeEdge.NONE and getattr(self, "_drag_start_geom", None):
+                delta = e.globalPosition().toPoint() - self._drag_start_pos
+                orig = self._drag_start_geom
+                min_w = self.minimumWidth() or 240
+                min_h = self.minimumHeight() or 180
+                max_w = self.maximumWidth()
+                max_h = self.maximumHeight()
+
+                new_x = orig.x()
+                new_y = orig.y()
+                new_w = orig.width()
+                new_h = orig.height()
+
+                if edge & _ResizeEdge.LEFT:
+                    candidate_w = orig.width() - delta.x()
+                    new_w = max(min_w, min(max_w, candidate_w))
+                    new_x = orig.x() + (orig.width() - new_w)
+                elif edge & _ResizeEdge.RIGHT:
+                    candidate_w = orig.width() + delta.x()
+                    new_w = max(min_w, min(max_w, candidate_w))
+
+                if edge & _ResizeEdge.TOP:
+                    candidate_h = orig.height() - delta.y()
+                    new_h = max(min_h, min(max_h, candidate_h))
+                    new_y = orig.y() + (orig.height() - new_h)
+                elif edge & _ResizeEdge.BOTTOM:
+                    candidate_h = orig.height() + delta.y()
+                    new_h = max(min_h, min(max_h, candidate_h))
+
+                self.setGeometry(new_x, new_y, new_w, new_h)
+                e.accept()
+                return True
+
+            if getattr(self, "_drag_start", None):
+                delta = e.globalPosition().toPoint() - self._drag_start
+                self.move(self._win_start + delta)
+                e.accept()
+                return True
+        else:
+            if not is_max:
+                edge = _detect_resize_edge(self, e.position().toPoint())
+                if edge != _ResizeEdge.NONE:
+                    self.setCursor(_cursor_for_edge(edge))
+                    return True
+                else:
+                    self.unsetCursor()
+        return False
+
+    def _handle_mouse_release(self, e) -> bool:
+        self._active_resize_edge = _ResizeEdge.NONE
+        self._drag_start = None
+        self._drag_start_geom = None
+        self._win_start = None
+        self.unsetCursor()
+        return False
+
+    def _filter_child_mouse_event(self, watched, event) -> bool:
+        et = event.type()
+        is_max = (
+            getattr(self, "_is_maximized_disp", False)
+            or getattr(self, "_is_fullscreen", False)
+            or getattr(self, "_is_minimized_top", False)
+            or getattr(self, "_collapsed", False)
+        )
+        if et == QEvent.Type.MouseMove:
+            if getattr(self, "_active_resize_edge", _ResizeEdge.NONE) != _ResizeEdge.NONE and (event.buttons() & Qt.MouseButton.LeftButton):
+                self._handle_mouse_move(event)
+                return True
+            if not (event.buttons() & Qt.MouseButton.LeftButton):
+                if not is_max:
+                    pos = watched.mapTo(self, event.position().toPoint())
+                    edge = _detect_resize_edge(self, pos)
+                    if edge != _ResizeEdge.NONE:
+                        self.setCursor(_cursor_for_edge(edge))
+                        return False
+                    else:
+                        if self.cursor().shape() != Qt.CursorShape.ArrowCursor:
+                            self.unsetCursor()
+        elif et == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
+            pos = watched.mapTo(self, event.position().toPoint())
+            edge = _detect_resize_edge(self, pos) if not is_max else _ResizeEdge.NONE
+            if edge != _ResizeEdge.NONE:
+                self._active_resize_edge = edge
+                self._drag_start_pos = event.globalPosition().toPoint()
+                self._drag_start_geom = self.geometry()
+                return True
+        elif et == QEvent.Type.MouseButtonRelease and getattr(self, "_active_resize_edge", _ResizeEdge.NONE) != _ResizeEdge.NONE:
+            self._handle_mouse_release(event)
+            return True
+        return False
+
+
 def current_palette() -> dict[str, str]:
     """A snapshot of the accent-linked colours currently on class C."""
     return {k: getattr(C, k) for k in _HUE_LINKED}
@@ -1691,6 +1884,8 @@ class LogWidget(QTextEdit):
         # lines drop off the top automatically.
         self.document().setMaximumBlockCount(600)
         self.setFont(QFont("Montserrat", 9))
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setStyleSheet(f"""
             QTextEdit {{
                 background: {C.PANEL};
@@ -1700,15 +1895,16 @@ class LogWidget(QTextEdit):
                 padding: 6px;
                 selection-background-color: {C.PRI_GHO};
             }}
-            QScrollBar:vertical {{
-                background: {C.BG};
-                width: 8px;
+            QScrollBar:vertical, QScrollBar:horizontal {{
+                background: transparent;
+                width: 0px;
+                height: 0px;
                 border: none;
             }}
-            QScrollBar::handle:vertical {{
-                background: {C.BORDER_B};
-                border-radius: 4px;
-                min-height: 20px;
+            QScrollBar::handle:vertical, QScrollBar::handle:horizontal {{
+                background: transparent;
+                width: 0px;
+                height: 0px;
             }}
         """)
         self._queue: list[str] = []
@@ -3322,6 +3518,8 @@ class MemoryOverlay(_HudOverlay):
         else:
             scroll = QScrollArea()
             scroll.setWidgetResizable(True)
+            scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
             scroll.setFixedHeight(min(420, 34 * len(rows) + 10))
             scroll.setStyleSheet(
                 f"QScrollArea {{ border: 1px solid {C.BORDER}; border-radius: 3px; "
@@ -3571,13 +3769,13 @@ class ProvidersOverlay(_HudOverlay):
         self._scroll = QScrollArea()
         self._scroll.setWidgetResizable(True)
         self._scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._scroll.setStyleSheet(
             "QScrollArea { background: transparent; }"
-            f"QScrollBar:vertical {{ background: {C.DARK}; width: 9px; "
-            f"margin: 0; border-radius: 4px; }}"
-            f"QScrollBar::handle:vertical {{ background: {C.BORDER_B}; "
-            f"border-radius: 4px; min-height: 30px; }}"
-            "QScrollBar::add-line, QScrollBar::sub-line { height: 0; }"
+            "QScrollBar:vertical, QScrollBar:horizontal { background: transparent; width: 0px; height: 0px; margin: 0; border: none; }"
+            "QScrollBar::handle:vertical, QScrollBar::handle:horizontal { background: transparent; width: 0px; height: 0px; }"
+            "QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; border: none; }"
             "QScrollBar::add-page, QScrollBar::sub-page { background: none; }")
         self._scroll.setMinimumHeight(230)
         self._scroll.setMaximumHeight(360)
@@ -4680,6 +4878,8 @@ class PluginSettingsOverlay(QWidget):
             scroll = QScrollArea()
             scroll.setWidgetResizable(True)
             scroll.setFrameShape(QFrame.Shape.NoFrame)
+            scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
             scroll.setStyleSheet("QScrollArea { background: transparent; }")
             inner = QWidget()
             inner.setStyleSheet("background: transparent;")
@@ -5147,7 +5347,7 @@ class RemoteKeyOverlay(QWidget):
         self.closed.emit()
 
 
-class BottomChatDock(QWidget):
+class BottomChatDock(_FramelessWindowResizeMixin, QWidget):
     """
     Floating rectangular transcript and command input dock positioned at the
     bottom-center of the screen with wide width and short height.
@@ -5163,6 +5363,7 @@ class BottomChatDock(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setMinimumSize(480, 68)
+        self._init_frameless_resize()
 
         screen = QApplication.primaryScreen().availableGeometry()
         dock_w = min(840, max(540, screen.width() - 360))
@@ -5186,6 +5387,8 @@ class BottomChatDock(QWidget):
                 border-radius: 6px;
             }}
         """)
+        self._outer.setMouseTracking(True)
+        self._outer.installEventFilter(self)
         v = QVBoxLayout(self)
         v.setContentsMargins(0, 0, 0, 0)
         v.addWidget(self._outer)
@@ -5237,6 +5440,8 @@ class BottomChatDock(QWidget):
 
         self._dock_log = LogWidget()
         self._dock_log.setFixedHeight(82)
+        self._dock_log.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._dock_log.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._dock_log.setStyleSheet(f"""
             QTextEdit {{
                 background: rgba(8, 2, 8, 190);
@@ -5245,13 +5450,16 @@ class BottomChatDock(QWidget):
                 border-radius: 4px;
                 padding: 4px 6px;
             }}
-            QScrollBar:vertical {{
+            QScrollBar:vertical, QScrollBar:horizontal {{
                 background: transparent;
-                width: 6px;
+                width: 0px;
+                height: 0px;
+                border: none;
             }}
-            QScrollBar::handle:vertical {{
-                background: {C.BORDER_B};
-                border-radius: 3px;
+            QScrollBar::handle:vertical, QScrollBar::handle:horizontal {{
+                background: transparent;
+                width: 0px;
+                height: 0px;
             }}
         """)
         self._log = self._dock_log
@@ -5344,20 +5552,24 @@ class BottomChatDock(QWidget):
             self._min_btn.setText("—")
 
     def mousePressEvent(self, e):
-        if e.button() == Qt.MouseButton.LeftButton:
-            self._drag_start = e.globalPosition().toPoint()
-            self._win_start = self.pos()
+        if self._handle_mouse_press(e):
+            return
         super().mousePressEvent(e)
 
     def mouseMoveEvent(self, e):
-        if self._drag_start and e.buttons() == Qt.MouseButton.LeftButton:
-            delta = e.globalPosition().toPoint() - self._drag_start
-            self.move(self._win_start + delta)
+        if self._handle_mouse_move(e):
+            return
         super().mouseMoveEvent(e)
 
     def mouseReleaseEvent(self, e):
-        self._drag_start = None
+        self._handle_mouse_release(e)
         super().mouseReleaseEvent(e)
+
+    def eventFilter(self, watched, event):
+        if watched == getattr(self, "_outer", None):
+            if self._filter_child_mouse_event(watched, event):
+                return True
+        return super().eventFilter(watched, event)
 
 
 def format_visual_content_html(raw_text: str) -> str:
@@ -5583,7 +5795,7 @@ class ScreenGlowOverlay(QWidget):
         painter.end()
 
 
-class LeftSearchDock(QWidget):
+class LeftSearchDock(_FramelessWindowResizeMixin, QWidget):
     """
     Floating pop-up panel for search results, briefings, document reviews,
     and quizzes, positioned along the left edge of the screen.
@@ -5599,6 +5811,7 @@ class LeftSearchDock(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setMinimumSize(380, 400)
+        self._init_frameless_resize()
 
         screen = QApplication.primaryScreen().availableGeometry()
         dock_w = min(480, max(380, screen.width() // 3))
@@ -5607,8 +5820,6 @@ class LeftSearchDock(QWidget):
         dock_y = screen.top() + (screen.height() - dock_h) // 2
         self.setGeometry(dock_x, dock_y, dock_w, dock_h)
 
-        self._drag_start = None
-        self._win_start = None
         self._build_ui()
 
     def _build_ui(self):
@@ -5621,6 +5832,8 @@ class LeftSearchDock(QWidget):
                 border-radius: 6px;
             }}
         """)
+        self._outer.setMouseTracking(True)
+        self._outer.installEventFilter(self)
         v = QVBoxLayout(self)
         v.setContentsMargins(0, 0, 0, 0)
         v.addWidget(self._outer)
@@ -5732,21 +5945,24 @@ class LeftSearchDock(QWidget):
             self.restore_from_dock()
 
     def mousePressEvent(self, e):
-        if e.button() == Qt.MouseButton.LeftButton:
-            self._drag_start = e.globalPosition().toPoint()
-            self._win_start = self.pos()
+        if self._handle_mouse_press(e):
+            return
         super().mousePressEvent(e)
 
     def mouseMoveEvent(self, e):
-        if self._drag_start and e.buttons() == Qt.MouseButton.LeftButton:
-            delta = e.globalPosition().toPoint() - self._drag_start
-            self.move(self._win_start + delta)
+        if self._handle_mouse_move(e):
+            return
         super().mouseMoveEvent(e)
 
     def mouseReleaseEvent(self, e):
-        self._drag_start = None
-        self._win_start = None
+        self._handle_mouse_release(e)
         super().mouseReleaseEvent(e)
+
+    def eventFilter(self, watched, event):
+        if watched == getattr(self, "_outer", None):
+            if self._filter_child_mouse_event(watched, event):
+                return True
+        return super().eventFilter(watched, event)
 
 
 class SlideDownAlert(QWidget):
@@ -5785,49 +6001,49 @@ class SlideDownAlert(QWidget):
         """)
 
         glow = QGraphicsDropShadowEffect(self._frame)
-        glow.setBlurRadius(20)
-        glow.setColor(QColor(255, 23, 68, 200))
-        glow.setOffset(0, 2)
+        glow.setBlurRadius(12)
+        glow.setColor(QColor(255, 23, 68, 180))
+        glow.setOffset(0, 1)
         self._frame.setGraphicsEffect(glow)
 
         main_lay = QVBoxLayout(self)
-        main_lay.setContentsMargins(10, 10, 10, 10)
+        main_lay.setContentsMargins(5, 5, 5, 5)
         main_lay.addWidget(self._frame)
 
         lay = QHBoxLayout(self._frame)
-        lay.setContentsMargins(12, 6, 10, 6)
-        lay.setSpacing(10)
+        lay.setContentsMargins(8, 4, 8, 4)
+        lay.setSpacing(6)
 
         icon_lbl = QLabel("⚠")
-        icon_lbl.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
+        icon_lbl.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
         icon_lbl.setStyleSheet("color: #000000; background: transparent;")
         lay.addWidget(icon_lbl)
 
         v_text = QVBoxLayout()
-        v_text.setSpacing(1)
+        v_text.setSpacing(0)
 
         self._title_lbl = QLabel("SYSTEM ALERT")
-        self._title_lbl.setFont(QFont("Montserrat", 8, QFont.Weight.Bold))
+        self._title_lbl.setFont(QFont("Montserrat", 7, QFont.Weight.Bold))
         self._title_lbl.setStyleSheet("color: #000000; background: transparent; letter-spacing: 0.5px;")
         v_text.addWidget(self._title_lbl)
 
         self._msg_lbl = QLabel("")
-        self._msg_lbl.setFont(QFont("Montserrat", 9, QFont.Weight.Bold))
+        self._msg_lbl.setFont(QFont("Montserrat", 8, QFont.Weight.Bold))
         self._msg_lbl.setStyleSheet("color: #000000; background: transparent;")
         self._msg_lbl.setWordWrap(True)
         v_text.addWidget(self._msg_lbl)
         lay.addLayout(v_text, stretch=1)
 
         close_btn = QPushButton("✕")
-        close_btn.setFont(QFont("Montserrat", 8, QFont.Weight.Bold))
-        close_btn.setFixedSize(18, 18)
+        close_btn.setFont(QFont("Montserrat", 7, QFont.Weight.Bold))
+        close_btn.setFixedSize(14, 14)
         close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         close_btn.setStyleSheet("""
             QPushButton {
                 background: rgba(0, 0, 0, 0.18);
                 color: #000000;
                 border: 1px solid rgba(0, 0, 0, 0.4);
-                border-radius: 3px;
+                border-radius: 2px;
             }
             QPushButton:hover {
                 background: rgba(0, 0, 0, 0.45);
@@ -5851,14 +6067,16 @@ class SlideDownAlert(QWidget):
             fm_title.horizontalAdvance(self._title_lbl.text()),
             fm_msg.horizontalAdvance(clean_msg)
         )
-        inner_w = text_w + 72
-        w = min(460, max(280, inner_w))
+        inner_w = text_w + 48
+        w = min(340, max(190, inner_w))
 
-        max_text_w = max(180, w - 72)
+        max_text_w = max(130, w - 48)
         text_rect = fm_msg.boundingRect(QRect(0, 0, max_text_w, 1000), int(Qt.TextFlag.TextWordWrap), clean_msg)
-        h = max(48, text_rect.height() + 30)
+        title_h = fm_title.height()
+        msg_h = text_rect.height()
+        h = max(26, title_h + msg_h + 10)
 
-        self.resize(w + 20, h + 20)
+        self.resize(w + 10, h + 10)
 
         center_x = screen.left() + (screen.width() - self.width()) // 2
         start_y = screen.top() - self.height() - 20
@@ -5893,7 +6111,7 @@ class SlideDownAlert(QWidget):
         self._pos_anim.start()
 
 
-class RemindersDisplayWindow(QWidget):
+class RemindersDisplayWindow(_FramelessWindowResizeMixin, QWidget):
     """
     Dedicated floating display window for effectively managing and interpreting reminders.
     Features:
@@ -5914,11 +6132,10 @@ class RemindersDisplayWindow(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setMinimumSize(420, 360)
+        self._init_frameless_resize()
 
         self._active_scope = "upcoming"
         self._collapsed = False
-        self._drag_start = None
-        self._win_start = None
 
         screen = QApplication.primaryScreen().availableGeometry()
         w = min(540, max(440, screen.width() // 3))
@@ -5940,6 +6157,8 @@ class RemindersDisplayWindow(QWidget):
                 border-radius: 8px;
             }}
         """)
+        self._outer.setMouseTracking(True)
+        self._outer.installEventFilter(self)
         v_outer = QVBoxLayout(self)
         v_outer.setContentsMargins(0, 0, 0, 0)
         v_outer.addWidget(self._outer)
@@ -6050,20 +6269,22 @@ class RemindersDisplayWindow(QWidget):
         self._scroll = QScrollArea()
         self._scroll.setWidgetResizable(True)
         self._scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._scroll.setStyleSheet(f"""
             QScrollArea {{
                 background: transparent;
                 border: 1px solid {C.BORDER};
                 border-radius: 4px;
             }}
-            QScrollBar:vertical {{
-                background: {C.BG}; width: 6px; border: none;
+            QScrollBar:vertical, QScrollBar:horizontal {{
+                background: transparent; width: 0px; height: 0px; border: none;
             }}
-            QScrollBar::handle:vertical {{
-                background: {C.BORDER_B}; border-radius: 3px; min-height: 16px;
+            QScrollBar::handle:vertical, QScrollBar::handle:horizontal {{
+                background: transparent; width: 0px; height: 0px;
             }}
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
-                height: 0; border: none;
+                width: 0; height: 0; border: none;
             }}
         """)
 
@@ -6435,24 +6656,27 @@ class RemindersDisplayWindow(QWidget):
             self.restore_from_dock()
 
     def mousePressEvent(self, e):
-        if e.button() == Qt.MouseButton.LeftButton:
-            self._drag_start = e.globalPosition().toPoint()
-            self._win_start = self.pos()
+        if self._handle_mouse_press(e):
+            return
         super().mousePressEvent(e)
 
     def mouseMoveEvent(self, e):
-        if self._drag_start and e.buttons() == Qt.MouseButton.LeftButton:
-            delta = e.globalPosition().toPoint() - self._drag_start
-            self.move(self._win_start + delta)
+        if self._handle_mouse_move(e):
+            return
         super().mouseMoveEvent(e)
 
     def mouseReleaseEvent(self, e):
-        self._drag_start = None
-        self._win_start = None
+        self._handle_mouse_release(e)
         super().mouseReleaseEvent(e)
 
+    def eventFilter(self, watched, event):
+        if watched == getattr(self, "_outer", None):
+            if self._filter_child_mouse_event(watched, event):
+                return True
+        return super().eventFilter(watched, event)
 
-class MemoryActionsDisplayWindow(QWidget):
+
+class MemoryActionsDisplayWindow(_FramelessWindowResizeMixin, QWidget):
     """
     Dedicated interactive management platform for inspecting, managing, editing,
     and deleting JARVIS's long-term memory and viewing/controlling registered actions and permissions.
@@ -6468,13 +6692,12 @@ class MemoryActionsDisplayWindow(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setMinimumSize(560, 500)
+        self._init_frameless_resize()
 
         self._active_tab = "memory"          # "memory" or "actions"
         self._active_category = "all"        # "all" or specific category
         self._active_risk = "all"            # "all" or specific risk level
         self._collapsed = False
-        self._drag_start = None
-        self._win_start = None
 
         screen = QApplication.primaryScreen().availableGeometry()
         w = min(700, max(560, screen.width() // 2))
@@ -6496,6 +6719,8 @@ class MemoryActionsDisplayWindow(QWidget):
                 border-radius: 8px;
             }}
         """)
+        self._outer.setMouseTracking(True)
+        self._outer.installEventFilter(self)
         v_outer = QVBoxLayout(self)
         v_outer.setContentsMargins(0, 0, 0, 0)
         v_outer.addWidget(self._outer)
@@ -6654,20 +6879,22 @@ class MemoryActionsDisplayWindow(QWidget):
         self._mem_scroll = QScrollArea()
         self._mem_scroll.setWidgetResizable(True)
         self._mem_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._mem_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._mem_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._mem_scroll.setStyleSheet(f"""
             QScrollArea {{
                 background: transparent;
                 border: 1px solid {C.BORDER};
                 border-radius: 4px;
             }}
-            QScrollBar:vertical {{
-                background: {C.BG}; width: 6px; border: none;
+            QScrollBar:vertical, QScrollBar:horizontal {{
+                background: transparent; width: 0px; height: 0px; border: none;
             }}
-            QScrollBar::handle:vertical {{
-                background: {C.BORDER_B}; border-radius: 3px; min-height: 16px;
+            QScrollBar::handle:vertical, QScrollBar::handle:horizontal {{
+                background: transparent; width: 0px; height: 0px;
             }}
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
-                height: 0; border: none;
+                width: 0; height: 0; border: none;
             }}
         """)
         self._mem_cards_widget = QWidget()
@@ -6791,20 +7018,22 @@ class MemoryActionsDisplayWindow(QWidget):
         self._act_scroll = QScrollArea()
         self._act_scroll.setWidgetResizable(True)
         self._act_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._act_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._act_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._act_scroll.setStyleSheet(f"""
             QScrollArea {{
                 background: transparent;
                 border: 1px solid {C.BORDER};
                 border-radius: 4px;
             }}
-            QScrollBar:vertical {{
-                background: {C.BG}; width: 6px; border: none;
+            QScrollBar:vertical, QScrollBar:horizontal {{
+                background: transparent; width: 0px; height: 0px; border: none;
             }}
-            QScrollBar::handle:vertical {{
-                background: {C.BORDER_B}; border-radius: 3px; min-height: 16px;
+            QScrollBar::handle:vertical, QScrollBar::handle:horizontal {{
+                background: transparent; width: 0px; height: 0px;
             }}
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
-                height: 0; border: none;
+                width: 0; height: 0; border: none;
             }}
         """)
         self._act_cards_widget = QWidget()
@@ -7257,21 +7486,24 @@ class MemoryActionsDisplayWindow(QWidget):
             self.restore_from_dock()
 
     def mousePressEvent(self, e):
-        if e.button() == Qt.MouseButton.LeftButton:
-            self._drag_start = e.globalPosition().toPoint()
-            self._win_start = self.pos()
+        if self._handle_mouse_press(e):
+            return
         super().mousePressEvent(e)
 
     def mouseMoveEvent(self, e):
-        if self._drag_start and e.buttons() == Qt.MouseButton.LeftButton:
-            delta = e.globalPosition().toPoint() - self._drag_start
-            self.move(self._win_start + delta)
+        if self._handle_mouse_move(e):
+            return
         super().mouseMoveEvent(e)
 
     def mouseReleaseEvent(self, e):
-        self._drag_start = None
-        self._win_start = None
+        self._handle_mouse_release(e)
         super().mouseReleaseEvent(e)
+
+    def eventFilter(self, watched, event):
+        if watched == getattr(self, "_outer", None):
+            if self._filter_child_mouse_event(watched, event):
+                return True
+        return super().eventFilter(watched, event)
 
 
 class ArmouryCrateTelemetryWidget(QWidget):
@@ -7677,7 +7909,7 @@ class MinimizedDisplaysDock(QWidget):
 MinimizedDisplaysOverlay = MinimizedDisplaysDock
 
 
-class JarvisDisplayWindow(QWidget):
+class JarvisDisplayWindow(_FramelessWindowResizeMixin, QWidget):
     closed = pyqtSignal(int)
     minimized_requested = pyqtSignal(int)
     _img_data_sig = pyqtSignal(bytes)
@@ -7699,7 +7931,7 @@ class JarvisDisplayWindow(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.resize(680, 500)
         self.setMinimumSize(320, 240)
-        self._drag_start = None
+        self._init_frameless_resize()
         self._normal_geom = None
         self._is_maximized_disp = False
 
@@ -7712,6 +7944,8 @@ class JarvisDisplayWindow(QWidget):
                 border-radius: 6px;
             }}
         """)
+        self._outer.setMouseTracking(True)
+        self._outer.installEventFilter(self)
 
         main_v = QVBoxLayout(self)
         main_v.setContentsMargins(0, 0, 0, 0)
@@ -7888,6 +8122,8 @@ class JarvisDisplayWindow(QWidget):
         self._task_files_edit.setReadOnly(True)
         self._task_files_edit.setFixedHeight(95)
         self._task_files_edit.setFrameShape(QFrame.Shape.NoFrame)
+        self._task_files_edit.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._task_files_edit.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._task_files_edit.setStyleSheet(f"""
             QTextEdit {{
                 background: rgba(10, 2, 4, 220);
@@ -7898,13 +8134,16 @@ class JarvisDisplayWindow(QWidget):
                 font-family: 'Montserrat';
                 font-size: 9px;
             }}
-            QScrollBar:vertical {{
-                width: 5px;
+            QScrollBar:vertical, QScrollBar:horizontal {{
+                width: 0px;
+                height: 0px;
                 background: transparent;
+                border: none;
             }}
-            QScrollBar::handle:vertical {{
-                background: rgba(255, 23, 68, 0.4);
-                border-radius: 2px;
+            QScrollBar::handle:vertical, QScrollBar::handle:horizontal {{
+                background: transparent;
+                width: 0px;
+                height: 0px;
             }}
         """)
         lay.addWidget(self._task_files_edit)
@@ -7917,6 +8156,8 @@ class JarvisDisplayWindow(QWidget):
         self._task_log_edit = QTextEdit()
         self._task_log_edit.setReadOnly(True)
         self._task_log_edit.setFrameShape(QFrame.Shape.NoFrame)
+        self._task_log_edit.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._task_log_edit.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._task_log_edit.setStyleSheet(f"""
             QTextEdit {{
                 background: rgba(6, 1, 2, 240);
@@ -7927,13 +8168,16 @@ class JarvisDisplayWindow(QWidget):
                 font-family: 'Montserrat';
                 font-size: 9px;
             }}
-            QScrollBar:vertical {{
-                width: 5px;
+            QScrollBar:vertical, QScrollBar:horizontal {{
+                width: 0px;
+                height: 0px;
                 background: transparent;
+                border: none;
             }}
-            QScrollBar::handle:vertical {{
-                background: rgba(255, 23, 68, 0.4);
-                border-radius: 2px;
+            QScrollBar::handle:vertical, QScrollBar::handle:horizontal {{
+                background: transparent;
+                width: 0px;
+                height: 0px;
             }}
         """)
         lay.addWidget(self._task_log_edit, stretch=1)
@@ -8146,6 +8390,8 @@ class JarvisDisplayWindow(QWidget):
         self._text_edit = QTextEdit()
         self._text_edit.setReadOnly(True)
         self._text_edit.setFrameShape(QFrame.Shape.NoFrame)
+        self._text_edit.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._text_edit.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._text_edit.setFont(QFont("Montserrat", 10))
         self._text_edit.setStyleSheet(f"""
             QTextEdit {{
@@ -8155,22 +8401,16 @@ class JarvisDisplayWindow(QWidget):
                 padding: 10px 12px;
                 selection-background-color: rgba(255, 23, 68, 0.35);
             }}
-            QScrollBar:vertical {{
-                background: rgba(14, 4, 12, 120);
-                width: 6px;
+            QScrollBar:vertical, QScrollBar:horizontal {{
+                background: transparent;
+                width: 0px;
+                height: 0px;
                 border: none;
                 margin: 0px;
-                border-radius: 3px;
             }}
-            QScrollBar::handle:vertical {{
-                background: rgba(255, 23, 68, 0.45);
-                border-radius: 3px;
-                min-height: 20px;
-            }}
-            QScrollBar::handle:vertical:hover {{
-                background: {C.PRI};
-            }}
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+            QScrollBar::handle:vertical, QScrollBar::handle:horizontal {{
+                background: transparent;
+                width: 0px;
                 height: 0px;
             }}
         """)
@@ -8368,20 +8608,37 @@ class JarvisDisplayWindow(QWidget):
             self._vid_item.setSize(QSizeF(w, h))
 
     def mousePressEvent(self, e):
-        if e.button() == Qt.MouseButton.LeftButton:
-            self._drag_start = e.globalPosition().toPoint()
-            self._win_start = self.pos()
+        if self._handle_mouse_press(e):
+            return
         super().mousePressEvent(e)
 
     def mouseMoveEvent(self, e):
-        if getattr(self, "_drag_start", None) and e.buttons() == Qt.MouseButton.LeftButton:
-            delta = e.globalPosition().toPoint() - self._drag_start
-            self.move(self._win_start + delta)
+        if self._handle_mouse_move(e):
+            return
         super().mouseMoveEvent(e)
 
     def mouseReleaseEvent(self, e):
-        self._drag_start = None
+        self._handle_mouse_release(e)
         super().mouseReleaseEvent(e)
+
+    def eventFilter(self, watched, event):
+        if watched == getattr(self, "_outer", None):
+            if self._filter_child_mouse_event(watched, event):
+                return True
+        return super().eventFilter(watched, event)
+
+    def mouseDoubleClickEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton and e.position().toPoint().y() <= 38:
+            self.maximize_window()
+            e.accept()
+            return
+        super().mouseDoubleClickEvent(e)
+
+    def eventFilter(self, watched, event):
+        if watched == getattr(self, "_outer", None):
+            if self._filter_child_mouse_event(watched, event):
+                return True
+        return super().eventFilter(watched, event)
 
     def maximize_window(self):
         """Maximize display to fill available screen workspace or restore to previous normal geometry."""
@@ -8438,7 +8695,7 @@ class JarvisDisplayWindow(QWidget):
         super().closeEvent(e)
 
 
-class MainWindow(QMainWindow):
+class MainWindow(_FramelessWindowResizeMixin, QMainWindow):
     _log_sig        = pyqtSignal(str)
     _state_sig      = pyqtSignal(str)
     _content_sig    = pyqtSignal(str, str)   # (title, text) — thread-safe content display
@@ -8471,11 +8728,15 @@ class MainWindow(QMainWindow):
     _reminders_sig   = pyqtSignal(str)              # (scope)
     _memory_actions_sig = pyqtSignal(str)          # (tab: "memory" | "actions")
     _screen_glow_sig = pyqtSignal(int)              # (duration_ms)
+    _refresh_audio_sig = pyqtSignal()               # Trigger audio device dropdown refresh
 
     def __init__(self, face_path: str):
         super().__init__()
         _load_app_fonts()
         self._face_path = face_path
+        app = QApplication.instance()
+        if app:
+            app.setStyleSheet((app.styleSheet() or "") + "\n" + _NO_SCROLLBAR_STYLE)
 
         # Load customization from config
         _cfg = _read_full_config()
@@ -8494,6 +8755,7 @@ class MainWindow(QMainWindow):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setMinimumSize(280, 380)
+        self._init_frameless_resize()
         self._is_closed: bool = False
         self._expanded: bool = False
         self._is_fullscreen: bool = False
@@ -8658,8 +8920,13 @@ class MainWindow(QMainWindow):
 
         # ── Compact HUD container (only the compact HUD!)
         self.hud_box = QWidget()
-        self.hud_box.setFixedWidth(420)
+        self.hud_box.setMinimumWidth(300)
+        self.hud_box.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.hud_box.setStyleSheet("background: transparent;")
+        self.hud_box.setMouseTracking(True)
+        self.hud_box.installEventFilter(self)
+        self.hud.setMouseTracking(True)
+        self.hud.installEventFilter(self)
         hud_v = QVBoxLayout(self.hud_box)
         hud_v.setContentsMargins(0, 0, 0, 0)
         hud_v.setSpacing(0)
@@ -8670,9 +8937,13 @@ class MainWindow(QMainWindow):
         # ── Expanded Cyber Drawer (attached directly to JARVIS window)
         self._drawer = self._build_cyber_drawer()
         self._drawer.setVisible(False)
+        self._drawer.setMouseTracking(True)
+        self._drawer.installEventFilter(self)
 
         central = QWidget()
         central.setStyleSheet("background: transparent;")
+        central.setMouseTracking(True)
+        central.installEventFilter(self)
         self.setCentralWidget(central)
 
         self._main_h = QHBoxLayout(central)
@@ -8740,6 +9011,7 @@ class MainWindow(QMainWindow):
         self._reminders_sig.connect(self._show_reminders)
         self._memory_actions_sig.connect(self._show_memory_actions)
         self._screen_glow_sig.connect(self._on_screen_glow)
+        self._refresh_audio_sig.connect(self._refresh_audio_tab)
         self._screen_glow_overlay = ScreenGlowOverlay(self)
         self._search_dock_minimized_to_bar = False
         self._reminders_dock_minimized_to_bar = False
@@ -8821,7 +9093,8 @@ class MainWindow(QMainWindow):
             self.hud._mini_mode = False
             self.setMinimumSize(280, 380)
             if hasattr(self, "hud_box"):
-                self.hud_box.setFixedWidth(420)
+                self.hud_box.setMinimumWidth(300)
+                self.hud_box.setMaximumWidth(16777215)
             if hasattr(self, "hud_ctrl_bar"):
                 self.hud_ctrl_bar.setVisible(True)
             target = getattr(self, "_normal_geom", None)
@@ -9316,7 +9589,8 @@ class MainWindow(QMainWindow):
 
     def _build_cyber_drawer(self) -> QWidget:
         w = QWidget()
-        w.setFixedWidth(610)
+        w.setMinimumWidth(380)
+        w.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         w.setStyleSheet(f"""
             QWidget#CyberDrawer {{
                 background: rgba(14, 4, 12, 238);
@@ -9413,6 +9687,8 @@ class MainWindow(QMainWindow):
                 btn.setChecked(True)
                 btn.setStyleSheet(self._tab_btn_style(True))
                 self._drawer_tabs.setCurrentIndex(idx)
+                if idx == 2:
+                    self._refresh_audio_tab()
             btn.clicked.connect(_on_click)
             btn.setStyleSheet(self._tab_btn_style(idx == 0))
             return btn
@@ -9431,6 +9707,8 @@ class MainWindow(QMainWindow):
         p0_v.setSpacing(6)
 
         # Full conversation and activity chat log
+        self._log.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._log.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._log.setStyleSheet(f"""
             QTextEdit {{
                 background: rgba(12, 3, 11, 220);
@@ -9439,13 +9717,16 @@ class MainWindow(QMainWindow):
                 border-radius: 4px;
                 padding: 6px 8px;
             }}
-            QScrollBar:vertical {{
+            QScrollBar:vertical, QScrollBar:horizontal {{
                 background: transparent;
-                width: 6px;
+                width: 0px;
+                height: 0px;
+                border: none;
             }}
-            QScrollBar::handle:vertical {{
-                background: {C.BORDER_B};
-                border-radius: 3px;
+            QScrollBar::handle:vertical, QScrollBar::handle:horizontal {{
+                background: transparent;
+                width: 0px;
+                height: 0px;
             }}
         """)
         p0_v.addWidget(self._log, stretch=1)
@@ -9498,22 +9779,34 @@ class MainWindow(QMainWindow):
             QComboBox::drop-down {{ border: none; }}
         """)
         try:
-            from core.audio_devices import get_input_devices
-            for dev in get_input_devices():
+            from core.audio_devices import get_input_devices, DEFAULT_LABEL
+            from memory.config_manager import get_input_device
+            cur_in = get_input_device() or DEFAULT_LABEL
+            for dev in get_input_devices(refresh=True):
                 self._combo_mic.addItem(dev)
+            idx_in = self._combo_mic.findText(cur_in)
+            if idx_in >= 0:
+                self._combo_mic.setCurrentIndex(idx_in)
         except Exception:
-            self._combo_mic.addItem("Default System Microphone")
+            self._combo_mic.addItem("System default")
+        self._combo_mic.currentTextChanged.connect(self._on_mic_combo_changed)
         lay.addWidget(self._combo_mic)
 
         lay.addWidget(_hdr("AUDIO OUTPUT (SPEAKERS)"))
         self._combo_spk = QComboBox()
         self._combo_spk.setStyleSheet(self._combo_mic.styleSheet())
         try:
-            from core.audio_devices import get_output_devices
-            for dev in get_output_devices():
+            from core.audio_devices import get_output_devices, DEFAULT_LABEL
+            from memory.config_manager import get_output_device
+            cur_out = get_output_device() or DEFAULT_LABEL
+            for dev in get_output_devices(refresh=True):
                 self._combo_spk.addItem(dev)
+            idx_out = self._combo_spk.findText(cur_out)
+            if idx_out >= 0:
+                self._combo_spk.setCurrentIndex(idx_out)
         except Exception:
-            self._combo_spk.addItem("Default System Speaker")
+            self._combo_spk.addItem("System default")
+        self._combo_spk.currentTextChanged.connect(self._on_spk_combo_changed)
         lay.addWidget(self._combo_spk)
 
         lay.addWidget(_hdr("VOICE PERSONA"))
@@ -9553,6 +9846,56 @@ class MainWindow(QMainWindow):
             pass
         if self.on_voice_change:
             self.on_voice_change()
+
+    def _on_mic_combo_changed(self, mic_name: str):
+        try:
+            from memory import config_manager
+            from core.audio_devices import DEFAULT_LABEL
+            val = "" if mic_name == DEFAULT_LABEL else mic_name
+            config_manager.set_input_device(val)
+        except Exception:
+            pass
+
+    def _on_spk_combo_changed(self, spk_name: str):
+        try:
+            from memory import config_manager
+            from core.audio_devices import DEFAULT_LABEL, set_default_endpoint
+            val = "" if spk_name == DEFAULT_LABEL else spk_name
+            config_manager.set_output_device(val)
+            if val:
+                set_default_endpoint(val, "output")
+        except Exception:
+            pass
+
+    def _refresh_audio_tab(self):
+        try:
+            from core.audio_devices import get_input_devices, get_output_devices, DEFAULT_LABEL
+            from memory.config_manager import get_input_device, get_output_device
+            cur_in = get_input_device() or DEFAULT_LABEL
+            cur_out = get_output_device() or DEFAULT_LABEL
+
+            in_devs = get_input_devices(refresh=True)
+            out_devs = get_output_devices(refresh=True)
+
+            if hasattr(self, "_combo_mic") and self._combo_mic:
+                self._combo_mic.blockSignals(True)
+                self._combo_mic.clear()
+                for dev in in_devs:
+                    self._combo_mic.addItem(dev)
+                idx_in = self._combo_mic.findText(cur_in)
+                self._combo_mic.setCurrentIndex(idx_in if idx_in >= 0 else 0)
+                self._combo_mic.blockSignals(False)
+
+            if hasattr(self, "_combo_spk") and self._combo_spk:
+                self._combo_spk.blockSignals(True)
+                self._combo_spk.clear()
+                for dev in out_devs:
+                    self._combo_spk.addItem(dev)
+                idx_out = self._combo_spk.findText(cur_out)
+                self._combo_spk.setCurrentIndex(idx_out if idx_out >= 0 else 0)
+                self._combo_spk.blockSignals(False)
+        except Exception:
+            pass
 
     def _build_settings_tab(self) -> QWidget:
         w = QWidget()
@@ -9687,20 +10030,37 @@ class MainWindow(QMainWindow):
             self.hud.stream_reply_text(text)
 
     def mousePressEvent(self, e):
-        if e.button() == Qt.MouseButton.LeftButton:
-            self._drag_start = e.globalPosition().toPoint()
-            self._win_start = self.pos()
+        if self._handle_mouse_press(e):
+            return
         super().mousePressEvent(e)
 
     def mouseMoveEvent(self, e):
-        if hasattr(self, "_drag_start") and self._drag_start and e.buttons() == Qt.MouseButton.LeftButton:
-            delta = e.globalPosition().toPoint() - self._drag_start
-            self.move(self._win_start + delta)
+        if self._handle_mouse_move(e):
+            return
         super().mouseMoveEvent(e)
 
     def mouseReleaseEvent(self, e):
-        self._drag_start = None
+        self._handle_mouse_release(e)
         super().mouseReleaseEvent(e)
+
+    def mouseDoubleClickEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton and e.position().toPoint().y() <= 40:
+            self.maximize_display()
+            e.accept()
+            return
+        super().mouseDoubleClickEvent(e)
+
+    def eventFilter(self, watched, event):
+        targets = (
+            getattr(self, "centralWidget", lambda: None)(),
+            getattr(self, "_drawer", None),
+            getattr(self, "hud_box", None),
+            getattr(self, "hud", None),
+        )
+        if watched in targets and watched is not None:
+            if self._filter_child_mouse_event(watched, event):
+                return True
+        return super().eventFilter(watched, event)
 
     def keyPressEvent(self, e):
         if e.key() == Qt.Key.Key_Escape:
@@ -10888,6 +11248,8 @@ class MainWindow(QMainWindow):
         # ── text display ──────────────────────────────────────────────────────
         self._content_display = QTextEdit()
         self._content_display.setReadOnly(True)
+        self._content_display.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._content_display.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._content_display.setFont(QFont("Montserrat", 8))
         self._content_display.setMinimumHeight(60)
         self._content_display.setSizePolicy(
@@ -10902,14 +11264,14 @@ class MainWindow(QMainWindow):
                 padding: 6px 8px;
                 selection-background-color: {C.PRI_GHO};
             }}
-            QScrollBar:vertical {{
-                background: {C.BG}; width: 6px; border: none;
+            QScrollBar:vertical, QScrollBar:horizontal {{
+                background: transparent; width: 0px; height: 0px; border: none;
             }}
-            QScrollBar::handle:vertical {{
-                background: {C.BORDER_B}; border-radius: 3px; min-height: 16px;
+            QScrollBar::handle:vertical, QScrollBar::handle:horizontal {{
+                background: transparent; width: 0px; height: 0px;
             }}
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
-                height: 0; border: none;
+                width: 0; height: 0; border: none;
             }}
         """)
         lay.addWidget(self._content_display)
@@ -12303,6 +12665,7 @@ class JarvisUI:
         self._is_closed = False
         self._app = QApplication.instance() or QApplication(sys.argv)
         self._app.setStyle("Fusion")
+        self._app.setStyleSheet((self._app.styleSheet() or "") + "\n" + _NO_SCROLLBAR_STYLE)
         _load_app_fonts()
         self._win = MainWindow(face_path)
         self.root = _RootShim(self._app, self)
@@ -12790,6 +13153,14 @@ class JarvisUI:
     def minimize_jarvis(self):
         """Thread-safe: Minimize JARVIS."""
         self.jarvis_window_control("minimize")
+
+    def refresh_audio_devices(self):
+        """Thread-safe: Trigger audio device dropdown refresh."""
+        try:
+            if self._is_alive():
+                self._win._refresh_audio_sig.emit()
+        except (RuntimeError, AttributeError):
+            pass
 
     def maximize_jarvis(self):
         """Thread-safe: Maximize / restore JARVIS."""

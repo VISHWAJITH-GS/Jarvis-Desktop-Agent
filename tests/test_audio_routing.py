@@ -352,6 +352,71 @@ class TestAudioRoutingAndBluetooth(unittest.TestCase):
             self.assertTrue(audio_devices.is_bluetooth_device("Bluetooth Audio Device"))
             self.assertTrue(audio_devices.is_bluetooth_device("AirPods Pro"))
 
+    def test_get_current_default_endpoint_and_snapshot(self):
+        """Verify default endpoint querying and connected endpoint snapshot."""
+        endpoint_id, friendly_name = audio_devices.get_current_default_endpoint("output")
+        snapshot = audio_devices.get_connected_endpoints_snapshot()
+        self.assertIsInstance(snapshot, set)
+        if sys.platform == "win32":
+            # On Windows host, current output endpoint should be resolvable
+            if endpoint_id is not None:
+                self.assertIsInstance(endpoint_id, str)
+                self.assertIn(endpoint_id, snapshot)
+
+    def test_watch_audio_device_changes_triggers_reconnect_on_default_change(self):
+        """Verify that when default playback device changes (e.g. headphones plugged in),
+        the monitor invalidates cache and triggers seamless reconnect with context."""
+        import asyncio
+
+        class FakeJarvis:
+            def __init__(self):
+                self.ui = MagicMock()
+                self.reconnect_calls = []
+
+            def request_reconnect(self, keep_context: bool = True, reason: str = ""):
+                self.reconnect_calls.append((keep_context, reason))
+
+        # Import the method from main.py
+        import main
+        jarvis_inst = FakeJarvis()
+
+        # Simulate endpoints changing from Laptop Speakers to Bluetooth Headphones
+        step = [0]
+        def mock_get_default(kind="output"):
+            if step[0] == 0:
+                return ("{0.0.0.123}", "Speakers (Realtek Audio)")
+            else:
+                return ("{0.0.0.456}", "Headphones (OPPO Enco Buds2)")
+
+        with patch.object(audio_devices, "get_current_default_endpoint", side_effect=mock_get_default), \
+             patch.object(audio_devices, "get_connected_endpoints_snapshot", return_value={"item1"}), \
+             patch.object(audio_devices, "invalidate_cache") as mock_inval:
+
+            async def _run_test():
+                watcher_task = asyncio.create_task(main.JarvisLive._watch_audio_device_changes(jarvis_inst))
+                # Let initial check complete
+                await asyncio.sleep(0.01)
+                # Now simulate Bluetooth headphones being plugged in
+                step[0] = 1
+                # Wait for watcher to trigger
+                for _ in range(50):
+                    if jarvis_inst.reconnect_calls:
+                        break
+                    await asyncio.sleep(0.05)
+                watcher_task.cancel()
+                try:
+                    await watcher_task
+                except asyncio.CancelledError:
+                    pass
+
+            asyncio.run(_run_test())
+
+            self.assertTrue(len(jarvis_inst.reconnect_calls) >= 1)
+            keep_context, reason = jarvis_inst.reconnect_calls[0]
+            self.assertTrue(keep_context)
+            self.assertEqual(reason, "audio device change")
+            mock_inval.assert_called()
+
     def test_bluetooth_detection_false_positives_and_negatives(self):
         """Verify reliable Bluetooth detection fixes false positives and negatives."""
         # Non-Bluetooth false positive candidates (USB wireless dongles, wired USB headsets)
