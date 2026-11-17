@@ -71,6 +71,13 @@ def _get_os() -> str:
 
 
 def _get_api_key() -> str:
+    try:
+        from memory.config_manager import get_gemini_key
+        k = get_gemini_key()
+        if k:
+            return k
+    except Exception:
+        pass
     return _load_config().get("gemini_api_key", "")
 
 _SAFE_SCREENSHOT_ROOTS = (

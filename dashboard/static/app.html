@@ -240,22 +240,33 @@
   </footer>
 
   <script>
-    // ── Auth — HttpOnly cookie (with optional session fallback) ───────────────
-    const _authToken  = sessionStorage.getItem('jarvis_token') || '';
-    const _sessionKey = sessionStorage.getItem('jarvis_key') || '';
+    // ── Auth & Encryption (in-memory state only, authenticated via HttpOnly cookie) ──
+    let _sessionKey = '';
 
-    function _authHeader() { return _authToken ? { 'Authorization': `Bearer ${_authToken}` } : {}; }
     function _authFetch(url, opts = {}) {
       opts.credentials = 'same-origin';
-      if (_authToken) {
-        opts.headers = Object.assign({}, opts.headers, _authHeader());
-      }
       return fetch(url, opts).then(resp => {
         if (resp.status === 401) {
           location.replace('/login');
         }
         return resp;
       });
+    }
+
+    async function _loadSessionKey() {
+      try {
+        const r = await _authFetch('/api/session-key');
+        if (r.ok) {
+          const d = await r.json();
+          if (d.ok && d.session_key) {
+            _sessionKey = d.session_key;
+            return await _initCrypto(_sessionKey);
+          }
+        }
+      } catch (e) {
+        console.warn('Session key fetch failed:', e);
+      }
+      return false;
     }
 
     // ── AES-256-GCM encryption (Web Crypto) ──────────────────────────────────
@@ -320,7 +331,7 @@
     // done inline — on a phone that is a few hundred milliseconds, and blocking
     // the parse for it would stall the whole page.
     (async () => {
-      _encReady = _sessionKey ? await _initCrypto(_sessionKey) : false;
+      _encReady = await _loadSessionKey();
       if (_encReady) {
         encBadge.className = 'enc-badge on';
       } else {
@@ -336,7 +347,7 @@
     const wake  = document.getElementById('wake');
 
     const _wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
-    const _wsUrl   = `${_wsProto}://${location.host}/ws?token=${encodeURIComponent(_authToken)}`;
+    const _wsUrl   = `${_wsProto}://${location.host}/ws`;
     const ws       = new WebSocket(_wsUrl);
 
     ws.onopen    = () => { sys('Remote session active.'); toast('Connected to JARVIS'); };
@@ -446,7 +457,7 @@
         if (xhr.status === 200) {
           let savedName = file.name;
           try { savedName = JSON.parse(xhr.responseText).name || file.name; } catch {}
-          const dlUrl = `/uploads/${encodeURIComponent(savedName)}?token=${encodeURIComponent(_authToken)}`;
+          const dlUrl = `/uploads/${encodeURIComponent(savedName)}`;
           if (bar)  { bar.style.width = '100%'; bar.style.background = 'var(--green)'; }
           if (st)   { st.textContent = '✓'; st.className = 'fc-status done'; }
           if (lbl)  lbl.textContent = 'Sent';
@@ -476,7 +487,7 @@
 
     // File received by another WebSocket client (e.g., second open tab)
     function _onFileReceived(m) {
-      const dlUrl = `/uploads/${encodeURIComponent(m.name)}?token=${encodeURIComponent(_authToken)}`;
+      const dlUrl = `/uploads/${encodeURIComponent(m.name)}`;
       const card  = document.createElement('div');
       card.className = 'msg-file';
       card.innerHTML = `
@@ -618,7 +629,7 @@
 
       const wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
       const ws = new WebSocket(
-        `${wsProto}://${location.host}/ws/phone-audio?token=${encodeURIComponent(_authToken)}`
+        `${wsProto}://${location.host}/ws/phone-audio`
       );
       ws.binaryType = 'arraybuffer';
 

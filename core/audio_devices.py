@@ -25,9 +25,12 @@ WHY THIS IS CACHED
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 # The label shown for "let the OS decide", and the value stored in config for
 # it. Empty string, so an untouched install and a deliberately-default install
@@ -321,8 +324,9 @@ def _query() -> dict[str, list[str]]:
         # speakers only work on MME — and a single global choice cannot be right
         # for both.
         for kind in ("input", "output"):
-            preferred = pref_platform.get(kind, ()) if isinstance(pref_platform, dict) else pref_platform
-            for api_filter in list(preferred) + [None]:
+            pref_raw = pref_platform.get(kind, ()) if isinstance(pref_platform, dict) else pref_platform
+            preferred_tuple: tuple = tuple(pref_raw) if isinstance(pref_raw, (tuple, list)) else ()
+            for api_filter in list(preferred_tuple) + [None]:
                 found = _collect(api_filter, kind)
                 if not found:
                     continue
@@ -433,7 +437,8 @@ def resolve(name: str, kind: str):
         list_devices(kind)
         chosen = _chosen_api.get(kind)
         pref_platform = _PREFERRED_APIS.get(platform.system(), {})
-        preferred = pref_platform.get(kind, ()) if isinstance(pref_platform, dict) else pref_platform
+        pref_raw = pref_platform.get(kind, ()) if isinstance(pref_platform, dict) else pref_platform
+        preferred: tuple = tuple(pref_raw) if isinstance(pref_raw, (tuple, list)) else ()
         orders = ([chosen] if chosen is not None else []) \
             + [a for a in preferred if a != chosen] \
             + [None]
@@ -557,25 +562,40 @@ _bt_detection_lock = threading.Lock()
 _BT_CACHE_TTL = 15.0  # seconds
 
 
+EXCLUDED_INPUT_KEYWORDS = (
+    "stereo mix",
+    "loopback",
+    "virtual",
+    "vb-cable",
+    "obs",
+    "steam streaming",
+)
+
+
 def _detect_bluetooth_via_endpoint_metadata(name: str) -> bool | None:
-    """Check endpoint bus / enumerator metadata via Windows pycaw."""
+    """Check endpoint bus / enumerator metadata via Windows pycaw using exact ID or name match."""
     if _platform_is() != "Windows" or not name:
         return None
     try:
         from pycaw.pycaw import AudioUtilities
         wanted = _fold(name)
-        if not wanted:
+        wanted_raw = name.strip()
+        if not wanted and not wanted_raw:
             return None
 
         for dev in AudioUtilities.GetAllDevices():
             try:
-                friendly = _fold(getattr(dev, "FriendlyName", "") or "")
+                dev_id = str(getattr(dev, "id", "") or "").strip()
+                friendly = getattr(dev, "FriendlyName", "") or ""
+                friendly_folded = _fold(friendly)
             except Exception:
                 continue
-            if not friendly:
-                continue
 
-            if friendly == wanted or friendly.startswith(wanted) or wanted.startswith(friendly):
+            # Exact endpoint-ID matching or exact friendly-name matching (no prefix matching)
+            matches_id = bool(dev_id and (dev_id == wanted_raw or dev_id.upper() == wanted_raw.upper()))
+            matches_name = bool(friendly_folded and friendly_folded == wanted)
+
+            if matches_id or matches_name:
                 props = getattr(dev, "properties", {})
                 for _k, v in props.items():
                     if isinstance(v, str):
@@ -585,13 +605,14 @@ def _detect_bluetooth_via_endpoint_metadata(name: str) -> bool | None:
                         if "HDAUDIO\\" in v_u or v_u == "HDAUDIO" or "USB\\" in v_u or v_u == "USB":
                             return False
 
-                dev_id = str(getattr(dev, "id", "")).upper()
-                if "BTHENUM" in dev_id or "BTHHFENUM" in dev_id or "BTH\\" in dev_id:
+                dev_id_u = dev_id.upper()
+                if any(b in dev_id_u for b in ("BTHENUM", "BTHHFENUM", "BTH\\", "BTHLE\\")):
                     return True
 
-                fn_low = getattr(dev, "FriendlyName", "").lower()
+                fn_low = friendly.lower()
                 if "hands-free" in fn_low or "bluetooth" in fn_low:
                     return True
+                return False
     except Exception as e:
         logger.debug("CoreAudio Bluetooth metadata check error: %s", e)
     return None
@@ -634,8 +655,8 @@ def is_bluetooth_device(name: str) -> bool:
     else:
         # High-confidence Bluetooth indicators (excluding generic 'wireless' or 'headset' which match USB peripherals)
         bt_keywords = (
-            "bluetooth", "bth", "hands-free", "oppo", "airpods",
-            "freebuds", "galaxy buds", "pixel buds", "enco buds"
+            "bluetooth", "bth", "hands-free", "airpods",
+            "freebuds", "galaxy buds", "pixel buds"
         )
         res = any(k in low for k in bt_keywords)
 
@@ -663,6 +684,29 @@ def is_output_bluetooth(output_name: str) -> bool:
     return False
 
 
+def _is_wasapi_endpoint(name: str) -> bool:
+    """Check if an input device name or endpoint corresponds to WASAPI."""
+    if not name:
+        return False
+    low = name.lower()
+    if "wasapi" in low:
+        return True
+    try:
+        import sounddevice as sd
+        apis = [a.get("name", "").lower() for a in sd.query_hostapis()]
+        target = _fold(name)
+        for d in sd.query_devices():
+            if d.get("max_input_channels", 0) > 0:
+                d_name = d.get("name") or ""
+                if d_name == name or _fold(d_name) == target:
+                    h_idx = d.get("hostapi", -1)
+                    if 0 <= h_idx < len(apis) and "wasapi" in apis[h_idx]:
+                        return True
+    except Exception:
+        pass
+    return False
+
+
 def select_best_input(
     requested_input: str,
     output_name: str,
@@ -671,6 +715,7 @@ def select_best_input(
 ) -> dict:
     """
     Select the optimal input device to avoid Bluetooth HFP call mode conflicts.
+    Excludes loopback and virtual inputs, and prefers WASAPI capture endpoints.
     """
     wanted = (requested_input or "").strip()
     is_explicit = bool(wanted and wanted != DEFAULT_LABEL)
@@ -717,21 +762,41 @@ def select_best_input(
 
     # In 'auto' mode: avoid Bluetooth microphone!
     available_inputs = list_devices("input")
-    non_bt_inputs = [dev for dev in available_inputs if not is_bluetooth_device(dev)]
 
-    if non_bt_inputs:
-        def _rank(dev_name: str) -> int:
+    def _is_virtual_or_loopback(dev_name: str) -> bool:
+        low = dev_name.lower()
+        return any(k in low for k in EXCLUDED_INPUT_KEYWORDS)
+
+    # Exclude loopback / virtual endpoints (Stereo Mix, Loopback, Virtual, VB-Cable, OBS, Steam Streaming)
+    candidates = [
+        dev for dev in available_inputs
+        if not is_bluetooth_device(dev) and not _is_virtual_or_loopback(dev)
+    ]
+
+    # If no non-virtual, non-BT mic exists, fall back to any non-BT input
+    if not candidates:
+        candidates = [dev for dev in available_inputs if not is_bluetooth_device(dev)]
+
+    if candidates:
+        def _rank(dev_name: str) -> tuple[int, int, str]:
             low = dev_name.lower()
-            if "array" in low:
-                return 0
-            if any(k in low for k in ("built-in", "internal", "integrated", "realtek", "conexant", "intel")):
-                return 1
-            if "usb" in low:
-                return 2
-            return 3
+            # Prefer WASAPI capture endpoints (0 = WASAPI, 1 = other)
+            wasapi_rank = 0 if _is_wasapi_endpoint(dev_name) else 1
 
-        non_bt_inputs.sort(key=_rank)
-        chosen = non_bt_inputs[0]
+            # Built-in laptop mic array first, then built-in, then USB, then other
+            if "array" in low:
+                hw_rank = 0
+            elif any(k in low for k in ("built-in", "internal", "integrated", "realtek", "conexant", "intel")):
+                hw_rank = 1
+            elif "usb" in low:
+                hw_rank = 2
+            else:
+                hw_rank = 3
+
+            return (wasapi_rank, hw_rank, dev_name)
+
+        candidates.sort(key=_rank)
+        chosen = candidates[0]
         return {
             "device": chosen,
             "reason": f"Auto-selected non-Bluetooth input '{chosen}' to preserve Bluetooth A2DP stereo playback",

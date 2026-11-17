@@ -14,6 +14,7 @@ import base64
 import hashlib
 import hmac
 import ipaddress
+import json
 import logging
 import re
 import secrets
@@ -111,6 +112,13 @@ def _make_uploads_dir() -> Path:
 UPLOADS_DIR = _make_uploads_dir()
 
 def _get_gemini_key() -> str | None:
+    try:
+        from memory.config_manager import get_gemini_key
+        k = get_gemini_key()
+        if k:
+            return k
+    except Exception:
+        pass
     try:
         import json as _json
         with open(BASE_DIR / "config" / "api_keys.json", "r", encoding="utf-8") as f:
@@ -539,41 +547,42 @@ def _ensure_network_access(*ports: int) -> None:
                 pass
         return False
 
-    try:  # ufw
-        r = subprocess.run(["ufw", "status"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5)
-        if "active" in r.stdout.lower():
-            if _privileged(["ufw", "allow", f"{port}/tcp"]):
-                print(f"[Dashboard] ufw: port {port} allowed.")
-            else:
-                print(f"[Dashboard] Run manually:  sudo ufw allow {port}/tcp")
-            return
-    except FileNotFoundError:
-        pass
+    for port in ports:
+        try:  # ufw
+            r = subprocess.run(["ufw", "status"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5)
+            if "active" in r.stdout.lower():
+                if _privileged(["ufw", "allow", f"{port}/tcp"]):
+                    print(f"[Dashboard] ufw: port {port} allowed.")
+                else:
+                    print(f"[Dashboard] Run manually:  sudo ufw allow {port}/tcp")
+                continue
+        except FileNotFoundError:
+            pass
 
-    try:  # firewalld
-        r = subprocess.run(
-            ["firewall-cmd", "--state"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5,
-        )
-        if "running" in r.stdout.lower():
-            ok = (_privileged(["firewall-cmd", "--add-port", f"{port}/tcp", "--permanent"])
-                  and _privileged(["firewall-cmd", "--reload"]))
-            if ok:
-                print(f"[Dashboard] firewalld: port {port} allowed.")
-            else:
-                print(f"[Dashboard] Run manually:  sudo firewall-cmd --add-port={port}/tcp --permanent && sudo firewall-cmd --reload")
-            return
-    except FileNotFoundError:
-        pass
+        try:  # firewalld
+            r = subprocess.run(
+                ["firewall-cmd", "--state"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5,
+            )
+            if "running" in r.stdout.lower():
+                ok = (_privileged(["firewall-cmd", "--add-port", f"{port}/tcp", "--permanent"])
+                      and _privileged(["firewall-cmd", "--reload"]))
+                if ok:
+                    print(f"[Dashboard] firewalld: port {port} allowed.")
+                else:
+                    print(f"[Dashboard] Run manually:  sudo firewall-cmd --add-port={port}/tcp --permanent && sudo firewall-cmd --reload")
+                continue
+        except FileNotFoundError:
+            pass
 
-    try:  # iptables (not persistent but works until reboot)
-        r = subprocess.run(["iptables", "-L", "INPUT", "-n"], capture_output=True, timeout=5)
-        if r.returncode == 0:
-            if _privileged(["iptables", "-A", "INPUT", "-p", "tcp", "--dport", str(port), "-j", "ACCEPT"]):
-                print(f"[Dashboard] iptables: port {port} opened.")
-            else:
-                print(f"[Dashboard] Run manually:  sudo iptables -A INPUT -p tcp --dport {port} -j ACCEPT")
-    except FileNotFoundError:
-        pass  # no iptables means firewall is probably off — nothing to do
+        try:  # iptables (not persistent but works until reboot)
+            r = subprocess.run(["iptables", "-L", "INPUT", "-n"], capture_output=True, timeout=5)
+            if r.returncode == 0:
+                if _privileged(["iptables", "-A", "INPUT", "-p", "tcp", "--dport", str(port), "-j", "ACCEPT"]):
+                    print(f"[Dashboard] iptables: port {port} opened.")
+                else:
+                    print(f"[Dashboard] Run manually:  sudo iptables -A INPUT -p tcp --dport {port} -j ACCEPT")
+        except FileNotFoundError:
+            pass  # no iptables means firewall is probably off — nothing to do
 
 
 
@@ -962,6 +971,39 @@ class DashboardServer:
         def _auth(req: Request) -> bool:
             return _valid(_extract_token(req))
 
+        def _ws_check_origin(websocket: WebSocket) -> bool:
+            origin = websocket.headers.get("origin", "").strip()
+            if not origin:
+                return True
+            try:
+                from urllib.parse import urlparse
+                parsed = urlparse(origin)
+                origin_host = parsed.netloc.lower()
+                req_host = websocket.headers.get("host", "").strip().lower()
+                if req_host and (origin_host == req_host or origin_host.split(":")[0] == req_host.split(":")[0]):
+                    return True
+                origin_hostname = parsed.hostname.lower() if parsed.hostname else ""
+                server_ip = getattr(self, "_ip", "").lower()
+                if origin_hostname in ("localhost", "127.0.0.1", "::1", server_ip):
+                    return True
+            except Exception:
+                return False
+            return False
+
+        def _ws_extract_token(websocket: WebSocket, token_param: str = "") -> str:
+            cookie_tok = websocket.cookies.get("jarvis_auth_token", "").strip()
+            if cookie_tok:
+                return cookie_tok
+            return (token_param or "").strip()
+
+        @app.get("/api/session-key")
+        async def session_key_endpoint(req: Request):
+            tok = _extract_token(req)
+            if not _valid(tok):
+                return JSONResponse({"error": "Unauthorized"}, status_code=401)
+            skey = self._token_keys.get(tok, "")
+            return JSONResponse({"ok": True, "session_key": skey})
+
         @app.get("/health")
         async def health_check():
             """Health check endpoint reporting service, security, and runtime status."""
@@ -1227,7 +1269,10 @@ class DashboardServer:
 
         @app.websocket("/ws/phone-audio")
         async def phone_audio_ws(websocket: WebSocket, token: str = ""):
-            tok = token.strip()
+            if not _ws_check_origin(websocket):
+                await websocket.close(code=4003)
+                return
+            tok = _ws_extract_token(websocket, token)
             if not _valid(tok):
                 await websocket.close(code=4001)
                 return
@@ -1328,9 +1373,8 @@ class DashboardServer:
             return JSONResponse({"files": files})
 
         @app.get("/uploads/{filename}")
-        async def download_file(filename: str, token: str = ""):
-            # Auth via query param — browser <a download> can't send custom headers
-            tok = token.strip()
+        async def download_file(req: Request, filename: str, token: str = ""):
+            tok = _extract_token(req) or token.strip()
             if not _valid(tok):
                 return JSONResponse({"error": "Unauthorized"}, status_code=401)
             safe = re.sub(r'[/\\]', '', filename)
@@ -1535,7 +1579,10 @@ class DashboardServer:
 
         @app.websocket("/ws")
         async def ws_ep(websocket: WebSocket, token: str = ""):
-            tok = token.strip()
+            if not _ws_check_origin(websocket):
+                await websocket.close(code=4003)
+                return
+            tok = _ws_extract_token(websocket, token)
             if not _valid(tok):
                 await websocket.close(code=4001)
                 return

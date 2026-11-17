@@ -5,6 +5,7 @@ import math
 import os
 import platform
 import random
+import re
 import subprocess
 import sys
 import threading
@@ -12195,6 +12196,12 @@ class MainWindow(QMainWindow):
         self.hud.update()
 
     def _check_config(self) -> bool:
+        try:
+            from memory.config_manager import is_configured
+            if is_configured():
+                return True
+        except Exception:
+            pass
         if not API_FILE.exists(): return False
         try:
             d = json.loads(API_FILE.read_text(encoding="utf-8"))

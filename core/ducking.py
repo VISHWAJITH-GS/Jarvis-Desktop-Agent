@@ -57,6 +57,7 @@ class AudioDucker:
 
         self._restore_timer: Optional[threading.Timer] = None
         self._engage_timer: Optional[threading.Timer] = None
+        self._watchdog_thread: Optional[threading.Thread] = None
 
         # Clean up on process exit
         atexit.register(self._emergency_restore_atexit)
@@ -242,6 +243,7 @@ class AudioDucker:
                 self._save_state_file(new_snapshot)
                 self._is_ducked = True
                 self._duck_start_time = time.monotonic()
+                self._start_watchdog_thread()
 
                 # Smoothly fade down (~150 ms)
                 self._apply_fade(fade_targets, FADE_DOWN_SECONDS)
@@ -249,6 +251,99 @@ class AudioDucker:
                 logger.debug("[AudioDucker] Attenuated %d background audio sessions", len(fade_targets))
         except Exception as e:
             self._handle_failure(e, "ducking")
+        finally:
+            self._uninit_com()
+
+    def _start_watchdog_thread(self) -> None:
+        if self._watchdog_thread is None or not self._watchdog_thread.is_alive():
+            self._watchdog_thread = threading.Thread(
+                target=self._watchdog_loop,
+                daemon=True,
+                name="ducking-watchdog-rescan",
+            )
+            self._watchdog_thread.start()
+
+    def _watchdog_loop(self) -> None:
+        """Periodic background monitor running every ~500 ms while ducked."""
+        while True:
+            with self._lock:
+                if not self._is_ducked:
+                    break
+            time.sleep(0.5)
+            with self._lock:
+                if not self._is_ducked:
+                    break
+            self.check_watchdog()
+            self._rescan_sessions_while_ducked()
+
+    def _rescan_sessions_while_ducked(self) -> None:
+        """Scan for any sessions that started mid-speech and duck them."""
+        with self._lock:
+            if not self._is_ducked:
+                return
+
+        try:
+            from memory.config_manager import (
+                get_ducking_level,
+                get_ducking_exclude_apps,
+            )
+
+            duck_percent = get_ducking_level()
+            duck_ratio = max(0.0, min(1.0, duck_percent / 100.0))
+            excludes = {x.lower() for x in get_ducking_exclude_apps()}
+            own_pids = self._get_jarvis_process_family()
+
+            self._init_com()
+            from pycaw.pycaw import AudioUtilities
+
+            sessions = AudioUtilities.GetAllSessions()
+            new_fade_targets: List[tuple] = []
+
+            with self._lock:
+                if not self._is_ducked:
+                    return
+
+                for s in sessions:
+                    try:
+                        proc = s.Process
+                        pid = proc.pid if proc else None
+                        pname = (proc.name() if proc else "").lower()
+                        if pid in own_pids or (pname in ("python.exe", "pythonw.exe") and pid == os.getpid()):
+                            continue
+                        if pname in excludes:
+                            continue
+
+                        key = f"{pid}_{pname}"
+                        if key in self._snapshot:
+                            continue  # already ducked
+
+                        sav = s.SimpleAudioVolume
+                        if sav is None:
+                            continue
+
+                        cur_vol = float(sav.GetMasterVolume())
+                        mute = int(sav.GetMute())
+                        if cur_vol <= 0.001 or mute:
+                            continue
+
+                        target_vol = max(0.0, cur_vol * duck_ratio)
+                        self._snapshot[key] = {
+                            "pid": pid,
+                            "name": pname,
+                            "orig_vol": cur_vol,
+                            "ducked_vol": target_vol,
+                            "orig_mute": mute,
+                        }
+                        new_fade_targets.append((sav, cur_vol, target_vol))
+                    except Exception:
+                        continue
+
+                if new_fade_targets:
+                    self._save_state_file(self._snapshot)
+                    self._apply_fade(new_fade_targets, FADE_DOWN_SECONDS)
+                    logger.debug("[AudioDucker] Ducked %d new mid-speech sessions", len(new_fade_targets))
+        except Exception as e:
+            logger.debug("[AudioDucker] Rescan error: %s", e)
         finally:
             self._uninit_com()
 
@@ -332,8 +427,8 @@ class AudioDucker:
                             cur_vol = float(sav.GetMasterVolume())
                             ducked_vol = float(info.get("ducked_vol", 0.0))
                             orig_vol = float(info.get("orig_vol", 1.0))
-                            # Only restore if it appears still ducked
-                            if abs(cur_vol - ducked_vol) <= 0.06 or cur_vol < orig_vol:
+                            # Only restore if it appears still ducked (near ducked value)
+                            if abs(cur_vol - ducked_vol) <= 0.06:
                                 sav.SetMasterVolume(orig_vol, None)
                                 sav.SetMute(int(info.get("orig_mute", 0)), None)
                 except Exception:

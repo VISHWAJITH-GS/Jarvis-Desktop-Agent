@@ -2,6 +2,7 @@
 tests/test_dev_agent_vscode.py — Unit Tests for VS Code Launch Security in dev_agent
 """
 
+import subprocess
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -29,6 +30,8 @@ class TestDevAgentVSCode(unittest.TestCase):
             mock_popen.assert_called_once()
             args, kwargs = mock_popen.call_args
             self.assertEqual(kwargs.get("shell"), False)
+            self.assertEqual(kwargs.get("stdout"), subprocess.DEVNULL)
+            self.assertEqual(kwargs.get("stderr"), subprocess.DEVNULL)
             self.assertIn("code.cmd", args[0][0])
             self.assertEqual(args[0][1], str(test_dir))
 

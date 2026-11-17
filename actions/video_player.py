@@ -200,6 +200,7 @@ def video_player(parameters: dict = None, response=None, player=None,
         return "What should I play?"
 
     import os
+    import subprocess
     local = _local_path(source)
     if local:
         try:

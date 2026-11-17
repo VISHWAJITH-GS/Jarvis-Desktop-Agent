@@ -4,11 +4,23 @@ tests/test_ducking.py — Unit Tests for Audio Ducking Subsystem
 
 import json
 import os
+import sys
 import tempfile
 import time
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+# Ensure clean mock on non-Windows platforms without pycaw
+if "pycaw" not in sys.modules:
+    try:
+        import pycaw.pycaw  # noqa: F401
+    except ImportError:
+        mock_pycaw = MagicMock()
+        mock_pycaw_mod = MagicMock()
+        mock_pycaw_mod.AudioUtilities = MagicMock()
+        sys.modules["pycaw"] = mock_pycaw
+        sys.modules["pycaw.pycaw"] = mock_pycaw_mod
 
 from core import ducking
 
@@ -163,6 +175,65 @@ class TestAudioDucking(unittest.TestCase):
 
             self.assertFalse(self.ducker._is_ducked)
             self.assertAlmostEqual(self.spotify_session.SimpleAudioVolume.GetMasterVolume(), 0.80, places=2)
+
+    def test_rescan_sessions_mid_speech(self):
+        """Audio session appearing mid-speech is detected and ducked by rescan."""
+        self._create_mock_sessions()
+        mock_sessions = [self.spotify_session]
+
+        with patch("pycaw.pycaw.AudioUtilities.GetAllSessions", side_effect=lambda: list(mock_sessions)), \
+             patch("memory.config_manager.get_ducking_enabled", return_value=True), \
+             patch("memory.config_manager.get_ducking_level", return_value=25), \
+             patch("memory.config_manager.get_ducking_exclude_apps", return_value=[]):
+
+            self.ducker._perform_duck()
+            self.assertAlmostEqual(self.spotify_session.SimpleAudioVolume.GetMasterVolume(), 0.20, places=2)
+
+            # A new media player starts playing mid-speech at volume 0.80
+            vlc_session = MockAudioSession(2001, "vlc.exe", volume=0.80)
+            mock_sessions.append(vlc_session)
+
+            # Trigger rescan
+            self.ducker._rescan_sessions_while_ducked()
+
+            # VLC should now also be ducked: 0.80 * 0.25 = 0.20
+            self.assertAlmostEqual(vlc_session.SimpleAudioVolume.GetMasterVolume(), 0.20, places=2)
+            self.assertIn("2001_vlc.exe", self.ducker._snapshot)
+
+            # Restore should restore both Spotify and VLC
+            self.ducker._perform_restore()
+            self.assertAlmostEqual(self.spotify_session.SimpleAudioVolume.GetMasterVolume(), 0.80, places=2)
+            self.assertAlmostEqual(vlc_session.SimpleAudioVolume.GetMasterVolume(), 0.80, places=2)
+
+    def test_recovery_restores_only_sessions_near_ducked_value(self):
+        """Recovery only restores sessions that are still near their ducked value."""
+        sess_still_ducked = MockAudioSession(3001, "music.exe", volume=0.21)  # ducked was 0.20 -> diff 0.01 <= 0.06
+        sess_user_adjusted = MockAudioSession(3002, "podcast.exe", volume=0.50)  # was 0.8, ducked 0.2, user set to 0.50 (< orig_vol, but > 0.06 away from ducked)
+
+        snapshot = {
+            "3001_music.exe": {
+                "pid": 3001,
+                "name": "music.exe",
+                "orig_vol": 0.8,
+                "ducked_vol": 0.2,
+                "orig_mute": 0,
+            },
+            "3002_podcast.exe": {
+                "pid": 3002,
+                "name": "podcast.exe",
+                "orig_vol": 0.8,
+                "ducked_vol": 0.2,
+                "orig_mute": 0,
+            },
+        }
+
+        with patch("pycaw.pycaw.AudioUtilities.GetAllSessions", return_value=[sess_still_ducked, sess_user_adjusted]):
+            self.ducker._restore_from_snapshot_data(snapshot)
+
+            # sess_still_ducked was near ducked value, so it is restored to orig_vol 0.8
+            self.assertAlmostEqual(sess_still_ducked.SimpleAudioVolume.GetMasterVolume(), 0.8, places=2)
+            # sess_user_adjusted was at 0.50 (far from 0.20), so it is NOT restored to 0.8 despite 0.50 < 0.80
+            self.assertAlmostEqual(sess_user_adjusted.SimpleAudioVolume.GetMasterVolume(), 0.50, places=2)
 
     def test_disabled_setting_and_non_windows_are_no_op(self):
         """When disabled in settings or on non-Windows OS, ducking is a no-op."""

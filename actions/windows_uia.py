@@ -91,6 +91,9 @@ if _IS_WINDOWS:
 _PYAUTOGUI = installed("pyautogui")
 pyautogui = LazyModule("pyautogui")
 
+_PYPERCLIP = installed("pyperclip")
+pyperclip = LazyModule("pyperclip")
+
 # Check for OCR capability
 _PYTESSERACT = installed("pytesseract")
 

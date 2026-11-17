@@ -147,6 +147,96 @@ class TestDashboardAuthHardened(unittest.TestCase):
         self.assertIn("active_sessions", data)
         self.assertIn("allow_lan", data)
 
+    def test_websocket_auth_via_cookie(self):
+        """WebSockets (/ws and /ws/phone-audio) authenticate using only the jarvis_auth_token cookie."""
+        from starlette.websockets import WebSocketDisconnect
+
+        key = self.server.new_key(expiry_secs=60)
+        login_resp = self.client.post("/login", json={"pin": key})
+        token = login_resp.json()["token"]
+
+        # 1. Connect to /ws using cookie only on an authenticated client
+        auth_client = TestClient(self.server.app, client=("127.0.0.1", 50000))
+        auth_client.cookies.set("jarvis_auth_token", token)
+        with auth_client.websocket_connect("/ws") as ws:
+            ws.send_json({"type": "ping"})
+
+        # 2. Connect to /ws/phone-audio using cookie only
+        with auth_client.websocket_connect("/ws/phone-audio") as ws:
+            ws.send_bytes(b"\x00\x00\x00\x00")
+
+        # 3. Missing cookie rejected with 4001 on an unauthenticated client
+        unauth_client = TestClient(self.server.app, client=("127.0.0.1", 50000))
+        with self.assertRaises(WebSocketDisconnect) as cm:
+            with unauth_client.websocket_connect("/ws"):
+                pass
+        self.assertEqual(cm.exception.code, 4001)
+
+        # 4. Invalid cookie rejected with 4001
+        bad_client = TestClient(self.server.app, client=("127.0.0.1", 50000))
+        bad_client.cookies.set("jarvis_auth_token", "INVALID_TOKEN")
+        with self.assertRaises(WebSocketDisconnect) as cm:
+            with bad_client.websocket_connect("/ws"):
+                pass
+        self.assertEqual(cm.exception.code, 4001)
+
+    def test_websocket_origin_validation(self):
+        """Cross-origin WebSocket connections are rejected with code 4003."""
+        from starlette.websockets import WebSocketDisconnect
+
+        key = self.server.new_key(expiry_secs=60)
+        login_resp = self.client.post("/login", json={"pin": key})
+        token = login_resp.json()["token"]
+
+        auth_client = TestClient(self.server.app, client=("127.0.0.1", 50000))
+        auth_client.cookies.set("jarvis_auth_token", token)
+
+        # Untrusted external origin
+        with self.assertRaises(WebSocketDisconnect) as cm:
+            with auth_client.websocket_connect(
+                "/ws",
+                headers={"Origin": "https://malicious-attacker.com"},
+            ):
+                pass
+        self.assertEqual(cm.exception.code, 4003)
+
+    def test_session_key_delivery_and_cookie_download(self):
+        """Session key delivered in-memory via cookie auth, and file downloads authenticate via cookie."""
+        key = self.server.new_key(expiry_secs=60)
+        login_resp = self.client.post("/login", json={"pin": key})
+        token = login_resp.json()["token"]
+
+        auth_client = TestClient(self.server.app, client=("127.0.0.1", 50000))
+        auth_client.cookies.set("jarvis_auth_token", token)
+
+        # Verify /api/session-key returns key when cookie provided
+        resp = auth_client.get("/api/session-key")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data.get("ok"))
+        self.assertEqual(data.get("session_key"), key)
+
+        # Without cookie -> 401
+        unauth_client = TestClient(self.server.app, client=("127.0.0.1", 50000))
+        resp_unauth = unauth_client.get("/api/session-key")
+        self.assertEqual(resp_unauth.status_code, 401)
+
+        # Create dummy file in uploads dir
+        test_file = self.server._uploads_dir / "test_download.txt"
+        test_file.write_text("secure file content", encoding="utf-8")
+        try:
+            # Download file using cookie only (no ?token=)
+            dl_resp = auth_client.get("/uploads/test_download.txt")
+            self.assertEqual(dl_resp.status_code, 200)
+            self.assertEqual(dl_resp.text, "secure file content")
+
+            # Without cookie or token -> 401
+            dl_unauth = unauth_client.get("/uploads/test_download.txt")
+            self.assertEqual(dl_unauth.status_code, 401)
+        finally:
+            if test_file.exists():
+                test_file.unlink()
+
 
 if __name__ == "__main__":
     unittest.main()

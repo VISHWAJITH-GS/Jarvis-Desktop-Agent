@@ -26,8 +26,18 @@ MODEL_PLANNER    = gemini.SMART
 MODEL_WRITER     = gemini.SMART
 
 def _get_api_key() -> str:
-    with open(API_CONFIG_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)["gemini_api_key"]
+    try:
+        from memory.config_manager import get_gemini_key
+        k = get_gemini_key()
+        if k:
+            return k
+    except Exception:
+        pass
+    try:
+        with open(API_CONFIG_PATH, "r", encoding="utf-8") as f:
+            return json.load(f).get("gemini_api_key", "")
+    except Exception:
+        return ""
 
 
 def _coding_provider() -> str:
@@ -321,14 +331,13 @@ def _open_vscode(project_dir: Path) -> bool:
         proc = subprocess.Popen(
             [resolved_cmd, str(project_dir)],
             shell=False,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
         time.sleep(1.0)
         ret = proc.poll()
         if ret is not None and ret != 0:
-            err = proc.stderr.read().decode("utf-8", errors="replace") if proc.stderr else ""
-            print(f"[DevAgent] ⚠️ VS Code exited prematurely with code {ret}: {err}")
+            print(f"[DevAgent] ⚠️ VS Code exited prematurely with code {ret}")
             return False
 
         print(f"[DevAgent] 💻 VSCode opened: {project_dir}")

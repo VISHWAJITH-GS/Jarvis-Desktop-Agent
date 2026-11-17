@@ -330,8 +330,18 @@ def _render_prompt(template: str, values: dict) -> str:
 
 
 def _get_api_key() -> str:
-    with open(API_CONFIG_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)["gemini_api_key"]
+    try:
+        from memory.config_manager import get_gemini_key
+        k = get_gemini_key()
+        if k:
+            return k
+    except Exception:
+        pass
+    try:
+        with open(API_CONFIG_PATH, "r", encoding="utf-8") as f:
+            return json.load(f).get("gemini_api_key", "")
+    except Exception:
+        return ""
 
 
 def _load_system_prompt() -> str:
@@ -1785,6 +1795,37 @@ class JarvisLive:
             else:
                 print(f"[JARVIS] 🎤 Input device: System Default")
 
+            def _try_open_candidates(primary_dev, primary_name):
+                # 1. Try primary device
+                try:
+                    stream = _open_mic(primary_dev)
+                    return stream, primary_name
+                except Exception as err:
+                    print(f"[JARVIS] ⚠️ Failed to open mic '{primary_name}': {err}")
+
+                # 2. Try the next non-Bluetooth mics
+                all_inputs = audio_devices.list_devices("input")
+                excl = getattr(audio_devices, "EXCLUDED_INPUT_KEYWORDS", ())
+                non_bt = [
+                    d for d in all_inputs
+                    if not audio_devices.is_bluetooth_device(d)
+                    and not any(k in d.lower() for k in excl)
+                    and d != primary_name
+                ]
+                for alt_name in non_bt:
+                    alt_idx = audio_devices.resolve(alt_name, "input")
+                    if alt_idx is None:
+                        continue
+                    try:
+                        stream = _open_mic(alt_idx)
+                        print(f"[JARVIS] 🎤 Fallback to non-Bluetooth mic: {alt_name}")
+                        self.ui.write_log(f"SYS: 🎤 Switched to fallback mic: {alt_name}")
+                        return stream, alt_name
+                    except Exception as alt_err:
+                        print(f"[JARVIS] ⚠️ Fallback mic '{alt_name}' failed: {alt_err}")
+
+                return None, None
+
             # Task 1C: If the headset mic is active and push-to-talk is enabled,
             # gate the mic stream so it opens only while PTT is held, allowing
             # the headset to switch back to high-fidelity stereo playback when idle.
@@ -1792,17 +1833,24 @@ class JarvisLive:
             if _headset_ptt_gating:
                 print("[JARVIS] 🎤 Headset PTT gating active: mic opens only while push-to-talk is held")
                 self.ui.write_log("SYS: 🎤 Headset PTT gating active: keeping stereo playback when idle.")
+                _ptt_fail_reported = False
                 while True:
                     while not getattr(self, "_ptt_held", False):
                         await asyncio.sleep(0.05)
+                    _stream, _active_name = _try_open_candidates(_mic_dev, _mic_name)
+                    if _stream is None:
+                        if not _ptt_fail_reported:
+                            _ptt_fail_reported = True
+                            _err_msg = "Could not open non-Bluetooth microphone. Keeping microphone closed."
+                            print(f"[JARVIS] ⚠️ {_err_msg}")
+                            self.ui.write_log(f"SYS: ⚠️ {_err_msg}")
+                        while getattr(self, "_ptt_held", False):
+                            await asyncio.sleep(0.05)
+                        continue
+
+                    _ptt_fail_reported = False
                     try:
-                        _stream = _open_mic(_mic_dev)
                         _stream.start()
-                    except Exception as _e:
-                        print(f"[JARVIS] ⚠️  PTT mic stream open error: {_e}")
-                        _stream = _open_mic(None)
-                        _stream.start()
-                    try:
                         while getattr(self, "_ptt_held", False):
                             await asyncio.sleep(0.05)
                     finally:
@@ -1812,21 +1860,18 @@ class JarvisLive:
                         except Exception:
                             pass
             else:
-                try:
-                    _mic_stream = _open_mic(_mic_dev)
-                    if _mic_dev is not None:
-                        self.ui.write_log(f"SYS: 🎤 Mic active: {_mic_name}")
-                except Exception as _e:
-                    if _mic_dev is None:
-                        raise
-                    print(f"[JARVIS] ⚠️  Mic '{_mic_name}' failed: {_e} — using default")
-                    self.ui.write_log(
-                        f"SYS: Microphone '{_mic_name}' unavailable — using system default."
-                    )
-                    _mic_stream = _open_mic(None)
+                _mic_stream, _active_name = _try_open_candidates(_mic_dev, _mic_name)
+                if _mic_stream is None:
+                    _err_msg = "Could not open non-Bluetooth microphone. Keeping microphone closed."
+                    print(f"[JARVIS] ⚠️ {_err_msg}")
+                    self.ui.write_log(f"SYS: ⚠️ {_err_msg}")
+                    while True:
+                        await asyncio.sleep(1.0)
 
                 with _mic_stream:
-                    print("[JARVIS] 🎤 Mic stream open")
+                    if _active_name:
+                        self.ui.write_log(f"SYS: 🎤 Mic active: {_active_name}")
+                    print(f"[JARVIS] 🎤 Mic stream open ({_active_name})")
                     while True:
                         await asyncio.sleep(0.1)
         except Exception as e:
@@ -1901,6 +1946,12 @@ class JarvisLive:
                             if self._resume_handle is None:
                                 print("[JARVIS] 🔗 Session resumption armed")
                             self._resume_handle = _sru.new_handle
+
+                    _goaway = getattr(response, "go_away", None)
+                    if _goaway is not None:
+                        tl = getattr(_goaway, "time_left", None)
+                        print(f"[JARVIS] 🔄 Server GoAway signal received (time_left={tl}) — performing clean reconnect")
+                        raise _ReconnectSignal(keep_context=True)
 
                     if response.data:
                         if self._interrupted or (hasattr(self, "voice_state") and self.voice_state.is_disabled):
