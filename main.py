@@ -74,8 +74,11 @@ from actions.web_search        import _news as _fetch_news_sync
 from memory.config_manager     import (
     get_brief_enabled, get_media_resolution, get_proactive_audio_enabled,
     get_push_to_talk_enabled, get_thinking_enabled, get_turn_tuning, get_voice,
-    get_wake_word_enabled, save_wake_word_enabled,    get_input_device, get_output_device,
-    get_listening_shortcut, get_emergency_stop_shortcut, get_mouse_gesture_enabled,
+    get_wake_word_enabled, save_wake_word_enabled,
+    get_wake_words, get_wake_word_threshold, get_idle_sleep_timeout,
+    get_input_device, get_output_device,
+    get_listening_shortcut, get_force_listening_shortcut,
+    get_emergency_stop_shortcut, get_mouse_gesture_enabled,
 )
 from core.voice_state          import VoiceStateManager, VoiceState
 from core.global_input         import GlobalInputController
@@ -91,9 +94,10 @@ from core.wake_word            import (
     WakeWordDetector, is_ready as wake_is_ready, install_and_download as wake_install,
 )
 
-# How long the assistant stays awake with no user speech before it auto-sleeps
-# again (wake-word mode only).
-WAKE_SLEEP_TIMEOUT = 120.0   # seconds (2 minutes)
+# How long JARVIS stays idle (no speech detected, no active commands) before
+# automatically transitioning into low-power SLEEPING mode.
+IDLE_SLEEP_TIMEOUT = 180.0   # seconds (3 minutes)
+WAKE_SLEEP_TIMEOUT = IDLE_SLEEP_TIMEOUT
 
 def get_base_dir():
     if getattr(sys, "frozen", False):
@@ -709,13 +713,17 @@ class JarvisLive:
         self.ui.get_plugin_settings = self._plugin_registry.settings_schemas  # ⚙ settings tab
         self.ui.request_say = self.plugin_say   # plugins: mid-task speech channel
 
-        # ── Wake word ────────────────────────────────────────────────────────
-        # _awake gates the mic (see _listen_audio) and the background speakers.
-        # It is True whenever wake word is OFF, so default behaviour is unchanged.
-        self._wake_enabled     = get_wake_word_enabled()
-        self._awake            = not self._wake_enabled
+        # ── Wake word & Idle Auto-Sleep ──────────────────────────────────────
+        # _awake mirrors active listening state; voice_state is authoritative.
+        # Wake words ("Jarvis", "Hello") at threshold 0.100 wake JARVIS from
+        # SLEEPING, whether entered manually, at boot, or via 3-minute idle sleep.
+        self._wake_enabled       = get_wake_word_enabled()
+        self._wake_words         = get_wake_words()
+        self._wake_threshold     = get_wake_word_threshold()
+        self._awake              = not self._wake_enabled
         self._wake_detector: WakeWordDetector | None = None
-        self._wake_sleep_timeout = WAKE_SLEEP_TIMEOUT
+        self._wake_detector_lock = threading.Lock()
+        self._wake_sleep_timeout = get_idle_sleep_timeout()
 
         # Restore the saved push-to-talk preference. Doing it here rather than
         # in __init__ means the hotkey thread only exists once there is a
@@ -733,74 +741,167 @@ class JarvisLive:
         self.ui.on_wake_install  = self._ui_wake_install  # () -> (ok, msg)
 
         # ── Central Voice State & Global Input Controller ─────────────────────
+        if getattr(self.ui, "muted", False):
+            _init_voice_state = VoiceState.DISABLED
+        elif self._wake_enabled:
+            _init_voice_state = VoiceState.SLEEPING
+        else:
+            _init_voice_state = VoiceState.LISTENING
+
         self.voice_state = VoiceStateManager(
-            initial_state=VoiceState.DISABLED if getattr(self.ui, "muted", False) else VoiceState.LISTENING,
+            initial_state=_init_voice_state,
             on_state_change=self._on_voice_state_changed,
             on_interrupt=None,
         )
+        if hasattr(self.ui, "on_mute_toggle"):
+            self.ui.on_mute_toggle = self.global_toggle_mute
 
         self._global_input = GlobalInputController(
-            on_toggle_listening=self.global_toggle_listening,
-            on_emergency_stop=self.global_emergency_stop,
-            listening_chord=get_listening_shortcut(),
-            emergency_chord=get_emergency_stop_shortcut(),
+            on_toggle_mute=self.global_toggle_mute,
+            on_force_listening=self.global_force_listening,
+            mute_chord=get_listening_shortcut(),
+            force_listening_chord=get_force_listening_shortcut(),
             mouse_gesture_enabled=get_mouse_gesture_enabled(),
         )
         self._global_input.start()
 
-    # ── Wake word: state machine ─────────────────────────────────────────────
+    # ── Wake word & idle sleep state machine ─────────────────────────────────
+
+    def _wake_words_label(self) -> str:
+        words = getattr(self, "_wake_words", None) or ["Jarvis", "Hello"]
+        if len(words) == 1:
+            return f"'{words[0]}'"
+        return " or ".join(f"'{w}'" for w in words)
+
+    def _record_activity(self) -> None:
+        """Reset the idle auto-sleep timer on speech, commands, or wake."""
+        now = time.monotonic()
+        self._last_user_speech = now
+        if hasattr(self, "voice_state"):
+            self.voice_state.touch_activity(now)
+
+    def _sync_ui_state(self, muted: bool, hud_state: str) -> None:
+        """Thread-safely synchronize mute flag and HUD state without clobbering."""
+        if not hasattr(self, "ui") or self.ui is None:
+            return
+        if hasattr(self.ui, "sync_mute_state"):
+            self.ui.sync_mute_state(muted, hud_state)
+        else:
+            self.ui.muted = muted
+            self.ui.set_state(hud_state)
+
+    def _drain_out_queue(self) -> None:
+        q = getattr(self, "out_queue", None)
+        if not q:
+            return
+        while True:
+            try:
+                q.get_nowait()
+            except Exception:
+                break
 
     def _wake_state(self) -> dict:
         # A loaded, running detector is definitively ready; otherwise fall back
         # to the cheap on-disk model-file check (no Model construction).
         ready = bool(self._wake_detector and self._wake_detector.ready) or wake_is_ready()
-        return {"enabled": self._wake_enabled, "awake": self._awake, "ready": ready}
+        awake = (
+            not self.voice_state.is_sleeping
+            if hasattr(self, "voice_state")
+            else bool(self._awake)
+        )
+        return {
+            "enabled": self._wake_enabled,
+            "awake": awake,
+            "ready": ready,
+            "wake_words": list(self._wake_words),
+            "threshold": self._wake_threshold,
+        }
 
     def _ensure_wake_detector(self) -> bool:
-        """Load the detector once (model loads on first start). Idempotent."""
-        if self._wake_detector is None:
-            self._wake_detector = WakeWordDetector(
-                on_detect=self._on_wake_detected,
-                logger=lambda m: print(f"[Wake] {m}"),
-                notify=lambda m: self.ui.write_log(f"SYS: {m}"),
-            )
-        if not self._wake_detector.ready:
-            return self._wake_detector.start()
-        return True
+        """Load the detector once (model loads on first start). Idempotent & thread-safe."""
+        with self._wake_detector_lock:
+            if self._wake_detector is None:
+                self._wake_detector = WakeWordDetector(
+                    on_detect=self._on_wake_detected,
+                    threshold=self._wake_threshold,
+                    wake_words=self._wake_words,
+                    logger=lambda m: print(f"[Wake] {m}"),
+                    notify=lambda m: self.ui.write_log(f"SYS: {m}"),
+                )
+            if not self._wake_detector.ready:
+                return self._wake_detector.start()
+            return True
 
-    def _on_wake_detected(self) -> None:
-        """Called from the detector thread when 'Hey Jarvis' is heard."""
-        self.wake(reason="wake word")
+    def _ensure_wake_detector_async(self) -> None:
+        """Start the wake-word detector without blocking the asyncio loop or hotkey thread."""
+        det = getattr(self, "_wake_detector", None)
+        if det is not None and det.ready:
+            return
+        threading.Thread(
+            target=self._ensure_wake_detector,
+            daemon=True,
+            name="wake-detector-init",
+        ).start()
+
+    def _on_wake_detected(self, word: str = "wake word") -> None:
+        """Called from the detector thread when an active wake word is heard."""
+        if hasattr(self, "voice_state") and self.voice_state.is_disabled:
+            return   # Never wake from muted state via wake word
+        label = f"wake word '{word}'" if word and word != "wake word" else "wake word"
+        self.wake(reason=label)
 
     def wake(self, reason: str = "wake word") -> None:
-        if self._awake:
+        if hasattr(self, "voice_state"):
+            if self.voice_state.is_disabled:
+                return
+            changed = self.voice_state.wake_up()
+            if not changed and self._awake:
+                self._record_activity()
+                return
+        elif self._awake:
             return
         self._awake = True
-        self._last_user_speech = time.monotonic()   # start the auto-sleep clock now
-        if not self.ui.muted:
+        self._record_activity()   # start the 3-minute auto-sleep clock fresh
+        if not hasattr(self, "voice_state") and not self.ui.muted:
             self.ui.set_state("LISTENING")
         self.ui.write_log(f"SYS: Awake — {reason}.")
 
-    def sleep(self, reason: str = "timeout") -> None:
-        if not self._awake:
+    def sleep(self, reason: str = "idle for 3 minutes") -> None:
+        if hasattr(self, "voice_state"):
+            if self.voice_state.is_disabled:
+                return   # Do not override muted state with sleep
+            changed = self.voice_state.enter_sleep()
+            if not changed and not self._awake:
+                return
+        elif not self._awake:
             return
         self._awake = False
+        self._drain_out_queue()
         self.set_speaking(False)
-        self.ui.set_state("SLEEPING")
-        self.ui.write_log(f"SYS: Sleeping — {reason}. Say 'Hey Jarvis' to wake me.")
+        self._ensure_wake_detector_async()
+        if not hasattr(self, "voice_state"):
+            self.ui.set_state("SLEEPING")
+        self.ui.write_log(
+            f"SYS: Sleeping — {reason}. Say {self._wake_words_label()} "
+            f"or press Ctrl+Alt+K to wake me."
+        )
 
     async def _run_sleep_watch(self) -> None:
-        """Auto-sleep after the configured silence window (wake-word mode only)."""
+        """Auto-sleep after 3 minutes of complete inactivity (no speech, no active commands)."""
         while True:
-            await asyncio.sleep(5)
-            if not self._wake_enabled or not self._awake:
-                continue
+            await asyncio.sleep(2)
             with self._speaking_lock:
                 speaking = self._is_speaking
             if speaking:
+                self._record_activity()
                 continue
-            if (time.monotonic() - self._last_user_speech) > self._wake_sleep_timeout:
-                self.sleep(reason="no speech for 2 minutes")
+            if hasattr(self, "voice_state"):
+                if self.voice_state.should_auto_sleep(self._wake_sleep_timeout):
+                    mins = int(round(self._wake_sleep_timeout / 60.0))
+                    label = f"idle for {mins} minute{'s' if mins != 1 else ''}"
+                    self.sleep(reason=label)
+            elif self._awake and (time.monotonic() - self._last_user_speech) >= self._wake_sleep_timeout:
+                self.sleep(reason="idle for 3 minutes")
 
     # ── Wake word: UI callbacks (called from the Qt thread) ──────────────────
 
@@ -812,7 +913,7 @@ class JarvisLive:
                 return "need_download"
             self._wake_enabled = True
             save_wake_word_enabled(True)
-            self._ensure_wake_detector()
+            self._ensure_wake_detector_async()
             self.sleep(reason="wake word enabled")
             return "enabled"
         else:
@@ -823,12 +924,15 @@ class JarvisLive:
 
     def _ui_wake_manual(self) -> None:
         """Manual sleep/wake button in the UI."""
-        if not self._wake_enabled:
-            return
-        if self._awake:
-            self.sleep(reason="you tapped sleep")
-        else:
+        is_sleeping = (
+            self.voice_state.is_sleeping
+            if hasattr(self, "voice_state")
+            else (not self._awake)
+        )
+        if is_sleeping:
             self.wake(reason="you tapped wake")
+        else:
+            self.sleep(reason="you tapped sleep")
 
     def _ui_wake_install(self) -> tuple[bool, str]:
         """Download openwakeword + the model (runs in a UI worker thread)."""
@@ -1061,12 +1165,19 @@ class JarvisLive:
     def _on_text_command(self, text: str):
         if not self._loop or not self.session:
             return
-        # Respect wake-word sleep: a typed command must not be answered while
-        # asleep either (the sleep gate is not just for the mic). Wake first with
-        # "Hey Jarvis" or the WAKE NOW button.
-        if self._wake_enabled and not self._awake:
-            self.ui.write_log("SYS: I'm asleep — say 'Hey Jarvis' or tap WAKE NOW first.")
+        # Respect sleep mode: a typed command must not be answered while asleep.
+        is_sleeping = (
+            self.voice_state.is_sleeping
+            if hasattr(self, "voice_state")
+            else (self._wake_enabled and not self._awake)
+        )
+        if is_sleeping:
+            self.ui.write_log(
+                f"SYS: I'm asleep — say {self._wake_words_label()}, "
+                f"press Ctrl+Alt+K, or tap WAKE NOW first."
+            )
             return
+        self._record_activity()
         asyncio.run_coroutine_threadsafe(
             self.session.send_client_content(
                 turns={"role": "user", "parts": [{"text": text}]},
@@ -1102,8 +1213,15 @@ class JarvisLive:
             self._out_level = 0.0
         if value:
             self.ui.set_state("SPEAKING")
-        elif not self.ui.muted:
-            self.ui.set_state("LISTENING")
+        else:
+            is_muted = getattr(self.ui, "muted", False) or (
+                hasattr(self, "voice_state") and self.voice_state.is_disabled
+            )
+            is_sleeping = (
+                hasattr(self, "voice_state") and self.voice_state.is_sleeping
+            ) or (not getattr(self, "_awake", True))
+            if not is_muted and not is_sleeping:
+                self.ui.set_state("LISTENING")
 
     def set_push_to_talk(self, enabled: bool) -> str:
         """Turn hold-to-talk on or off. Returns the scope actually achieved."""
@@ -1136,11 +1254,14 @@ class JarvisLive:
         """Chord pressed or released — may arrive on the hotkey thread."""
         self._ptt_held = held
         if held:
-            # Holding the key is also a way to wake it, so push-to-talk works
-            # without having to say the wake word first.
-            if self._wake_enabled and not self._awake:
+            # Holding the key is also a way to wake from sleep.
+            if hasattr(self, "voice_state") and self.voice_state.is_sleeping:
+                self.wake(reason="push-to-talk")
+            elif self._wake_enabled and not self._awake:
                 self._awake = True
-                self._last_user_speech = time.monotonic()
+                self._record_activity()
+            else:
+                self._record_activity()
         # Releasing the key ends the turn. On Live the server works that out from
         # the audio; a local pipeline has no server, so the release IS the
         # signal — which is also why it is the more reliable of the two ways to
@@ -1153,20 +1274,17 @@ class JarvisLive:
             except Exception as e:
                 print(f"[JARVIS] PTT flush failed: {e}")
         try:
+            if hasattr(self, "voice_state") and self.voice_state.is_disabled:
+                return
             if held:
                 state = "LISTENING"
             else:
-                # Releasing the key does NOT mean the assistant went to sleep.
-                #
-                # This used to paint SLEEPING unconditionally, and SLEEPING in
-                # this app means one specific thing — the wake-word gate is
-                # closed, the lids are down, nothing is being listened to at all.
-                # With push-to-talk on, every key release asserted that, so
-                # tapping WAKE NOW appeared to do nothing: the assistant really
-                # did wake, and the next release immediately painted it asleep
-                # again. Two different ideas were sharing one state.
-                state = ("SLEEPING" if (self._wake_enabled and not self._awake)
-                         else "LISTENING")
+                is_sleeping = (
+                    self.voice_state.is_sleeping
+                    if hasattr(self, "voice_state")
+                    else (self._wake_enabled and not self._awake)
+                )
+                state = "SLEEPING" if is_sleeping else "LISTENING"
             self.ui.set_state(state)
         except Exception:
             pass
@@ -1182,9 +1300,6 @@ class JarvisLive:
                 self._is_speaking
                 or (hasattr(self, "voice_state") and (self.voice_state.is_speaking or self.voice_state.is_processing))
             )
-            self._interrupted = True
-            if hasattr(self, "voice_state"):
-                self.voice_state.emergency_stop_speech()
             q = self.audio_in_queue
             drained = 0
             if q:
@@ -1196,6 +1311,10 @@ class JarvisLive:
                         break
                 if drained:
                     print(f"[JARVIS] ✋ Interrupted — {drained} audio chunks discarded")
+            if was_speaking or drained > 0:
+                self._interrupted = True
+            if hasattr(self, "voice_state"):
+                self.voice_state.emergency_stop_speech()
             self.set_speaking(False)
             try:
                 from core.ducking import restore_background_audio
@@ -1227,43 +1346,116 @@ class JarvisLive:
             with self._interrupt_lock:
                 self._in_interrupt = False
 
-    def global_toggle_listening(self) -> None:
-        """System-wide global listening toggle (Ctrl + Alt + J or L+R Mouse Gesture)."""
-        new_state = self.voice_state.toggle_listening()
-        is_disabled = (new_state == VoiceState.DISABLED)
-        # Sync UI muted state thread-safely
-        self.ui.muted = is_disabled
-        if is_disabled:
-            self.interrupt()
-            if self.out_queue:
-                while not self.out_queue.empty():
-                    try:
-                        self.out_queue.get_nowait()
-                    except Exception:
-                        break
-            self.ui.write_log("SYS: 🔇 Listening DISABLED globally.")
-        else:
-            self.ui.write_log("SYS: 🎙 Listening ENABLED globally.")
-
-    def global_emergency_stop(self) -> None:
-        """System-wide global emergency speech interruption (Ctrl + Alt + K)."""
+    def global_toggle_mute(self) -> VoiceState:
+        """
+        System-wide Toggle Mute (Ctrl + Alt + J or L+R Mouse Gesture).
+        Toggles between the current state (e.g. LISTENING or SLEEPING) and MUTED.
+        Pressing again restores the exact previous resting state.
+        """
+        prev_state = self.voice_state.state
         was_speaking = bool(
             self._is_speaking
-            or (hasattr(self, "voice_state") and (self.voice_state.is_speaking or self.voice_state.is_processing))
+            or self.voice_state.is_speaking
+            or self.voice_state.is_processing
         )
-        self.interrupt()
+        new_state = self.voice_state.toggle_mute()
+
+        if new_state == VoiceState.DISABLED:
+            if was_speaking:
+                self.interrupt()
+            self._drain_out_queue()
+            self.ui.write_log(
+                f"SYS: 🔇 Muted (was {prev_state.value}). "
+                f"Press Ctrl+Alt+J to restore or Ctrl+Alt+K to force listening."
+            )
+        elif new_state == VoiceState.SLEEPING:
+            self._awake = False
+            self._ensure_wake_detector_async()
+            self.ui.write_log(
+                f"SYS: 😴 Unmuted — restored SLEEPING. "
+                f"Say {self._wake_words_label()} or press Ctrl+Alt+K to wake."
+            )
+        else:
+            self._awake = True
+            self._interrupted = False
+            self._record_activity()
+            self.ui.write_log("SYS: 🎙 Unmuted — restored LISTENING.")
+        return new_state
+
+    def global_toggle_listening(self) -> VoiceState:
+        """Backward-compatible alias for global_toggle_mute (Ctrl + Alt + J)."""
+        return self.global_toggle_mute()
+
+    def global_force_listening(self) -> VoiceState:
+        """
+        System-wide Force Listening (Ctrl + Alt + K).
+        Immediately forces JARVIS into LISTENING regardless of whether it is
+        MUTED, SLEEPING, SPEAKING, PROCESSING, or already LISTENING. Remains
+        globally active even when JARVIS is asleep.
+        """
+        prev_state = self.voice_state.state
+        was_speaking = bool(
+            self._is_speaking
+            or self.voice_state.is_speaking
+            or self.voice_state.is_processing
+        )
         if was_speaking:
-            self.ui.write_log("SYS: 🛑 Emergency stop — speech interrupted.")
+            self.interrupt()
+        else:
+            self._interrupted = False
+
+        self._awake = True
+        new_state = self.voice_state.force_listening()
+        # Explicitly sync UI even if state was already LISTENING (e.g. clearing stale flags)
+        self._sync_ui_state(False, "LISTENING")
+        self._record_activity()
+
+        if prev_state == VoiceState.DISABLED:
+            self.ui.write_log("SYS: 🎙 Force Listening (Ctrl+Alt+K) — unmuted and active.")
+        elif prev_state == VoiceState.SLEEPING:
+            self.ui.write_log("SYS: 🎙 Force Listening (Ctrl+Alt+K) — woken from sleep.")
+        elif was_speaking:
+            self.ui.write_log("SYS: 🎙 Force Listening (Ctrl+Alt+K) — interrupted speech, now listening.")
+        else:
+            self.ui.write_log("SYS: 🎙 Force Listening (Ctrl+Alt+K) — active.")
+        return new_state
+
+    def global_emergency_stop(self) -> VoiceState:
+        """Alias bound to Ctrl + Alt + K -> forces LISTENING immediately."""
+        return self.global_force_listening()
 
     def _on_voice_state_changed(self, old_state: VoiceState, new_state: VoiceState) -> None:
         if new_state == VoiceState.DISABLED:
-            self.ui.set_state("MUTED")
+            self._sync_ui_state(True, "MUTED")
+        elif new_state == VoiceState.SLEEPING:
+            self._awake = False
+            self._sync_ui_state(False, "SLEEPING")
         elif new_state == VoiceState.LISTENING:
-            self.ui.set_state("LISTENING")
+            self._awake = True
+            self._sync_ui_state(False, "LISTENING")
         elif new_state == VoiceState.PROCESSING:
-            self.ui.set_state("PROCESSING")
+            self._awake = True
+            self._sync_ui_state(False, "PROCESSING")
         elif new_state == VoiceState.SPEAKING:
-            self.ui.set_state("SPEAKING")
+            self._awake = True
+            self._sync_ui_state(False, "SPEAKING")
+
+        # Notify remote dashboard of state transition if running
+        dash = getattr(self, "_dashboard", None)
+        loop = getattr(self, "_loop", None)
+        if dash and loop and not loop.is_closed():
+            dash_state = (
+                "sleeping" if new_state == VoiceState.SLEEPING
+                else "muted" if new_state == VoiceState.DISABLED
+                else "active"
+            )
+            try:
+                asyncio.run_coroutine_threadsafe(
+                    dash.broadcast({"type": "status", "state": dash_state}),
+                    loop,
+                )
+            except Exception:
+                pass
 
     def speak(self, text: str):
         if not self._loop or not self.session:
@@ -1479,6 +1671,17 @@ class JarvisLive:
         return out
 
     async def _execute_tool(self, fc) -> types.FunctionResponse:
+        self._record_activity()
+        if hasattr(self, "voice_state"):
+            self.voice_state.begin_command()
+        try:
+            return await self._execute_tool_inner(fc)
+        finally:
+            if hasattr(self, "voice_state"):
+                self.voice_state.end_command()
+            self._record_activity()
+
+    async def _execute_tool_inner(self, fc) -> types.FunctionResponse:
         name = fc.name
         args = dict(fc.args or {})
 
@@ -1487,7 +1690,6 @@ class JarvisLive:
         _t_tool = time.monotonic()
         self.ui.set_state("THINKING")
 
-
         if name == "save_memory":
             category = args.get("category", "notes")
             key      = args.get("key", "")
@@ -1495,7 +1697,7 @@ class JarvisLive:
             if key and value:
                 update_memory({category: {key: {"value": value}}})
                 print(f"[Memory] 💾 save_memory: {category}/{key} = {value}")
-            if not self.ui.muted:
+            if not self.ui.muted and not (hasattr(self, "voice_state") and (self.voice_state.is_disabled or self.voice_state.is_sleeping)):
                 self.ui.set_state("LISTENING")
             return types.FunctionResponse(
                 id=fc.id, name=name,
@@ -1671,7 +1873,7 @@ class JarvisLive:
                 pass
 
         try:
-            if not self.ui.muted:
+            if not self.ui.muted and not (hasattr(self, "voice_state") and (self.voice_state.is_disabled or self.voice_state.is_sleeping)):
                 self.ui.set_state("LISTENING")
         except Exception:
             pass
@@ -1701,9 +1903,9 @@ class JarvisLive:
     async def _send_realtime(self):
         while True:
             msg = await self.out_queue.get()
-            if hasattr(self, "voice_state") and self.voice_state.is_disabled:
+            if hasattr(self, "voice_state") and (self.voice_state.is_disabled or self.voice_state.is_sleeping):
                 continue
-            if getattr(self.ui, "muted", False):
+            if getattr(self.ui, "muted", False) or not getattr(self, "_awake", True):
                 continue
             # Gemini 3.x Live rejects the old realtime_input.media_chunks field
             # (what `media=...` maps to) and closes the socket with a 1007. Send
@@ -1726,14 +1928,16 @@ class JarvisLive:
             if (hasattr(self, "voice_state") and self.voice_state.is_disabled) or getattr(self.ui, "muted", False):
                 return
 
-            # ── Wake-word gate ───────────────────────────────────────────────
-            # While asleep, the mic audio NEVER goes to Gemini (nothing is
-            # streamed, so JARVIS can't respond to speech not addressed to it and
-            # nothing leaves the machine). Frames are instead handed to the local
-            # detector, which runs its model in ITS OWN thread — the cost here is
-            # only a queue push, so the audio path is never slowed. When wake word
-            # is off (default) or we're awake, this is a single boolean check.
-            if self._wake_enabled and not self._awake:
+            # ── Low-Power Sleep / Wake-Word Gate ─────────────────────────────
+            # While SLEEPING (entered via 3-minute idle timeout, wake-word mode,
+            # or manual sleep), mic audio NEVER leaves the machine to Gemini.
+            # Frames go only to the local wake-word detector ("Jarvis"/"Hello")
+            # on its own background thread; Ctrl+Alt+K also wakes globally.
+            is_sleeping = (
+                (hasattr(self, "voice_state") and self.voice_state.is_sleeping)
+                or (not self._awake)
+            )
+            if is_sleeping:
                 det = self._wake_detector
                 if det is not None:
                     det.feed(indata)
@@ -2010,8 +2214,11 @@ class JarvisLive:
                         raise _ReconnectSignal(keep_context=True)
 
                     if response.data:
-                        if self._interrupted or (hasattr(self, "voice_state") and self.voice_state.is_disabled):
-                            pass  # discard: interrupted or disabled
+                        if self._interrupted or (
+                            hasattr(self, "voice_state")
+                            and (self.voice_state.is_disabled or self.voice_state.is_sleeping)
+                        ):
+                            pass  # discard: interrupted, muted, or sleeping
                         else:
                             if self._turn_done_event and self._turn_done_event.is_set():
                                 self._turn_done_event.clear()
@@ -2051,7 +2258,7 @@ class JarvisLive:
                             txt = _clean_transcript(sc.input_transcription.text)
                             if txt:
                                 in_buf.append(txt)
-                                self._last_user_speech = time.monotonic()
+                                self._record_activity()
                                 if hasattr(self, "voice_state"):
                                     self.voice_state.start_processing()
                                 if hasattr(self, "ui") and self.ui:
@@ -2216,7 +2423,10 @@ class JarvisLive:
 
                 # Check generation ID and voice state to prevent stale audio playback
                 cur_gen = self.voice_state.generation_id if hasattr(self, "voice_state") else 0
-                is_dis = (hasattr(self, "voice_state") and self.voice_state.is_disabled) or getattr(self.ui, "muted", False)
+                is_dis = (
+                    (hasattr(self, "voice_state") and (self.voice_state.is_disabled or self.voice_state.is_sleeping))
+                    or getattr(self.ui, "muted", False)
+                )
                 if isinstance(raw_item, tuple):
                     item_gen, chunk = raw_item
                     if item_gen != cur_gen or is_dis or self._interrupted:
@@ -2556,8 +2766,9 @@ class JarvisLive:
                 if self.session:
                     # A remote command is deliberate control and the phone user
                     # has no desktop WAKE button — so it wakes JARVIS if asleep.
-                    if self._wake_enabled and not self._awake:
+                    if (hasattr(self, "voice_state") and self.voice_state.is_sleeping) or not self._awake:
                         self.wake(reason="remote command")
+                    self._record_activity()
                     await self.session.send_client_content(
                         turns={"role": "user", "parts": [{"text": text}]},
                         turn_complete=True,
@@ -2795,16 +3006,27 @@ class JarvisLive:
                         # is the whole point, and it is invisible otherwise.
                         self.ui.write_log("SYS: Reconnected — conversation restored.")
 
-                    # Wake word: if enabled, come up ASLEEP (mic gated, silent)
-                    # until the user says "Hey Jarvis" or taps wake in the UI.
-                    if self._wake_enabled:
-                        self._ensure_wake_detector()
+                    # Startup / reconnect voice state:
+                    # Preserve MUTED if user muted before reconnect; otherwise
+                    # start asleep if wake-word mode is on, or LISTENING with the
+                    # 3-minute idle auto-sleep timer armed.
+                    if self.voice_state.is_disabled:
+                        self._sync_ui_state(True, "MUTED")
+                        self.ui.write_log("SYS: JARVIS online — muted (press Ctrl+Alt+J to restore or Ctrl+Alt+K for listening).")
+                    elif self._wake_enabled or self.voice_state.is_sleeping:
+                        self._ensure_wake_detector_async()
                         self._awake = False
-                        self.ui.set_state("SLEEPING")
-                        self.ui.write_log("SYS: JARVIS online — sleeping. Say 'Hey Jarvis' to wake me.")
+                        self.voice_state.enter_sleep()
+                        self._sync_ui_state(False, "SLEEPING")
+                        self.ui.write_log(
+                            f"SYS: JARVIS online — sleeping. Say {self._wake_words_label()} "
+                            f"or press Ctrl+Alt+K to wake me."
+                        )
                     else:
                         self._awake = True
-                        self.ui.set_state("LISTENING")
+                        self._record_activity()
+                        self.voice_state.enable_listening()
+                        self._sync_ui_state(False, "LISTENING")
                         self.ui.write_log("SYS: JARVIS online.")
 
                     # What this machine will not permit, said once, on screen.
@@ -2988,6 +3210,25 @@ class JarvisLive:
             print(f"[JARVIS] Reconnecting in {delay}s...")
             await asyncio.sleep(delay)
 
+    def shutdown_listeners(self) -> None:
+        """Cleanly stop global hotkey and wake-word background threads."""
+        try:
+            if getattr(self, "_global_input", None) is not None:
+                self._global_input.stop()
+        except Exception:
+            pass
+        try:
+            if getattr(self, "_wake_detector", None) is not None:
+                self._wake_detector.stop()
+        except Exception:
+            pass
+        try:
+            if getattr(self, "_ptt", None) is not None:
+                self._ptt.stop()
+        except Exception:
+            pass
+
+
 def main():
     ui = JarvisUI("face.png")
 
@@ -3001,6 +3242,8 @@ def main():
         except Exception as e:
             if not getattr(ui, "_is_closed", False):
                 print(f"\n[JARVIS] Session stopped: {e}")
+        finally:
+            jarvis.shutdown_listeners()
 
     threading.Thread(target=runner, daemon=True).start()
     try:

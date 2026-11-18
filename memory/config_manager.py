@@ -336,8 +336,13 @@ def save_voice(voice_name: str) -> None:
     CONFIG_FILE.write_text(json.dumps(data, indent=4), encoding="utf-8")
 
 
+DEFAULT_WAKE_WORDS = ["Jarvis", "Hello"]
+DEFAULT_WAKE_WORD_THRESHOLD = 0.100
+DEFAULT_IDLE_SLEEP_TIMEOUT = 180.0   # 3 minutes
+
+
 def get_wake_word_enabled() -> bool:
-    """Whether local wake-word gating is on (assistant sleeps until 'Hey Jarvis')."""
+    """Whether local wake-word gating starts asleep on boot (auto-sleep still wakes on wake word)."""
     return load_api_keys().get("wake_word_enabled", False)
 
 
@@ -353,6 +358,56 @@ def save_wake_word_enabled(enabled: bool) -> None:
     CONFIG_FILE.write_text(json.dumps(data, indent=4), encoding="utf-8")
 
 
+def get_wake_words() -> list[str]:
+    """Active wake words used to wake JARVIS from sleep. Default: ['Jarvis', 'Hello']."""
+    v = load_api_keys().get("wake_words")
+    if isinstance(v, list):
+        cleaned = [str(w).strip() for w in v if str(w).strip()]
+        if cleaned:
+            return cleaned
+    return list(DEFAULT_WAKE_WORDS)
+
+
+def save_wake_words(words: list[str]) -> None:
+    cleaned = [str(w).strip() for w in (words or []) if str(w).strip()]
+    _save_flag("wake_words", cleaned or list(DEFAULT_WAKE_WORDS))
+
+
+def get_wake_word_threshold() -> float:
+    """Wake-word sensitivity threshold in [0.0, 1.0]. Default: 0.100."""
+    raw = load_api_keys().get("wake_word_threshold", DEFAULT_WAKE_WORD_THRESHOLD)
+    try:
+        return max(0.0, min(1.0, float(raw)))
+    except (TypeError, ValueError):
+        return DEFAULT_WAKE_WORD_THRESHOLD
+
+
+def save_wake_word_threshold(threshold: float) -> None:
+    try:
+        val = max(0.0, min(1.0, float(threshold)))
+    except (TypeError, ValueError):
+        val = DEFAULT_WAKE_WORD_THRESHOLD
+    _save_flag("wake_word_threshold", round(val, 4))
+
+
+def get_idle_sleep_timeout() -> float:
+    """Seconds of complete inactivity before auto-sleeping. Default: 180.0 (3 minutes)."""
+    raw = load_api_keys().get("idle_sleep_timeout", DEFAULT_IDLE_SLEEP_TIMEOUT)
+    try:
+        val = float(raw)
+        return val if val >= 5.0 else DEFAULT_IDLE_SLEEP_TIMEOUT
+    except (TypeError, ValueError):
+        return DEFAULT_IDLE_SLEEP_TIMEOUT
+
+
+def save_idle_sleep_timeout(seconds: float) -> None:
+    try:
+        val = max(5.0, float(seconds))
+    except (TypeError, ValueError):
+        val = DEFAULT_IDLE_SLEEP_TIMEOUT
+    _save_flag("idle_sleep_timeout", val)
+
+
 def get_push_to_talk_enabled() -> bool:
     """Hold-a-key-to-speak. When on, the mic is closed unless the chord is held."""
     return load_api_keys().get("push_to_talk_enabled", False)
@@ -363,7 +418,7 @@ def save_push_to_talk_enabled(enabled: bool) -> None:
 
 
 def get_listening_shortcut() -> list[str]:
-    """Global keyboard shortcut for toggling listening. Default Ctrl+Alt+J."""
+    """Global keyboard shortcut for Toggle Mute (restores previous state). Default Ctrl+Alt+J."""
     v = load_api_keys().get("global_listening_shortcut")
     if isinstance(v, list) and v:
         return [str(k).lower() for k in v]
@@ -374,8 +429,21 @@ def save_listening_shortcut(chord: list[str]) -> None:
     _save_flag("global_listening_shortcut", [str(k).lower() for k in chord])
 
 
+def get_force_listening_shortcut() -> list[str]:
+    """Global keyboard shortcut for Force Listening from any state. Default Ctrl+Alt+K."""
+    cfg = load_api_keys()
+    v = cfg.get("global_force_listening_shortcut") or cfg.get("global_emergency_stop_shortcut")
+    if isinstance(v, list) and v:
+        return [str(k).lower() for k in v]
+    return ["ctrl", "alt", "k"]
+
+
+def save_force_listening_shortcut(chord: list[str]) -> None:
+    _save_flag("global_force_listening_shortcut", [str(k).lower() for k in chord])
+
+
 def get_emergency_stop_shortcut() -> list[str]:
-    """Global keyboard shortcut for immediate speech interruption. Default Ctrl+Alt+K."""
+    """Legacy alias for the Ctrl+Alt+K global shortcut."""
     v = load_api_keys().get("global_emergency_stop_shortcut")
     if isinstance(v, list) and v:
         return [str(k).lower() for k in v]

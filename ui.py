@@ -1116,6 +1116,7 @@ class HudCanvas(QWidget):
             "LISTENING": 28, "SPEAKING": 45,
             "EXECUTING": 160, "INTERRUPTED": 90,
             "RECONNECTING": 12, "MUTED": 10,
+            "SLEEPING": 6,
         }.get(st, 14)
         self.spin = (self.spin + dt * speed) % 360.0
 
@@ -1172,6 +1173,11 @@ class HudCanvas(QWidget):
             target_core_mid = QColor(190, 190, 190, 240)
             target_glow_col = QColor(138, 138, 138)
             pulse_speed = 1.0
+        elif st == "SLEEPING":
+            target_accent = QColor(99, 102, 241)          # CALM INDIGO when low-power sleeping
+            target_core_mid = QColor(165, 180, 252, 220)
+            target_glow_col = QColor(99, 102, 241)
+            pulse_speed = 0.8
         elif self.speaking or st == "SPEAKING":
             target_accent = COLOR_STATE_SPEAKING           # YELLOW when JARVIS is speaking
             target_core_mid = QColor(255, 245, 180, 240)
@@ -8710,6 +8716,7 @@ class MainWindow(_FramelessWindowResizeMixin, QMainWindow):
     _video_mute_sig  = pyqtSignal(bool)
     _clipboard_sig  = pyqtSignal(str)        # clipboard text changed (thread-safe)
     _mute_sig       = pyqtSignal(bool)       # thread-safe mute state toggle
+    _mute_state_sig = pyqtSignal(bool, str)  # thread-safe atomic (muted, hud_state) sync
     _confirm_sig    = pyqtSignal(str, str)   # (title, detail) — irreversible-action gate
     _confirm_hide_sig = pyqtSignal()
     _wake_dl_sig    = pyqtSignal(bool, str)  # wake-word install finished (ok, message)
@@ -8769,6 +8776,7 @@ class MainWindow(_FramelessWindowResizeMixin, QMainWindow):
         self.on_text_command   = None
         self.on_remote_clicked = None   # callable: () -> (url, key) | None
         self.on_interrupt      = None   # callable: () -> None — stop JARVIS mid-speech
+        self.on_mute_toggle    = None   # callable: () -> None — central VoiceStateManager mute toggle
         self.on_voice_change   = None   # callable: () -> None — rebuild session with new voice
         self.on_audio_device_change = None  # callable: () -> None — reopen audio streams
         self._confirm_overlay  = None   # live ConfirmBanner, if one is on screen
@@ -8999,6 +9007,7 @@ class MainWindow(_FramelessWindowResizeMixin, QMainWindow):
         self._video_close_sig.connect(self._on_video_close)
         self._video_mute_sig.connect(self._on_video_mute)
         self._mute_sig.connect(self._set_muted)
+        self._mute_state_sig.connect(self._sync_mute_state)
         self._clipboard_sig.connect(self._show_clipboard_panel)
         self._wake_dl_sig.connect(self._on_wake_install_done)
         self._quiz_sig.connect(self._show_quiz)
@@ -12030,7 +12039,12 @@ class MainWindow(_FramelessWindowResizeMixin, QMainWindow):
         if not st["ready"]:
             self._wake_btn.setText("⬇  WAKE WORD: DOWNLOAD")
             self._wake_btn.setStyleSheet(_off)
-            self._wake_sleep_btn.hide()
+            if not st["awake"]:
+                self._wake_sleep_btn.show()
+                self._wake_sleep_btn.setText("👂  WAKE NOW")
+                self._wake_sleep_btn.setStyleSheet(_off)
+            else:
+                self._wake_sleep_btn.hide()
         elif st["enabled"]:
             self._wake_btn.setText("🎙  WAKE WORD: ON")
             self._wake_btn.setStyleSheet(_on)
@@ -12040,7 +12054,12 @@ class MainWindow(_FramelessWindowResizeMixin, QMainWindow):
         else:
             self._wake_btn.setText("🎙  WAKE WORD: OFF")
             self._wake_btn.setStyleSheet(_off)
-            self._wake_sleep_btn.hide()
+            if not st["awake"]:
+                self._wake_sleep_btn.show()
+                self._wake_sleep_btn.setText("👂  WAKE NOW")
+                self._wake_sleep_btn.setStyleSheet(_off)
+            else:
+                self._wake_sleep_btn.hide()
 
     def _refresh_talk_btns(self):
         """Repaint the push-to-talk row from the saved setting."""
@@ -12477,7 +12496,25 @@ class MainWindow(_FramelessWindowResizeMixin, QMainWindow):
         # A deliberate press settles the question: whatever the video did, or is
         # about to do, the user has now said what they want.
         self._video_auto_muted = False
+        if self.on_mute_toggle:
+            try:
+                self.on_mute_toggle()
+                return
+            except Exception:
+                pass
         self._set_muted(not self._muted)
+
+    def _sync_mute_state(self, muted: bool, hud_state: str = ""):
+        """Atomically synchronize mute flag, mute buttons, and HUD state without
+        clobbering restored states such as SLEEPING."""
+        muted = bool(muted)
+        self._muted = muted
+        self.hud.muted = muted
+        self._style_mute_btn()
+        target = (hud_state or ("MUTED" if muted else "LISTENING")).upper()
+        self._apply_state(target)
+        if hasattr(self, "_wake_btn"):
+            self._refresh_wake_btns()
 
     def _set_muted(self, muted: bool, note: str = ""):
         muted = bool(muted)
@@ -12696,6 +12733,24 @@ class JarvisUI:
             self._win._mute_sig.emit(bool(v))
         except (RuntimeError, AttributeError):
             pass
+
+    def sync_mute_state(self, muted: bool, hud_state: str = "") -> None:
+        """Thread-safe: atomically update mute indicator and exact HUD state
+        (e.g. MUTED, SLEEPING, LISTENING)."""
+        try:
+            if not self._is_alive():
+                return
+            self._win._mute_state_sig.emit(bool(muted), str(hud_state or ""))
+        except (RuntimeError, AttributeError):
+            pass
+
+    @property
+    def on_mute_toggle(self):
+        return self._win.on_mute_toggle
+
+    @on_mute_toggle.setter
+    def on_mute_toggle(self, cb):
+        self._win.on_mute_toggle = cb
 
     @property
     def current_file(self) -> str | None:
