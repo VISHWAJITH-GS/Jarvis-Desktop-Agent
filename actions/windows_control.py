@@ -743,125 +743,225 @@ def set_display_mode(mode: str) -> dict:
 # D. SOUND & AUDIO DEVICES
 # ══════════════════════════════════════════════════════════════════════════════
 
-def list_audio_devices() -> dict:
-    """List all available Windows audio playback and recording endpoints."""
+def list_audio_devices(kind: str = "all") -> dict:
+    """List available Windows audio input and/or output devices with capabilities and active status."""
+    from core import audio_devices
+    from core.audio_manager import get_audio_manager
+
+    kind_norm = str(kind or "all").strip().lower()
     playback = []
     recording = []
-    try:
-        from core.audio_devices import invalidate_cache, list_devices
-        invalidate_cache()
-        playback = [{"id": i, "name": name, "channels": 2} for i, name in enumerate(list_devices("output", refresh=True))]
-        recording = [{"id": i, "name": name, "channels": 1} for i, name in enumerate(list_devices("input", refresh=True))]
-    except Exception:
-        pass
 
-    if not playback and not recording:
-        try:
-            import sounddevice as sd
-            devs = sd.query_devices()
-            for idx, d in enumerate(devs):
-                entry = {"id": idx, "name": d["name"], "channels": d["max_output_channels"]}
-                if d.get("max_output_channels", 0) > 0:
-                    playback.append(entry)
-                if d.get("max_input_channels", 0) > 0:
-                    recording.append(entry)
-        except Exception:
-            pass
+    if kind_norm in ("all", "output", "playback", "speakers"):
+        playback = audio_devices.get_device_capabilities("output", refresh=False)
+    if kind_norm in ("all", "input", "recording", "microphone", "mic"):
+        recording = audio_devices.get_device_capabilities("input", refresh=False)
+
+    mgr = get_audio_manager()
+    active_status = mgr.get_status() if mgr is not None else {}
+
+    out_names = [d["name"] for d in playback]
+    in_names = [d["name"] for d in recording]
+    parts = []
+    if playback:
+        parts.append(f"Audio output devices: {', '.join(out_names)}.")
+    if recording:
+        parts.append(f"Audio input devices: {', '.join(in_names)}.")
+    if active_status:
+        parts.append(
+            f"Active microphone: {active_status.get('input_device', 'System default')} "
+            f"({active_status.get('input_status', 'Unknown')}). "
+            f"Active speaker: {active_status.get('output_device', 'System default')} "
+            f"({active_status.get('output_status', 'Unknown')})."
+        )
 
     return {
+        "success": True,
+        "verified": True,
         "playback_devices": playback,
         "recording_devices": recording,
         "count_playback": len(playback),
         "count_recording": len(recording),
+        "active_status": active_status,
+        "message": " ".join(parts) if parts else "No audio devices found.",
     }
 
 
 def set_default_playback_device(device_name: str) -> dict:
-    """Switch Windows default audio playback output to named device."""
+    """Validate, switch, verify, and persist the audio output (speaker) device."""
     from core import audio_devices
+    from core.audio_manager import get_audio_manager
     from memory import config_manager
 
     target = str(device_name or "").strip()
-    clean_t = target.lower()
+    mgr = get_audio_manager()
 
-    # If generic name like "earphones", "earbuds", "headphones", look for matching device in output list
-    matched_target = None
-    if any(k in clean_t for k in ("earphone", "earbud", "headphone", "headset", "bud")):
-        try:
-            for dev in audio_devices.list_devices("output", refresh=True):
-                dev_low = dev.lower()
-                if any(w in dev_low for w in ("bud", "enco", "oppo", "headphone", "headset", "wireless", "audio")):
-                    matched_target = dev
-                    break
-        except Exception:
-            pass
+    # Live hot-switch path through centralized AudioManager (verifies actual stream!)
+    if mgr is not None:
+        res = mgr.switch_output(target, persist=True, set_os_default=True)
+        return {
+            "success": bool(res.get("success")),
+            "verified": bool(res.get("verified")),
+            "action": "set_default_playback_device",
+            "device": res.get("device", target),
+            "sample_rate": res.get("sample_rate"),
+            "status": res.get("status", ""),
+            "message": res.get("message", ""),
+        }
 
-    resolved_name = matched_target or target
-    success = audio_devices.set_default_endpoint(resolved_name, "output")
+    # Offline/standalone fallback (no active AudioManager running)
+    matched = audio_devices.match_device_name(target, "output", refresh=False)
+    if matched is None:
+        return {
+            "success": False,
+            "verified": False,
+            "action": "set_default_playback_device",
+            "device": target,
+            "message": f"Audio output device '{target}' is not available or could not be opened.",
+        }
 
-    if not success:
-        safe_name = re.sub(r'[^a-zA-Z0-9_\-\. ]', '', str(resolved_name)).strip()
-        ps = f"""
-$name = "{safe_name}"
-$dev = Get-PnpDevice -Class AudioEndpoint -FriendlyName "*$name*" -ErrorAction SilentlyContinue | Select-Object -First 1
-if ($dev) {{
-    Enable-PnpDevice -InstanceId $dev.InstanceId -Confirm:$false -ErrorAction SilentlyContinue
-    Write-Output "ENDPOINT_ENABLED"
-}} else {{
-    Write-Output "NOT_FOUND"
-}}
-"""
-        code, stdout, _ = _run_ps(ps, timeout=8)
-        success = "ENDPOINT_ENABLED" in stdout
+    idx, rate = audio_devices.resolve_with_rate(matched, "output")
+    if matched and (idx is None or rate is None):
+        return {
+            "success": False,
+            "verified": False,
+            "action": "set_default_playback_device",
+            "device": matched,
+            "message": f"Audio output device '{matched}' failed stream validation.",
+        }
 
-    if success:
-        try:
-            config_manager.set_output_device(resolved_name)
-        except Exception:
-            pass
-
+    if matched:
+        audio_devices.set_default_endpoint(matched, "output")
+    config_manager.save_output_device(matched)
+    label = matched or audio_devices.DEFAULT_LABEL
     return {
-        "success": success,
+        "success": True,
+        "verified": True,
         "action": "set_default_playback_device",
-        "device": resolved_name,
-        "verified": success,
-        "message": f"Audio output configured for '{resolved_name}'." if success else f"Audio endpoint '{resolved_name}' not found.",
+        "device": label,
+        "sample_rate": rate,
+        "message": f"Audio output switched to '{label}' ({rate} Hz).",
     }
 
 
 def set_default_recording_device(device_name: str) -> dict:
-    """Switch Windows default audio recording/microphone input to named device."""
+    """Validate, switch, verify, and persist the audio input (microphone) device."""
     from core import audio_devices
+    from core.audio_manager import get_audio_manager
     from memory import config_manager
 
     target = str(device_name or "").strip()
-    clean_t = target.lower()
+    mgr = get_audio_manager()
 
-    matched_target = None
-    if any(k in clean_t for k in ("earphone", "earbud", "headphone", "headset", "bud")):
-        try:
-            for dev in audio_devices.list_devices("input", refresh=True):
-                dev_low = dev.lower()
-                if any(w in dev_low for w in ("bud", "enco", "oppo", "headphone", "headset", "wireless", "audio")):
-                    matched_target = dev
-                    break
-        except Exception:
-            pass
+    if mgr is not None:
+        res = mgr.switch_input(target, persist=True, set_os_default=True)
+        return {
+            "success": bool(res.get("success")),
+            "verified": bool(res.get("verified")),
+            "action": "set_default_recording_device",
+            "device": res.get("device", target),
+            "sample_rate": res.get("sample_rate"),
+            "status": res.get("status", ""),
+            "message": res.get("message", ""),
+        }
 
-    resolved_name = matched_target or target
-    success = audio_devices.set_default_endpoint(resolved_name, "input")
-    if success:
-        try:
-            config_manager.set_input_device(resolved_name)
-        except Exception:
-            pass
+    matched = audio_devices.match_device_name(target, "input", refresh=False)
+    if matched is None:
+        return {
+            "success": False,
+            "verified": False,
+            "action": "set_default_recording_device",
+            "device": target,
+            "message": f"Audio input device '{target}' is not available or could not be opened.",
+        }
 
+    idx, rate = audio_devices.resolve_with_rate(matched, "input")
+    if matched and (idx is None or rate is None):
+        return {
+            "success": False,
+            "verified": False,
+            "action": "set_default_recording_device",
+            "device": matched,
+            "message": f"Audio input device '{matched}' failed stream validation.",
+        }
+
+    if matched:
+        audio_devices.set_default_endpoint(matched, "input")
+    config_manager.save_input_device(matched)
+    label = matched or audio_devices.DEFAULT_LABEL
     return {
-        "success": success,
+        "success": True,
+        "verified": True,
         "action": "set_default_recording_device",
-        "device": resolved_name,
-        "verified": success,
-        "message": f"Audio input configured for '{resolved_name}'." if success else f"Audio input endpoint '{resolved_name}' not found.",
+        "device": label,
+        "sample_rate": rate,
+        "message": f"Microphone switched to '{label}' ({rate} Hz).",
+    }
+
+
+def reset_audio_devices_to_default() -> dict:
+    """Reset both microphone and speaker devices to Windows system defaults."""
+    from core.audio_manager import get_audio_manager
+    from memory import config_manager
+
+    mgr = get_audio_manager()
+    if mgr is not None:
+        res = mgr.reset_to_default(persist=True)
+        st = res.get("status", {})
+        return {
+            "success": bool(res.get("success")),
+            "verified": bool(res.get("verified")),
+            "action": "reset_audio_devices",
+            "input_device": st.get("input_device", "System default"),
+            "output_device": st.get("output_device", "System default"),
+            "message": (
+                f"Reset audio devices to Windows defaults "
+                f"(Mic: {st.get('input_device', 'System default')}, "
+                f"Speaker: {st.get('output_device', 'System default')})."
+            ),
+        }
+
+    config_manager.save_input_device("")
+    config_manager.save_output_device("")
+    return {
+        "success": True,
+        "verified": True,
+        "action": "reset_audio_devices",
+        "input_device": "System default",
+        "output_device": "System default",
+        "message": "Audio input and output reset to Windows default devices.",
+    }
+
+
+def get_audio_status() -> dict:
+    """Return active audio input/output devices, sample rates, and Bluetooth connection status."""
+    from core.audio_manager import get_audio_manager
+    from core.audio_diagnostics import get_audio_diagnostics
+
+    mgr = get_audio_manager()
+    if mgr is not None:
+        st = mgr.get_status()
+        return {
+            "success": True,
+            "verified": True,
+            "action": "get_audio_status",
+            **st,
+            "message": (
+                f"Microphone: {st['input_device']} ({st['input_status']}, {st['input_sample_rate']} Hz). "
+                f"Speaker: {st['output_device']} ({st['output_status']}, {st['output_sample_rate']} Hz). "
+                f"Bluetooth: {st['bluetooth_status']}."
+            ),
+        }
+    diag = get_audio_diagnostics()
+    return {
+        "success": True,
+        "verified": True,
+        "action": "get_audio_status",
+        "diagnostics": diag,
+        "message": (
+            f"Mic: {diag['resolved_streams']['input']['device_name']}, "
+            f"Speaker: {diag['resolved_streams']['output']['device_name']}."
+        ),
     }
 
 
@@ -1207,24 +1307,48 @@ def windows_control(parameters: dict = None, player=None, **kwargs) -> str:
         res = set_mute(False)
         return outcome.done("windows_control", **res)
 
-    if action in ("list_audio_devices", "audio_devices", "sound_devices"):
-        res = list_audio_devices()
+    if action in ("list_audio_devices", "audio_devices", "sound_devices", "get_audio_devices", "list_sound_devices"):
+        res = list_audio_devices("all")
         return outcome.done("windows_control", **res)
 
-    if action in ("set_audio_output", "switch_audio_output", "set_default_playback_device"):
+    if action in ("list_audio_input_devices", "list_input_devices", "list_microphones"):
+        res = list_audio_devices("input")
+        return outcome.done("windows_control", **res)
+
+    if action in ("list_audio_output_devices", "list_output_devices", "list_speakers"):
+        res = list_audio_devices("output")
+        return outcome.done("windows_control", **res)
+
+    if action in ("get_audio_status", "audio_status"):
+        res = get_audio_status()
+        return outcome.done("windows_control", **res)
+
+    if action in ("reset_audio_devices", "use_default_audio_devices"):
+        res = reset_audio_devices_to_default()
+        if player and hasattr(player, "refresh_audio_devices"):
+            player.refresh_audio_devices()
+        if not res.get("success", False):
+            return outcome.failed("windows_control", res.get("message", "Failed to reset audio devices."))
+        return outcome.done("windows_control", **res)
+
+    if action in ("set_audio_output", "switch_audio_output", "set_default_playback_device", "change_audio_output"):
         if not target:
             return outcome.failed("windows_control", "target device name required")
         res = set_default_playback_device(target)
         if player and hasattr(player, "refresh_audio_devices"):
             player.refresh_audio_devices()
+        if not res.get("success", False):
+            return outcome.failed("windows_control", res.get("message", f"Could not switch output to '{target}'."))
         return outcome.done("windows_control", **res)
 
-    if action in ("set_audio_input", "switch_audio_input", "set_default_recording_device"):
+    if action in ("set_audio_input", "switch_audio_input", "set_default_recording_device", "change_audio_input"):
         if not target:
             return outcome.failed("windows_control", "target device name required")
         res = set_default_recording_device(target)
         if player and hasattr(player, "refresh_audio_devices"):
             player.refresh_audio_devices()
+        if not res.get("success", False):
+            return outcome.failed("windows_control", res.get("message", f"Could not switch input to '{target}'."))
         return outcome.done("windows_control", **res)
 
     if action in ("set_audio_device", "switch_audio_device", "switch_audio"):
@@ -1234,6 +1358,8 @@ def windows_control(parameters: dict = None, player=None, **kwargs) -> str:
         res_in = set_default_recording_device(target)
         if player and hasattr(player, "refresh_audio_devices"):
             player.refresh_audio_devices()
+        if not res_out.get("success") and not res_in.get("success"):
+            return outcome.failed("windows_control", f"Could not switch audio devices to '{target}'.")
         return outcome.done("windows_control", playback=res_out, recording=res_in)
 
     # Display & Power
@@ -1259,7 +1385,11 @@ TOOL = {
         "Windows system, hardware, Bluetooth, and Wi-Fi control: "
         "Wi-Fi (check status with get_wifi_status, list available/saved networks with list_available_wifi_networks, connect to network SSID with connect_wifi, disconnect with disconnect_wifi, enable/disable radio with set_wifi_enabled). "
         "Bluetooth (check status with get_bluetooth_status, list paired devices with list_bluetooth_devices, connect device like 'OPPO Enco Buds 2' with connect_bluetooth_device, disconnect with disconnect_bluetooth_device, enable/disable radio with set_bluetooth_enabled). "
-        "Sound & Volume (set volume 0-100, get volume, mute, unmute, list audio devices, switch default audio output). "
+        "Sound & Audio Devices (set volume 0-100, get volume, mute, unmute, "
+        "list_audio_devices, list_audio_input_devices, list_audio_output_devices, get_audio_status, "
+        "set_audio_input to switch microphone e.g. 'OPPO Enco Buds2' or 'laptop microphone', "
+        "set_audio_output to switch speakers e.g. 'OPPO Enco Buds2' or 'laptop speakers', "
+        "set_audio_device to switch both, reset_audio_devices to use Windows default audio devices). "
         "Display (brightness, display modes duplicate/extend/pc_only), and battery status. "
         "Reading status never needs confirmation; changing connection/state executes immediately or asks for confirmation when switching."
     ),
@@ -1272,7 +1402,9 @@ TOOL = {
                 "description": (
                     "The exact action: get_wifi_status | list_available_wifi_networks | connect_wifi | disconnect_wifi | set_wifi_enabled | "
                     "get_bluetooth_status | list_bluetooth_devices | connect_bluetooth_device | disconnect_bluetooth_device | set_bluetooth_enabled | pair_bluetooth_device | "
-                    "set_volume | get_volume | volume_up | volume_down | mute | unmute | mute_jarvis | unmute_jarvis | minimize_jarvis | maximize_jarvis | manage_memory | manage_actions | list_audio_devices | set_audio_output | set_brightness | set_display_mode | get_power_status"
+                    "set_volume | get_volume | volume_up | volume_down | mute | unmute | mute_jarvis | unmute_jarvis | minimize_jarvis | maximize_jarvis | manage_memory | manage_actions | "
+                    "list_audio_devices | list_audio_input_devices | list_audio_output_devices | get_audio_status | set_audio_input | set_audio_output | set_audio_device | reset_audio_devices | "
+                    "set_brightness | set_display_mode | get_power_status"
                 ),
             },
             "target": {

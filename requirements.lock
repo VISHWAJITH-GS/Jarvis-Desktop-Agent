@@ -60,7 +60,6 @@ numpy==2.5.4
 nvidia-ml-py==13.615.71
 oauthlib==4.0.1
 onnxruntime==1.31.1
-opencv-python==4.14.0.94
 openpyxl==3.1.5
 opentelemetry-api==1.45.2
 openwakeword==0.6.0
@@ -87,7 +86,6 @@ pydantic_core==2.50.4
 pyee==14.0.0
 PyGetWindow==0.0.9
 PyMsgBox==2.0.1
-pynvml==13.0.1
 pyparsing==3.3.3
 PyPDF2==3.0.1
 pypdfium2==5.15.0

@@ -250,6 +250,37 @@ class TestAudioDucking(unittest.TestCase):
             self.ducker.notify_speech_activity(True)
             self.assertFalse(self.ducker._is_ducked)
 
+    def test_multi_endpoint_bluetooth_and_laptop_speaker_ducking(self):
+        """Apps playing on Bluetooth headphones AND laptop speakers (even same PID) are BOTH ducked & restored."""
+        laptop_edge = MockAudioSession(17068, "msedge.exe", volume=1.0)
+        bt_edge = MockAudioSession(17068, "msedge.exe", volume=1.0)
+        bt_spotify = MockAudioSession(22001, "spotify.exe", volume=0.8)
+
+        multi_sessions = [
+            ("{realtek-ep}", "inst-realtek-edge", laptop_edge),
+            ("{oppo-bt-ep}", "inst-bt-edge", bt_edge),
+            ("{oppo-bt-ep}", "inst-bt-spotify", bt_spotify),
+        ]
+
+        with patch.object(self.ducker, "_get_all_sessions", return_value=multi_sessions), \
+             patch("memory.config_manager.get_ducking_enabled", return_value=True), \
+             patch("memory.config_manager.get_ducking_level", return_value=25), \
+             patch("memory.config_manager.get_ducking_exclude_apps", return_value=[]):
+
+            self.ducker._perform_duck()
+
+            # Both laptop speaker AND Bluetooth headphones sessions must be ducked!
+            self.assertAlmostEqual(laptop_edge.SimpleAudioVolume.GetMasterVolume(), 0.25, places=2)
+            self.assertAlmostEqual(bt_edge.SimpleAudioVolume.GetMasterVolume(), 0.25, places=2)
+            self.assertAlmostEqual(bt_spotify.SimpleAudioVolume.GetMasterVolume(), 0.20, places=2)
+            self.assertEqual(len(self.ducker._snapshot), 3)
+
+            # Restoring must cleanly restore all 3 sessions across both endpoints
+            self.ducker._perform_restore()
+            self.assertAlmostEqual(laptop_edge.SimpleAudioVolume.GetMasterVolume(), 1.0, places=2)
+            self.assertAlmostEqual(bt_edge.SimpleAudioVolume.GetMasterVolume(), 1.0, places=2)
+            self.assertAlmostEqual(bt_spotify.SimpleAudioVolume.GetMasterVolume(), 0.80, places=2)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -664,6 +664,11 @@ def save_input_device(name: str) -> None:
     _patch_config(input_device=(name or "").strip())
 
 
+def set_input_device(name: str) -> None:
+    """Alias for save_input_device."""
+    save_input_device(name)
+
+
 def get_output_device() -> str:
     """Speaker device name, or '' for the system default."""
     return (load_api_keys().get("output_device", "") or "").strip()
@@ -671,6 +676,16 @@ def get_output_device() -> str:
 
 def save_output_device(name: str) -> None:
     _patch_config(output_device=(name or "").strip())
+
+
+def set_output_device(name: str) -> None:
+    """Alias for save_output_device."""
+    save_output_device(name)
+
+
+def set_voice_name(voice_name: str) -> None:
+    """Alias for save_voice."""
+    save_voice(voice_name)
 
 
 # ── Audio Input Routing & Bluetooth Mode Settings ──────────────────────────

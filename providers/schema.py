@@ -94,7 +94,6 @@ CORE_TOOLS: tuple[str, ...] = (
     "undo",
     "reminder",
     "video_player",
-    "close_camera",
 )
 
 

@@ -44,6 +44,57 @@ class SpotifyRepairTestCase(unittest.TestCase):
         self.assertIn("status=done", res)
         self.assertIn("get_playback_state", res)
 
+    def test_idle_titles_never_treated_as_playing_track(self):
+        """Verify 'Spotify Free', 'Spotify Premium', and 'Spotify' are recognized as idle."""
+        for idle in ("", "Spotify", "Spotify Free", "Spotify Premium", "Advertisement"):
+            self.assertTrue(spotify_control.is_spotify_idle_title(idle), f"{idle!r} must be idle")
+            self.assertFalse(spotify_control.verify_track_match(idle, "Beat It", "Beat It", "Michael Jackson"))
+
+        self.assertFalse(spotify_control.is_spotify_idle_title("Michael Jackson - Beat It"))
+        self.assertTrue(spotify_control.verify_track_match("Michael Jackson - Beat It", "Beat It", "Beat It", "Michael Jackson"))
+        self.assertFalse(spotify_control.verify_track_match("Other Artist - Different Song", "Beat It", "Beat It", "Michael Jackson"))
+
+    def test_play_track_never_claims_success_when_spotify_stays_idle(self):
+        """Distinguish navigation from playback; never say 'Now playing' when Spotify stays 'Spotify Free'."""
+        from unittest.mock import patch
+
+        with patch.object(spotify_control, "search_spotify_track", return_value={"title": "Beat It", "uri": "spotify:track:1OOtq8tRnDM8kG2gqUPjAj"}), \
+             patch.object(spotify_control, "launch_spotify", return_value=True), \
+             patch.object(spotify_control, "_focus_spotify_window", return_value=True), \
+             patch.object(spotify_control, "_try_click_uia_play_button", return_value=False), \
+             patch.object(spotify_control, "get_spotify_window_title", return_value="Spotify Free"), \
+             patch.object(spotify_control, "get_spotify_active_track", return_value=""), \
+             patch("subprocess.run"), \
+             patch("time.sleep"):
+            res = spotify_control.play_track("Beat It", artist="Michael Jackson")
+            self.assertFalse(res["success"])
+            self.assertFalse(res["verified"])
+            self.assertTrue(res["navigated"])
+            self.assertEqual(res["status"], "failed")
+            self.assertNotIn("Now playing", str(res.get("message", "")))
+            self.assertNotIn("still playing 'Spotify Free'", res["reason"])
+            self.assertIn("idle/paused", res["reason"])
+
+            tool_out = spotify_control.spotify_control({"action": "play", "query": "Beat It", "artist": "Michael Jackson"})
+            self.assertIn("status=failed", tool_out)
+            self.assertNotIn("Now playing", tool_out)
+
+    def test_play_track_verified_when_matching_song_plays(self):
+        """Verify success ONLY when Spotify active window title matches requested track."""
+        from unittest.mock import patch
+
+        with patch.object(spotify_control, "search_spotify_track", return_value={"title": "Beat It", "uri": "spotify:track:1OOtq8tRnDM8kG2gqUPjAj"}), \
+             patch.object(spotify_control, "launch_spotify", return_value=True), \
+             patch.object(spotify_control, "get_spotify_active_track", side_effect=["", "Michael Jackson - Beat It"]), \
+             patch("subprocess.run"), \
+             patch("time.sleep"):
+            res = spotify_control.play_track("Beat It", artist="Michael Jackson")
+            self.assertTrue(res["success"])
+            self.assertTrue(res["verified"])
+            self.assertTrue(res["navigated"])
+            self.assertEqual(res["status"], "done")
+            self.assertIn("Beat It", res["message"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -568,6 +568,40 @@ class TestAdvancedStateHotkeysWakeAndSleep(unittest.TestCase):
         self.assertTrue(sm.is_disabled)
         self.assertFalse(sm.should_auto_sleep(180.0, now=time.monotonic() + 500.0))
 
+    def test_ctrl_alt_k_when_already_listening_never_mutes_or_sleeps(self):
+        """Ctrl+Alt+K repeated while ALREADY in LISTENING keeps LISTENING and never mutes or sleeps."""
+        live, mock_ui = self._make_stub_live(VoiceState.LISTENING)
+        for _ in range(5):
+            st = live.global_force_listening()
+            self.assertEqual(st, VoiceState.LISTENING)
+            self.assertTrue(live.voice_state.is_listening)
+            self.assertFalse(live.voice_state.is_muted)
+            self.assertFalse(live.voice_state.is_sleeping)
+            self.assertTrue(live._awake)
+            self.assertFalse(live._interrupted)
+            mock_ui.sync_mute_state.assert_called_with(False, "LISTENING")
+
+    def test_webcam_and_camera_completely_removed(self):
+        """Verify all webcam capture, streaming, and OpenCV dependencies are completely removed."""
+        from actions import screen_processor
+        import main
+        import ui
+
+        self.assertFalse(hasattr(screen_processor, "_capture_camera"))
+        self.assertFalse(hasattr(screen_processor, "_detect_camera_index"))
+        self.assertFalse(hasattr(screen_processor, "_probe_camera"))
+        self.assertFalse(hasattr(screen_processor, "cv2"))
+        self.assertTrue(hasattr(screen_processor, "_capture_screen"))
+
+        tool_names = {t["name"] for t in main.TOOL_DECLARATIONS}
+        self.assertNotIn("close_camera", tool_names)
+        self.assertIn("screen_process", tool_names)
+
+        self.assertFalse(hasattr(ui.JarvisUI, "start_camera_stream"))
+        self.assertFalse(hasattr(ui.JarvisUI, "stop_camera_stream"))
+        self.assertFalse(hasattr(ui.JarvisUI, "show_camera_frame"))
+        self.assertFalse(hasattr(ui, "_CameraPreview"))
+
 
 if __name__ == "__main__":
     unittest.main()

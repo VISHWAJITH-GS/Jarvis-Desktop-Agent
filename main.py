@@ -60,11 +60,11 @@ from memory.memory_manager import (
 # imported or declared here — they self-describe via a TOOL dict in their own
 # actions/*.py file and are auto-discovered by core.action_loader at startup.
 # Only tools that are tied to live-session state stay inline in this file
-# (screen_process, close_camera, save_memory, manage_monitor, shutdown_jarvis,
+# (screen_process, save_memory, manage_monitor, shutdown_jarvis, sleep_jarvis,
 # system_status).
 from core import outcome
 from core.action_loader import strip_meta
-from actions.screen_processor  import _capture_camera, _capture_screen
+from actions.screen_processor  import _capture_screen
 from actions.system_monitor    import SystemMonitor, get_system_status
 from actions.proactive         import ProactiveEngine
 from actions.background_monitor import (
@@ -87,6 +87,7 @@ from core.plugin_loader        import discover_plugins
 from core                      import undo as undo_stack
 from core                      import confirm as confirm_gate
 from core                      import audio_devices
+from core.audio_manager        import AudioManager, set_audio_manager
 from core.action_loader        import discover_actions
 from core.echo                 import EchoGuard
 from core.viseme               import VisemeStream
@@ -403,31 +404,21 @@ TOOL_DECLARATIONS = [
     {
         "name": "screen_process",
         "description": (
-            "Captures the screen or webcam image and lets you describe or analyze it visually. "
-            "MUST be called when the user explicitly asks what is on screen, what you see, "
-            "look at camera, analyze my screen, describe what is visible, etc. "
+            "Captures the computer screen image and lets you describe or analyze it visually. "
+            "MUST be called when the user explicitly asks what is on screen, analyze my screen, "
+            "describe what is visible on screen, etc. "
             "NEVER call this tool to find things to click, open folders, or navigate UI — "
             "use windows_uia or computer_control by element name instead. "
-            "After the image is captured it is sent directly to you — describe what you see and answer the user's question. "
-            "When using camera: the live view stays open until user says close it or calls close_camera."
+            "After the screenshot is captured it is sent directly to you — describe what you see and answer the user's question. "
+            "Webcam/camera capture is disabled and unavailable."
         ),
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "angle": {"type": "STRING", "description": "'screen' to capture display, 'camera' for webcam. Default: 'screen'"},
-                "text":  {"type": "STRING", "description": "The question or instruction about the captured image"}
+                "text":  {"type": "STRING", "description": "The question or instruction about the captured screen image"}
             },
             "required": ["text"]
         }
-    },
-    {
-        "name": "close_camera",
-        "description": (
-            "Closes the live camera view shown on screen. "
-            "Call when the user says (in ANY language): close camera, stop camera, "
-            "turn off camera, that's creepy, etc."
-        ),
-        "parameters": {"type": "OBJECT", "properties": {}, "required": []}
     },
     {
         "name": "manage_monitor",
@@ -457,10 +448,20 @@ TOOL_DECLARATIONS = [
     {
         "name": "shutdown_jarvis",
         "description": (
-            "Shuts down the assistant completely. "
-            "Call this when the user expresses intent to end the conversation, "
-            "close the assistant, say goodbye, or stop Jarvis. "
-            "The user can say this in ANY language."
+            "Shuts down the assistant completely (requires high-impact voice + visual confirmation). "
+            "Call this when the user expresses intent to shut down, close, exit, or terminate Jarvis."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {},
+        }
+    },
+    {
+        "name": "sleep_jarvis",
+        "description": (
+            "Puts Jarvis into low-power sleeping mode until woken up by a wake word ('Jarvis' or 'Hello') "
+            "or the global Force Listening shortcut (Ctrl+Alt+K). "
+            "Call this when the user says 'go to sleep', 'sleep now', 'standby', or 'sleep mode'."
         ),
         "parameters": {
             "type": "OBJECT",
@@ -603,9 +604,7 @@ class JarvisLive:
         self._is_speaking         = False
         self._speaking_lock       = threading.Lock()
         self._phone_active        = False   # True while phone mic is streaming; pauses PC mic
-        self._pending_vision       = None    # (img_bytes, mime_type, question, angle) to inject after tool response
-        self._vision_cam_active    = False   # True if camera was opened for vision → auto-close after response
-        self._vision_close_pending = False   # True after vision injected; next turn_complete closes camera
+        self._pending_vision       = None    # (img_bytes, mime_type, question, "screen") to inject after tool response
         self._vision_last_time     = 0.0     # monotonic time of last screen_process call (cooldown guard)
         self._vision_busy          = False   # True while a vision capture/inject cycle is in flight
         self._interrupted          = False   # True while draining audio after user interrupt
@@ -764,6 +763,27 @@ class JarvisLive:
             mouse_gesture_enabled=get_mouse_gesture_enabled(),
         )
         self._global_input.start()
+
+        # ── Centralized Audio & Bluetooth Hot-Switch Manager ──────────────────
+        self.audio_manager = AudioManager(
+            target_input_rate=SEND_SAMPLE_RATE,
+            target_output_rate=RECEIVE_SAMPLE_RATE,
+            blocksize=CHUNK_SIZE,
+            on_status_change=self._on_audio_status_changed,
+            on_log=lambda m: self.ui.write_log(m),
+        )
+        set_audio_manager(self.audio_manager)
+
+    def _on_audio_status_changed(self, status: dict) -> None:
+        """Push verified AudioManager status snapshots to the HUD thread-safely."""
+        try:
+            self._out_latency = float(status.get("output_latency", self._out_latency) or self._out_latency)
+        except Exception:
+            pass
+        if hasattr(self.ui, "update_audio_status"):
+            self.ui.update_audio_status(status)
+        if hasattr(self.ui, "refresh_audio_devices"):
+            self.ui.refresh_audio_devices()
 
     # ── Wake word & idle sleep state machine ─────────────────────────────────
 
@@ -1031,13 +1051,23 @@ class JarvisLive:
         self.request_reconnect(keep_context=False, reason="new voice")
 
     def _on_audio_device_change(self):
-        """Microphone or speaker changed. Invalidate cache, reconnect session, and re-open streams."""
-        from core import audio_devices
-        audio_devices.invalidate_cache()
+        """Microphone or speaker changed. Hot-switch streams in-place via AudioManager
+        without tearing down the active Gemini Live session."""
         _in_name = get_input_device()
         _out_name = get_output_device()
-        self.ui.write_log(f"SYS: Applying audio devices — Mic: '{_in_name or 'Default'}', Speaker: '{_out_name or 'Default'}'")
-        self.request_reconnect(keep_context=True, reason="audio device")
+        self.ui.write_log(
+            f"SYS: Switching audio devices in-place — Mic: '{_in_name or 'System default'}', "
+            f"Speaker: '{_out_name or 'System default'}'"
+        )
+        mgr = getattr(self, "audio_manager", None)
+        if mgr is not None:
+            threading.Thread(
+                target=mgr.apply_saved_preferences,
+                daemon=True,
+                name="audio-apply-prefs",
+            ).start()
+        else:
+            self.request_reconnect(keep_context=True, reason="audio device")
 
     def _ensure_executor(self):
         """Give the loop a working thread pool before every connect.
@@ -1538,7 +1568,7 @@ class JarvisLive:
             _caps = self._engine_caps
             _blocked = set()
             if not _caps.get("vision"):
-                _blocked |= {"screen_process", "close_camera"}
+                _blocked |= {"screen_process"}
             if not _caps.get("tools"):
                 _blocked = {(d.get("name") if isinstance(d, dict)
                              else getattr(d, "name", "")) for d in _all_decls}
@@ -1735,36 +1765,18 @@ class JarvisLive:
                 else:
                     self._vision_busy      = True
                     self._vision_last_time = _now
-                    angle     = args.get("angle", "screen").lower()
-                    user_text = args.get("text", "What do you see?")
-                    if angle == "camera":
-                        img_b, mime_t = await loop.run_in_executor(None, _capture_camera)
-                        self.ui.start_camera_stream()
-                        self._vision_cam_active = True
-                        print(f"[Vision] 📷 Camera: {len(img_b):,} bytes")
-                        _stall = "camera"
-                    else:
-                        if self.ui and hasattr(self.ui, "show_screen_glow"):
-                            self.ui.show_screen_glow(2500)
-                        img_b, mime_t = await loop.run_in_executor(None, _capture_screen)
-                        print(f"[Vision] 🖥️  Screen: {len(img_b):,} bytes")
-                        _stall = "screen"
-                    self._pending_vision = (img_b, mime_t, user_text, angle)
-                    # The image is attached to this same exchange, so there is
-                    # nothing to stall for and nothing to announce. Asking for an
-                    # acknowledgement here is what produced two spoken answers —
-                    # the model filled that turn by answering the question from
-                    # imagination, then answered it again once it could see.
+                    user_text = args.get("text", "What do you see on my screen?")
+                    if self.ui and hasattr(self.ui, "show_screen_glow"):
+                        self.ui.show_screen_glow(2500)
+                    img_b, mime_t = await loop.run_in_executor(None, _capture_screen)
+                    print(f"[Vision] 🖥️  Screen: {len(img_b):,} bytes")
+                    self._pending_vision = (img_b, mime_t, user_text, "screen")
                     result = (
-                        f"[VISION_ACTIVE] {_stall.capitalize()} captured and attached to this "
-                        f"same exchange. Do not acknowledge and do not answer yet — the image "
-                        f"is arriving with this result. Reply once, from what you actually see "
-                        f"in it."
+                        "[VISION_ACTIVE] Screen captured and attached to this "
+                        "same exchange. Do not acknowledge and do not answer yet — the image "
+                        "is arriving with this result. Reply once, from what you actually see "
+                        "in it."
                     )
-
-            elif name == "close_camera":
-                self.ui.stop_camera_stream()
-                result = "Camera closed."
 
             elif name == "system_status":
                 r = await loop.run_in_executor(None, get_system_status)
@@ -1783,22 +1795,46 @@ class JarvisLive:
                 else:
                     result = "Specify action (add/remove/list) and a topic."
 
+            elif name == "sleep_jarvis":
+                self.sleep(reason="voice command")
+                result = (
+                    f"Going to sleep. Say {self._wake_words_label()} "
+                    f"or press Ctrl+Alt+K whenever you need me."
+                )
+
             elif name == "shutdown_jarvis":
-                self.ui.write_log("SYS: Shutdown requested.")
-                async def _do_shutdown():
-                    await self._save_session_summary()
-                    if self.session:
-                        try:
-                            await self.session.send_client_content(
-                                turns={"role": "user", "parts": [{"text": "Say a brief natural goodbye to the user."}]},
-                                turn_complete=True,
-                            )
-                        except Exception:
-                            pass
-                    await asyncio.sleep(1.5)
-                    import os as _os
-                    _os._exit(0)
-                asyncio.create_task(_do_shutdown())
+                def _run_confirmed_shutdown() -> str:
+                    self.ui.write_log("SYS: Shutdown confirmed — closing JARVIS.")
+                    async def _do_shutdown():
+                        await self._save_session_summary()
+                        if self.session:
+                            try:
+                                await self.session.send_client_content(
+                                    turns={"role": "user", "parts": [{"text": "Say a brief natural goodbye to the user."}]},
+                                    turn_complete=True,
+                                )
+                            except Exception:
+                                pass
+                        await asyncio.sleep(1.5)
+                        self.shutdown_listeners()
+                        import os as _os
+                        _os._exit(0)
+                    if self._loop and not self._loop.is_closed():
+                        asyncio.run_coroutine_threadsafe(_do_shutdown(), self._loop)
+                    else:
+                        self.shutdown_listeners()
+                        import os as _os
+                        _os._exit(0)
+                    return "Shutting down JARVIS."
+
+                result = confirm_gate.request_action(
+                    action="shutdown_jarvis",
+                    parameters={},
+                    risk_level="high_impact",
+                    title="Shut Down JARVIS",
+                    detail="Completely close and exit the JARVIS voice assistant.",
+                    run=_run_confirmed_shutdown,
+                )
 
             elif self._action_registry.has(name):
                 # file_processor: fall back to the currently-uploaded file when none is given
@@ -2003,137 +2039,22 @@ class JarvisLive:
                 except Exception:
                     pass
 
+        # Hand microphone capture to centralized AudioManager (supports hot-switching
+        # and sample-rate resampling without duplicating streams or reconnecting Gemini).
         try:
-            def _open_mic(dev):
-                return sd.InputStream(
-                    samplerate=SEND_SAMPLE_RATE,
-                    channels=CHANNELS,
-                    dtype="int16",
-                    blocksize=CHUNK_SIZE,
-                    device=dev,
-                    callback=callback,
-                )
-
-            # Which microphone. Auto-avoid Bluetooth HFP conflicts when Bluetooth
-            # output is in use, while respecting explicit user selections.
-            _req_mic = get_input_device()
-            _req_spk = get_output_device()
-            from memory.config_manager import (
-                get_audio_input_mode,
-                get_allow_bluetooth_mic,
-                get_push_to_talk_enabled,
+            self.audio_manager.set_input_callback(callback)
+            if not self.audio_manager.initialized:
+                await asyncio.to_thread(self.audio_manager.initialize, callback)
+            status = self.audio_manager.get_status()
+            print(
+                f"[JARVIS] 🎤 Mic active via AudioManager: {status['input_device']} "
+                f"({status['input_sample_rate']} Hz, {status['input_status']})"
             )
-            _in_mode = get_audio_input_mode()
-            _allow_bt = get_allow_bluetooth_mic()
-
-            decision = audio_devices.select_best_input(
-                requested_input=_req_mic,
-                output_name=_req_spk,
-                input_mode=_in_mode,
-                allow_bluetooth_mic=_allow_bt,
-            )
-            _mic_name = decision.get("device")
-            _reason = decision.get("reason", "Standard input routing")
-            _is_bt_mic = decision.get("is_bluetooth", False)
-            _ptt_opted = get_push_to_talk_enabled()
-
-            # One-line log of routing choice and justification
-            print(f"[JARVIS] 🎤 Mic routing: {_reason}")
-            self.ui.write_log(f"SYS: 🎤 Mic routing: {_reason}")
-
-            if decision.get("quality_drop_warning") and not getattr(self, "_bt_quality_warned", False):
-                self._bt_quality_warned = True
-                _warn_msg = "Bluetooth microphone active — audio playback quality will drop to call mode."
-                print(f"[JARVIS] ⚠️  {_warn_msg}")
-                self.ui.write_log(f"SYS: ⚠️ {_warn_msg}")
-                if hasattr(self.ui, "show_content"):
-                    self.ui.show_content("AUDIO ADVISORY", _warn_msg)
-
-            _mic_dev = audio_devices.resolve(_mic_name, "input") if _mic_name else None
-            if _mic_dev is not None:
-                print(f"[JARVIS] 🎤 Input device: {_mic_name} (index #{_mic_dev})")
-            else:
-                print(f"[JARVIS] 🎤 Input device: System Default")
-
-            def _try_open_candidates(primary_dev, primary_name):
-                # 1. Try primary device
-                try:
-                    stream = _open_mic(primary_dev)
-                    return stream, primary_name
-                except Exception as err:
-                    print(f"[JARVIS] ⚠️ Failed to open mic '{primary_name}': {err}")
-
-                # 2. Try the next non-Bluetooth mics
-                all_inputs = audio_devices.list_devices("input")
-                excl = getattr(audio_devices, "EXCLUDED_INPUT_KEYWORDS", ())
-                non_bt = [
-                    d for d in all_inputs
-                    if not audio_devices.is_bluetooth_device(d)
-                    and not any(k in d.lower() for k in excl)
-                    and d != primary_name
-                ]
-                for alt_name in non_bt:
-                    alt_idx = audio_devices.resolve(alt_name, "input")
-                    if alt_idx is None:
-                        continue
-                    try:
-                        stream = _open_mic(alt_idx)
-                        print(f"[JARVIS] 🎤 Fallback to non-Bluetooth mic: {alt_name}")
-                        self.ui.write_log(f"SYS: 🎤 Switched to fallback mic: {alt_name}")
-                        return stream, alt_name
-                    except Exception as alt_err:
-                        print(f"[JARVIS] ⚠️ Fallback mic '{alt_name}' failed: {alt_err}")
-
-                return None, None
-
-            # Task 1C: If the headset mic is active and push-to-talk is enabled,
-            # gate the mic stream so it opens only while PTT is held, allowing
-            # the headset to switch back to high-fidelity stereo playback when idle.
-            _headset_ptt_gating = bool(_is_bt_mic and _ptt_opted)
-            if _headset_ptt_gating:
-                print("[JARVIS] 🎤 Headset PTT gating active: mic opens only while push-to-talk is held")
-                self.ui.write_log("SYS: 🎤 Headset PTT gating active: keeping stereo playback when idle.")
-                _ptt_fail_reported = False
-                while True:
-                    while not getattr(self, "_ptt_held", False):
-                        await asyncio.sleep(0.05)
-                    _stream, _active_name = _try_open_candidates(_mic_dev, _mic_name)
-                    if _stream is None:
-                        if not _ptt_fail_reported:
-                            _ptt_fail_reported = True
-                            _err_msg = "Could not open non-Bluetooth microphone. Keeping microphone closed."
-                            print(f"[JARVIS] ⚠️ {_err_msg}")
-                            self.ui.write_log(f"SYS: ⚠️ {_err_msg}")
-                        while getattr(self, "_ptt_held", False):
-                            await asyncio.sleep(0.05)
-                        continue
-
-                    _ptt_fail_reported = False
-                    try:
-                        _stream.start()
-                        while getattr(self, "_ptt_held", False):
-                            await asyncio.sleep(0.05)
-                    finally:
-                        try:
-                            _stream.stop()
-                            _stream.close()
-                        except Exception:
-                            pass
-            else:
-                _mic_stream, _active_name = _try_open_candidates(_mic_dev, _mic_name)
-                if _mic_stream is None:
-                    _err_msg = "Could not open non-Bluetooth microphone. Keeping microphone closed."
-                    print(f"[JARVIS] ⚠️ {_err_msg}")
-                    self.ui.write_log(f"SYS: ⚠️ {_err_msg}")
-                    while True:
-                        await asyncio.sleep(1.0)
-
-                with _mic_stream:
-                    if _active_name:
-                        self.ui.write_log(f"SYS: 🎤 Mic active: {_active_name}")
-                    print(f"[JARVIS] 🎤 Mic stream open ({_active_name})")
-                    while True:
-                        await asyncio.sleep(0.1)
+            while True:
+                await asyncio.sleep(0.2)
+        except asyncio.CancelledError:
+            self.audio_manager.set_input_callback(None)
+            raise
         except Exception as e:
             print(f"[JARVIS] ❌ Mic: {e}")
             raise
@@ -2162,8 +2083,7 @@ class JarvisLive:
         # the user's own sentence, and a screenshot of this app — which has a
         # face in the middle of it — got read as a photo of the user. What the
         # label *means* is explained once, in the generated [SELF] block.
-        src = ("[IMAGE SOURCE: WEBCAM]" if angle == "camera"
-               else "[IMAGE SOURCE: SCREEN CAPTURE]")
+        src = "[IMAGE SOURCE: SCREEN CAPTURE]"
         await self.session.send_client_content(
             turns={"role": "user", "parts": [
                 {"inline_data": {"mime_type": mime_t, "data": b64}},
@@ -2172,13 +2092,7 @@ class JarvisLive:
             turn_complete=True,
         )
 
-        if self._vision_cam_active:
-            # Camera: stay busy until JARVIS has finished speaking the answer,
-            # then close the preview.
-            self._vision_cam_active    = False
-            self._vision_close_pending = True
-        else:
-            self._vision_busy = False
+        self._vision_busy = False
         return True
 
     async def _receive_audio(self):
@@ -2330,15 +2244,6 @@ class JarvisLive:
                                     }))
                             out_buf = []
 
-                            if self._vision_close_pending:
-                                # This turn_complete IS the vision answer — close camera + release busy flag
-                                self._vision_close_pending = False
-                                self._vision_busy = False
-                                async def _cam_close():
-                                    await asyncio.sleep(2.0)
-                                    self.ui.stop_camera_stream()
-                                asyncio.create_task(_cam_close())
-
                     if response.tool_call:
                         fn_responses = []
                         for fc in response.tool_call.function_calls:
@@ -2355,52 +2260,17 @@ class JarvisLive:
             raise
 
     async def _play_audio(self):
-        print("[JARVIS] 🔊 Play started")
+        print("[JARVIS] 🔊 Play started (AudioManager)")
 
-        _spk_name = get_output_device()
-        _spk_dev  = audio_devices.resolve(_spk_name, "output")
-        if _spk_dev is not None:
-            print(f"[JARVIS] 🔊 Output device: {_spk_name} (index #{_spk_dev})")
-        else:
-            print(f"[JARVIS] 🔊 Output device: System Default")
+        if not self.audio_manager.initialized:
+            await asyncio.to_thread(self.audio_manager.initialize)
 
-        def _open_spk(dev):
-            st = sd.RawOutputStream(
-                samplerate=RECEIVE_SAMPLE_RATE,
-                channels=CHANNELS,
-                dtype="int16",
-                blocksize=CHUNK_SIZE,
-                device=dev,
-            )
-            st.start()
-            return st
-
-        try:
-            stream = _open_spk(_spk_dev)
-            if _spk_dev is not None:
-                self.ui.write_log(f"SYS: 🔊 Speaker active: {_spk_name}")
-        except Exception as _e:
-            # A chosen output that the host API accepts by name but refuses to
-            # open (exclusive mode, wrong sample rate, device asleep) must not
-            # cost the user their voice. Fall back to the default and say so.
-            if _spk_dev is None:
-                raise
-            print(f"[JARVIS] ⚠️  Output device '{_spk_name}' failed: {_e} — using default")
-            self.ui.write_log(f"SYS: Speaker '{_spk_name}' unavailable — using system default.")
-            stream = _open_spk(None)
-
-        # Ask the device how far behind the speakers actually are, rather than
-        # assuming. This is what the echo tail is sized from, so a machine with a
-        # large audio buffer gets a correspondingly longer guard — and one with a
-        # tiny buffer is not penalised with a delay it does not need.
-        try:
-            lat = float(getattr(stream, "latency", 0.0) or 0.0)
-            if 0.0 < lat < 1.0:
-                self._out_latency = lat
-            print(f"[JARVIS] 🔊 Output latency {self._out_latency*1000:.0f} ms "
-                  f"→ echo tail {(self._out_latency + _TAIL_MARGIN)*1000:.0f} ms")
-        except Exception:
-            pass
+        self._out_latency = self.audio_manager.output_latency
+        st = self.audio_manager.get_status()
+        print(
+            f"[JARVIS] 🔊 Output active: {st['output_device']} ({st['output_sample_rate']} Hz, "
+            f"latency {self._out_latency*1000:.0f} ms)"
+        )
 
         try:
             while True:
@@ -2509,7 +2379,7 @@ class JarvisLive:
                     pass
 
                 try:
-                    await asyncio.to_thread(stream.write, bytes(batch))
+                    await asyncio.to_thread(self.audio_manager.write_output, bytes(batch))
                 except (RuntimeError, asyncio.CancelledError):
                     break   # executor shutting down — exit cleanly
         except Exception as e:
@@ -2517,8 +2387,6 @@ class JarvisLive:
             raise
         finally:
             self.set_speaking(False)
-            stream.stop()
-            stream.close()
 
     # ── Morning briefing ────────────────────────────────────────────────────────
 
@@ -2918,14 +2786,9 @@ class JarvisLive:
         )
         set_trim_notifier(self.ui.write_log)
 
-        # Tell the device picker the exact rates the streams open at, from the
-        # constants that actually open them — so it can never list a device that
-        # cannot be opened at them.
-        audio_devices.configure(SEND_SAMPLE_RATE, RECEIVE_SAMPLE_RATE)
-
-        # Enumerate audio devices off-thread. The settings drawer must never pay
-        # for host-API enumeration on the Qt thread.
-        audio_devices.prefetch()
+        # Centralized single-pass audio discovery, validation, stream init,
+        # and background Bluetooth/Windows endpoint hot-switch monitor.
+        await asyncio.to_thread(self.audio_manager.initialize)
 
         # Start dashboard (optional — needs: pip install fastapi "uvicorn[standard]" cryptography)
         try:
@@ -2993,8 +2856,6 @@ class JarvisLive:
 
                     # Reset transient state that must not carry over from a previous session
                     self._pending_vision       = None
-                    self._vision_cam_active    = False
-                    self._vision_close_pending = False
                     self._vision_busy          = False
                     self._vision_last_time     = 0.0
                     self._interrupted          = False
@@ -3053,7 +2914,6 @@ class JarvisLive:
                     self._reconnect_event.clear()  # ignore requests from before this session
                     tg.create_task(self._watch_reconnect())
                     tg.create_task(self._watch_stall())
-                    tg.create_task(self._watch_audio_device_changes())
                     tg.create_task(self._send_realtime())
                     tg.create_task(self._listen_audio())
                     tg.create_task(self._receive_audio())
@@ -3211,7 +3071,13 @@ class JarvisLive:
             await asyncio.sleep(delay)
 
     def shutdown_listeners(self) -> None:
-        """Cleanly stop global hotkey and wake-word background threads."""
+        """Cleanly stop audio streams/monitor, global hotkey, and wake-word background threads."""
+        try:
+            if getattr(self, "audio_manager", None) is not None:
+                self.audio_manager.shutdown()
+            set_audio_manager(None)
+        except Exception:
+            pass
         try:
             if getattr(self, "_global_input", None) is not None:
                 self._global_input.stop()

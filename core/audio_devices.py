@@ -201,10 +201,117 @@ def _display_name(name: str, devices) -> str:
             best = other
     return best
 
-# The rates the app opens its streams at. Defaults match main.py; main.py calls
-# configure() at startup with its own constants so the two can never drift apart
-# and silently reintroduce the bug above.
+# The rates the app's Gemini pipeline uses. Hardware devices that cannot open
+# natively at these exact rates (common for Bluetooth A2DP/HFP & WASAPI at
+# 44100/48000 Hz) are negotiated via find_supported_rate() and resampled cleanly.
 _RATES = {"input": 16000, "output": 24000}
+_FALLBACK_RATES = {
+    "input": (16000, 48000, 44100, 32000, 24000, 8000),
+    "output": (24000, 48000, 44100, 32000, 16000),
+}
+_portaudio_lock = threading.RLock()
+_active_streams_count = 0
+
+
+def register_active_stream(delta: int) -> None:
+    """Track open sounddevice streams so PortAudio is NEVER terminated mid-stream."""
+    global _active_streams_count
+    with _portaudio_lock:
+        _active_streams_count = max(0, _active_streams_count + int(delta))
+
+
+def resample_pcm_int16(samples, src_rate: int, dst_rate: int):
+    """Fast, zero-dependency mono int16 PCM resampler using numpy linear interpolation.
+    Returns input unchanged when src_rate == dst_rate."""
+    import numpy as np
+
+    arr = np.asarray(samples, dtype=np.int16)
+    if arr.ndim > 1:
+        arr = arr[:, 0]
+    if src_rate == dst_rate or arr.size == 0 or src_rate <= 0 or dst_rate <= 0:
+        return arr
+
+    dst_len = max(1, int(round(arr.size * (float(dst_rate) / float(src_rate)))))
+    if dst_len == arr.size:
+        return arr
+
+    src_x = np.linspace(0.0, 1.0, num=arr.size, endpoint=False, dtype=np.float64)
+    dst_x = np.linspace(0.0, 1.0, num=dst_len, endpoint=False, dtype=np.float64)
+    resampled = np.interp(dst_x, src_x, arr.astype(np.float64))
+    return np.clip(np.rint(resampled), -32768, 32767).astype(np.int16)
+
+
+def find_supported_rate(idx: Optional[int], kind: str, preferred_rate: Optional[int] = None) -> Optional[int]:
+    """Probe and return a working hardware sample rate for `idx` ('input' or 'output').
+
+    Rejects Windows DirectSound output (known silent sink). Tries `preferred_rate`
+    first, then the device's default_samplerate, then standard fallback rates.
+    Returns None if the device cannot be opened at any supported rate.
+    """
+    try:
+        import sounddevice as sd
+
+        target = int(preferred_rate or _RATES.get(kind, 16000))
+
+        # Reject DirectSound output (silent sink on Windows 11)
+        if kind == "output" and idx is not None:
+            try:
+                apis = [a.get("name", "").lower() for a in sd.query_hostapis()]
+                dev_info = sd.query_devices(idx)
+                hostapi_id = dev_info.get("hostapi", -1)
+                api_name = apis[hostapi_id] if 0 <= hostapi_id < len(apis) else ""
+                if "directsound" in api_name:
+                    return None
+            except Exception:
+                pass
+
+        # Build ordered candidate rate list: target -> device default -> fallbacks
+        candidates: list[int] = [target]
+        try:
+            dev_info = sd.query_devices(idx) if idx is not None else sd.query_devices(kind=kind)
+            default_sr = int(round(float(dev_info.get("default_samplerate") or 0)))
+            if default_sr > 0 and default_sr not in candidates:
+                candidates.append(default_sr)
+        except Exception:
+            pass
+        for r in _FALLBACK_RATES.get(kind, (48000, 44100, 16000)):
+            if r not in candidates:
+                candidates.append(r)
+
+        for rate in candidates:
+            st = None
+            try:
+                if kind == "input":
+                    st = sd.InputStream(
+                        samplerate=rate,
+                        channels=1,
+                        dtype="int16",
+                        blocksize=1024,
+                        device=idx,
+                        callback=lambda *_a: None,
+                    )
+                else:
+                    st = sd.RawOutputStream(
+                        samplerate=rate,
+                        channels=1,
+                        dtype="int16",
+                        blocksize=1024,
+                        device=idx,
+                    )
+                st.start()
+                return rate
+            except Exception:
+                continue
+            finally:
+                if st is not None:
+                    try:
+                        st.stop()
+                        st.close()
+                    except Exception:
+                        pass
+        return None
+    except Exception:
+        return None
 
 
 def configure(input_rate: int, output_rate: int) -> None:
@@ -221,47 +328,11 @@ def configure(input_rate: int, output_rate: int) -> None:
 
 
 def _usable(idx: int, kind: str) -> bool:
-    """Can this device actually be opened at the rate we need?
+    """Can this device actually be opened at the target rate or a supported fallback rate?
 
-    Deliberately opens a real stream rather than asking
-    `check_output_settings`, because that function lies: it passed for an MME
-    endpoint that then failed to open with "The specified format is not
-    supported or cannot be translated" [MME error 32]. Opening and immediately
-    closing costs milliseconds and is the only answer that holds."""
-    st = None
-    try:
-        import sounddevice as sd
-        rate = _RATES.get(kind, 16000)
-
-        # On Windows, DirectSound output is a silent sink that swallows writes in 0 ms.
-        if kind == "output":
-            try:
-                apis = [a.get("name", "").lower() for a in sd.query_hostapis()]
-                dev_info = sd.query_devices(idx)
-                hostapi_id = dev_info.get("hostapi", -1)
-                api_name = apis[hostapi_id] if 0 <= hostapi_id < len(apis) else ""
-                if "directsound" in api_name:
-                    return False
-            except Exception:
-                pass
-
-        if kind == "input":
-            st = sd.InputStream(samplerate=rate, channels=1, dtype="int16",
-                                blocksize=1024, device=idx,
-                                callback=lambda *_a: None)
-        else:
-            st = sd.RawOutputStream(samplerate=rate, channels=1, dtype="int16",
-                                    blocksize=1024, device=idx)
-        st.start()
-        return True
-    except Exception:
-        return False
-    finally:
-        if st is not None:
-            try:
-                st.stop(); st.close()
-            except Exception:
-                pass
+    Rejects Windows DirectSound output (silent sink) and opens a real stream to
+    guarantee the endpoint works (including Bluetooth devices running at 44.1/48 kHz)."""
+    return find_supported_rate(idx, kind, _RATES.get(kind, 16000)) is not None
 
 # Aliases for "the default device" and internal routing endpoints. Matched
 # case-insensitively as substrings against the device name.
@@ -360,20 +431,44 @@ def prefetch() -> None:
     threading.Thread(target=_work, daemon=True, name="audio-devices").start()
 
 
-def invalidate_cache() -> None:
-    """Drop cached device queries and reset PortAudio so hotplugged Bluetooth devices are re-scanned."""
+def reset_portaudio_if_idle() -> bool:
+    """Safely re-initialize PortAudio ONLY when ZERO sounddevice streams are open.
+
+    Calling sd._terminate() while an InputStream or OutputStream is active causes
+    deadlocks or native segfaults on Windows. This guard prevents that completely.
+    """
+    with _portaudio_lock:
+        if _active_streams_count > 0:
+            logger.debug(
+                "[Audio] Skipping PortAudio reset while %d stream(s) are active",
+                _active_streams_count,
+            )
+            return False
+        try:
+            import sounddevice as sd
+            sd._terminate()
+            sd._initialize()
+            return True
+        except Exception as e:
+            logger.debug("[Audio] PortAudio reset notice: %s", e)
+            return False
+
+
+def invalidate_cache(reset_portaudio: bool = False) -> None:
+    """Drop cached device queries so newly connected Bluetooth devices are discovered.
+
+    PortAudio is ONLY reset when `reset_portaudio=True` AND no streams are active.
+    """
     global _cache, _probe_results
     with _cache_lock:
         _cache = None
         _probe_results = {}
         _chosen_api["input"] = None
         _chosen_api["output"] = None
-    try:
-        import sounddevice as sd
-        sd._terminate()
-        sd._initialize()
-    except Exception:
-        pass
+    with _bt_detection_lock:
+        _bt_detection_cache.clear()
+    if reset_portaudio:
+        reset_portaudio_if_idle()
 
 
 def list_devices(kind: str, refresh: bool = False) -> list[str]:
@@ -381,7 +476,7 @@ def list_devices(kind: str, refresh: bool = False) -> list[str]:
     if the prefetch has not landed yet — correctness over the cache."""
     global _cache
     if refresh:
-        invalidate_cache()
+        invalidate_cache(reset_portaudio=False)
     with _cache_lock:
         cached = _cache
     if cached is None:
@@ -401,21 +496,114 @@ def get_output_devices(refresh: bool = False) -> list[str]:
     return [DEFAULT_LABEL] + list_devices("output", refresh=refresh)
 
 
-def resolve(name: str, kind: str):
-    """Turn a saved device name into something sounddevice accepts.
+def get_device_capabilities(kind: str, refresh: bool = False) -> list[dict]:
+    """Return structured device list with name, index, host_api, channels, default_samplerate, and bluetooth flag."""
+    names = list_devices(kind, refresh=refresh)
+    results: list[dict] = []
+    try:
+        import sounddevice as sd
+        devices = list(sd.query_devices())
+        apis = [a.get("name", "") for a in sd.query_hostapis()]
+    except Exception:
+        devices, apis = [], []
 
-    Returns None for "system default" — which is also what we return when the
-    saved device is gone, because a missing headset must degrade to the built-in
-    speakers, not to a crash on startup.
+    for name in names:
+        idx, rate = resolve_with_rate(name, kind)
+        info = devices[idx] if (idx is not None and 0 <= idx < len(devices)) else {}
+        h_idx = info.get("hostapi", -1)
+        api_name = apis[h_idx] if 0 <= h_idx < len(apis) else "Unknown"
+        results.append({
+            "name": name,
+            "index": idx,
+            "host_api": api_name,
+            "max_input_channels": int(info.get("max_input_channels", 0)),
+            "max_output_channels": int(info.get("max_output_channels", 0)),
+            "default_samplerate": int(round(float(info.get("default_samplerate") or 0))),
+            "supported_samplerate": rate,
+            "is_bluetooth": is_bluetooth_device(name),
+            "usable": idx is not None and rate is not None,
+        })
+    return results
 
-    Candidates are walked in the same host-API order the picker used, so a name
-    the user chose from the WASAPI list resolves to the WASAPI endpoint. Without
-    that ordering a full name would fall through to MME's truncated copy of the
-    same device — which happens to work, but means the setting quietly refers to
-    a different endpoint than the one on screen."""
-    wanted = (name or "").strip()
-    if not wanted or wanted == DEFAULT_LABEL:
+
+def match_device_name(query: str, kind: str, refresh: bool = False) -> Optional[str]:
+    """Match a spoken/user device query (e.g. 'OPPO Enco Buds2', 'laptop microphone',
+    'laptop speakers', 'Windows default') to an available audio device name.
+
+    Returns DEFAULT_VALUE ('') for default requests, the exact matched device name
+    when found, or None when no matching device is available.
+    """
+    raw = (query or "").strip()
+    low = raw.lower()
+    if not raw or any(k in low for k in ("system default", "windows default", "default audio", "default device")):
+        return DEFAULT_VALUE
+
+    available = list_devices(kind, refresh=refresh)
+    if not available:
         return None
+
+    # Handle natural phrases for built-in laptop mic / speakers
+    if any(k in low for k in ("laptop", "built-in", "built in", "internal", "integrated", "pc speaker", "computer")):
+        non_bt = [
+            d for d in available
+            if not is_bluetooth_device(d)
+            and not any(ex in d.lower() for ex in EXCLUDED_INPUT_KEYWORDS)
+        ]
+        if non_bt:
+            for pref in ("array", "realtek", "speaker", "microphone", "internal", "integrated"):
+                for d in non_bt:
+                    if pref in d.lower():
+                        return d
+            return non_bt[0]
+
+    # Exact case-insensitive match
+    for d in available:
+        if d.lower() == low:
+            return d
+
+    # Folded exact or substring match (handles 'OPPO Enco Buds 2' vs 'OPPO Enco Buds2')
+    q_fold = _fold(raw)
+    for d in available:
+        d_fold = _fold(d)
+        if q_fold and (d_fold == q_fold or q_fold in d_fold or d_fold in q_fold):
+            return d
+
+    # Generic headphone / earbuds / bluetooth phrase
+    if any(k in low for k in ("earphone", "earbud", "headphone", "headset", "bud", "bluetooth")):
+        for d in available:
+            dl = d.lower()
+            if is_bluetooth_device(d) or any(w in dl for w in ("bud", "enco", "oppo", "headphone", "headset", "bluetooth")):
+                return d
+
+    # Token overlap fallback
+    q_tokens = {tok for tok in low.replace("-", " ").split() if len(tok) >= 2}
+    if q_tokens:
+        best_dev = None
+        best_hits = 0
+        for d in available:
+            dl = d.lower()
+            hits = sum(1 for tok in q_tokens if tok in dl)
+            if hits > best_hits:
+                best_hits = hits
+                best_dev = d
+        if best_dev and best_hits >= max(1, len(q_tokens) // 2):
+            return best_dev
+
+    return None
+
+
+def resolve_with_rate(name: str, kind: str) -> tuple[Optional[int], Optional[int]]:
+    """Resolve a saved device name into (device_index, supported_sample_rate).
+
+    Walks preferred host APIs in order, checks exact name -> prefix -> folded substring
+    (handles MME 31-char truncation AND Bluetooth names like 'OPPO Enco Buds2'), and
+    negotiates a working hardware sample rate (target rate first, then 48k/44.1k/etc.).
+    """
+    wanted = (name or "").strip()
+    target_rate = _RATES.get(kind, 16000)
+    if not wanted or wanted == DEFAULT_LABEL:
+        rate = find_supported_rate(None, kind, target_rate)
+        return None, rate or target_rate
 
     try:
         import platform
@@ -427,7 +615,7 @@ def resolve(name: str, kind: str):
         except Exception:
             apis = []
 
-        want_in  = (kind == "input")
+        want_in = (kind == "input")
         chan_key = "max_input_channels" if want_in else "max_output_channels"
 
         def _candidates(api_filter):
@@ -440,10 +628,6 @@ def resolve(name: str, kind: str):
                         continue
                 yield idx, (dev.get("name") or "").strip()
 
-        # The API the picker settled on for this direction comes first — the
-        # endpoint that was listed must be the endpoint that gets opened, or the
-        # setting means something different from what it says. list_devices()
-        # populates it; calling it here is a no-op once the cache is warm.
         list_devices(kind)
         chosen = _chosen_api.get(kind)
         pref_platform = _PREFERRED_APIS.get(platform.system(), {})
@@ -453,31 +637,53 @@ def resolve(name: str, kind: str):
             + [a for a in preferred if a != chosen] \
             + [None]
 
-        # A candidate only counts if it can be opened at the rate this side runs
-        # at. The prefix match matters because the API that carries the audio is
-        # not always the one that can spell: MME truncates names to 31 characters
-        # while DirectSound and WASAPI do not, so the name shown in the picker
-        # can be longer than the name of the endpoint it actually opens.
+        wanted_fold = _fold(wanted)
+
         for api_filter in orders:
-            partial = None
+            partial: Optional[tuple[int, int]] = None
+            folded_hit: Optional[tuple[int, int]] = None
             for idx, dev_name in _candidates(api_filter):
                 if dev_name == wanted:
-                    if _usable(idx, kind):
-                        return idx
+                    rate = find_supported_rate(idx, kind, target_rate)
+                    if rate is not None:
+                        return idx, rate
                     continue
-                if partial is None and (dev_name.startswith(wanted[:24])
-                                        or wanted.startswith(dev_name[:24])):
-                    if _usable(idx, kind):
-                        partial = idx
+                if partial is None and (
+                    dev_name.startswith(wanted[:24]) or wanted.startswith(dev_name[:24])
+                ):
+                    rate = find_supported_rate(idx, kind, target_rate)
+                    if rate is not None:
+                        partial = (idx, rate)
+                        continue
+                if folded_hit is None and wanted_fold:
+                    dev_fold = _fold(dev_name)
+                    if wanted_fold in dev_fold or dev_fold in wanted_fold:
+                        rate = find_supported_rate(idx, kind, target_rate)
+                        if rate is not None:
+                            folded_hit = (idx, rate)
             if partial is not None:
                 return partial
+            if folded_hit is not None:
+                return folded_hit
 
-        print(f"[Audio] Saved {kind} device '{wanted}' cannot be opened at "
-              f"{_RATES.get(kind)} Hz on any host API — using system default")
-        return None
+        logger.warning(
+            "[Audio] Device '%s' (%s) could not be opened on any host API or fallback sample rate",
+            wanted,
+            kind,
+        )
+        return None, None
     except Exception as e:
-        print(f"[Audio] resolve({kind}) failed: {e} — using system default")
+        logger.warning("[Audio] resolve_with_rate(%s, %s) failed: %s", wanted, kind, e)
+        return None, None
+
+
+def resolve(name: str, kind: str):
+    """Turn a saved device name into a sounddevice index, or None for system default."""
+    wanted = (name or "").strip()
+    if not wanted or wanted == DEFAULT_LABEL:
         return None
+    idx, _rate = resolve_with_rate(wanted, kind)
+    return idx
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -708,7 +914,19 @@ def get_current_default_endpoint(kind: str = "output") -> tuple[str | None, str 
             else:
                 dev = AudioUtilities.GetMicrophone()
             if dev is not None:
-                return (getattr(dev, "id", None), getattr(dev, "FriendlyName", None))
+                ep_id = getattr(dev, "id", None)
+                ep_fn = getattr(dev, "FriendlyName", None)
+                if ep_fn:
+                    return (ep_id, ep_fn)
+                # Fall through to sounddevice display name while preserving ep_id
+                try:
+                    import sounddevice as sd
+                    info = sd.query_devices(kind=kind)
+                    if info and info.get("name"):
+                        return (ep_id, _display_name(str(info["name"]).strip(), list(sd.query_devices())))
+                except Exception:
+                    pass
+                return (ep_id, None)
         finally:
             try:
                 comtypes.CoUninitialize()
@@ -716,11 +934,23 @@ def get_current_default_endpoint(kind: str = "output") -> tuple[str | None, str 
                 pass
     except Exception:
         pass
+    # Fallback to sounddevice default device name when pycaw GetMicrophone/GetSpeakers returns None
+    try:
+        import sounddevice as sd
+        info = sd.query_devices(kind=kind)
+        if info and info.get("name"):
+            return (None, _display_name(str(info["name"]).strip(), list(sd.query_devices())))
+    except Exception:
+        pass
     return (None, None)
 
 
 def get_connected_endpoints_snapshot() -> set[str]:
-    """Return set of connected endpoint IDs and friendly names."""
+    """Return set of ACTIVE (connected) endpoint IDs and friendly names.
+
+    Filters out NotPresent / Unplugged / Disabled remembered Windows Bluetooth
+    endpoints so connect/disconnect hotplug transitions are detected accurately.
+    """
     snapshot: set[str] = set()
     if _platform_is() != "Windows":
         return snapshot
@@ -730,6 +960,9 @@ def get_connected_endpoints_snapshot() -> set[str]:
         try:
             from pycaw.pycaw import AudioUtilities
             for dev in AudioUtilities.GetAllDevices():
+                state = getattr(dev, "state", None)
+                if state is not None and "active" not in str(state).lower():
+                    continue
                 d_id = getattr(dev, "id", None)
                 if d_id:
                     snapshot.add(str(d_id))

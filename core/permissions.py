@@ -101,6 +101,7 @@ ACTION_PERMISSIONS: dict[str, str] = {
     "game_updater": SENSITIVE,
 
     # Destructive actions (High-impact)
+    "sleep_jarvis": NORMAL,
     "shutdown_jarvis": DESTRUCTIVE,
     "delete_file": DESTRUCTIVE,
     "kill_process": DESTRUCTIVE,
@@ -290,7 +291,10 @@ class ActionPermissionManager:
             if sub_act in ("unpair_bluetooth_device", "forget_bluetooth_device", "remove_bluetooth_device", "forget_device"):
                 return ActionRiskLevel.CONFIRMATION_REQUIRED
 
-            if sub_act in ("set_audio_output", "switch_audio_output", "set_default_playback_device", "change_audio_output"):
+            if sub_act in ("set_audio_output", "switch_audio_output", "set_default_playback_device", "change_audio_output",
+                           "set_audio_input", "switch_audio_input", "set_default_recording_device", "change_audio_input",
+                           "set_audio_device", "switch_audio_device", "switch_audio",
+                           "reset_audio_devices", "use_default_audio_devices"):
                 return ActionRiskLevel.CONFIRMATION_REQUIRED
 
         # =====================================================================
@@ -314,8 +318,10 @@ class ActionPermissionManager:
                            "show_actions", "manage_actions", "action_registry",
                            "toggle_ducking", "enable_ducking", "disable_ducking",
                            "brightness_up", "brightness_down", "set_brightness", "brightness",
-                           "list_audio_devices", "audio_devices", "sound_devices", "get_audio_devices",
-                           "list_sound_devices", "audio_status",
+                           "list_audio_devices", "list_audio_input_devices", "list_audio_output_devices",
+                           "audio_devices", "sound_devices", "get_audio_devices",
+                           "list_sound_devices", "audio_status", "get_audio_status",
+                           "sleep_jarvis", "go_to_sleep",
                            "lock_screen", "lock_laptop", "lock"):
                 return ActionRiskLevel.IMMEDIATE
 
@@ -485,7 +491,16 @@ class ActionPermissionManager:
             detail = f"Unpair and remove Bluetooth device '{target}'."
         elif sub_act in ("set_audio_output", "switch_audio_output", "set_default_playback_device", "change_audio_output"):
             title = "Change Audio Output"
-            detail = f"Set default audio playback endpoint to '{target}'."
+            detail = f"Switch audio speaker/output device to '{target or 'default'}'."
+        elif sub_act in ("set_audio_input", "switch_audio_input", "set_default_recording_device", "change_audio_input"):
+            title = "Change Audio Input"
+            detail = f"Switch microphone/input device to '{target or 'default'}'."
+        elif sub_act in ("set_audio_device", "switch_audio_device", "switch_audio"):
+            title = "Switch Audio Devices"
+            detail = f"Switch both microphone and speaker audio devices to '{target or 'default'}'."
+        elif sub_act in ("reset_audio_devices", "use_default_audio_devices"):
+            title = "Reset Audio Devices"
+            detail = "Reset microphone and speaker devices to Windows system defaults."
 
         # JARVIS Shutdown vs System Controls
         elif act in ("shutdown_jarvis", "kill_jarvis") or sub_act in ("shutdown_jarvis", "close_jarvis", "kill_jarvis") or (

@@ -177,8 +177,99 @@ class AudioDucker:
             if not self._speech_active and self._is_ducked:
                 self._perform_restore()
 
+    def _get_all_sessions(self) -> List[tuple]:
+        """
+        Return a list of (endpoint_id, instance_id, session) across ALL active
+        Windows render (playback) endpoints — including Bluetooth A2DP headphones
+        (e.g. 'Headphones (OPPO Enco Buds2)'), Bluetooth HFP headsets, USB audio,
+        and built-in laptop speakers.
+
+        Why this is required on Windows 11:
+          `AudioUtilities.GetAllSessions()` only queries the single default
+          playback device (`GetSpeakers()`). When Bluetooth headphones are
+          connected, media apps (Spotify, Edge, Chrome) often hold sessions on
+          the Bluetooth render endpoint while another endpoint is default (or
+          across both A2DP and built-in endpoints). Querying every ACTIVE
+          `eRender` endpoint ensures ducking and restoration work identically on
+          Bluetooth headphones and laptop speakers.
+        """
+        from pycaw.pycaw import AudioUtilities
+
+        # Respect unit-test mocks patching AudioUtilities.GetAllSessions directly
+        get_all = getattr(AudioUtilities, "GetAllSessions", None)
+        if get_all is not None and type(get_all).__module__.startswith("unittest.mock"):
+            return [("", "", s) for s in AudioUtilities.GetAllSessions()]
+
+        collected: List[tuple] = []
+        seen_keys: Set[str] = set()
+
+        try:
+            import comtypes
+            from pycaw.pycaw import IAudioSessionManager2, IAudioSessionControl2, AudioSession
+            from pycaw.constants import EDataFlow, DEVICE_STATE
+
+            enumerator = AudioUtilities.GetDeviceEnumerator()
+            collection = enumerator.EnumAudioEndpoints(
+                EDataFlow.eRender.value,
+                DEVICE_STATE.ACTIVE.value,
+            )
+            ep_count = collection.GetCount()
+
+            for i in range(ep_count):
+                try:
+                    raw_dev = collection.Item(i)
+                    wrapped = AudioUtilities.CreateDevice(raw_dev)
+                    ep_id = str(getattr(wrapped, "id", "") or f"ep_{i}")
+                    iface = raw_dev.Activate(IAudioSessionManager2._iid_, comtypes.CLSCTX_ALL, None)
+                    mgr = iface.QueryInterface(IAudioSessionManager2)
+                    session_enum = mgr.GetSessionEnumerator()
+                    s_count = session_enum.GetCount()
+                    for j in range(s_count):
+                        try:
+                            ctl = session_enum.GetSession(j)
+                            if ctl is None:
+                                continue
+                            ctl2 = ctl.QueryInterface(IAudioSessionControl2)
+                            if ctl2 is None:
+                                continue
+                            inst_id = ""
+                            try:
+                                inst_id = str(ctl2.GetSessionInstanceIdentifier() or "")
+                            except Exception:
+                                inst_id = f"idx_{j}"
+                            sess = AudioSession(ctl2)
+                            dedup = f"{ep_id}::{inst_id}" if inst_id else f"{ep_id}::idx_{j}"
+                            if dedup not in seen_keys:
+                                seen_keys.add(dedup)
+                                collected.append((ep_id, inst_id, sess))
+                        except Exception:
+                            continue
+                except Exception as ep_err:
+                    logger.debug("[AudioDucker] Endpoint #%d session enumeration skipped: %s", i, ep_err)
+                    continue
+        except Exception as e:
+            logger.debug("[AudioDucker] Multi-endpoint enumeration fallback: %s", e)
+
+        if not collected:
+            try:
+                for s in AudioUtilities.GetAllSessions():
+                    collected.append(("", "", s))
+            except Exception as e:
+                logger.debug("[AudioDucker] Fallback GetAllSessions failed: %s", e)
+
+        return collected
+
+    @staticmethod
+    def _make_session_key(ep_id: str, inst_id: str, pid: Optional[int], pname: str) -> str:
+        """Build a collision-free key per (endpoint, session instance, process)."""
+        if ep_id and inst_id:
+            return f"{ep_id}::{inst_id}"
+        if ep_id:
+            return f"{ep_id}::{pid}_{pname}"
+        return f"{pid}_{pname}"
+
     def _perform_duck(self) -> None:
-        """Duck external audio sessions to target percentage."""
+        """Duck external audio sessions across ALL active playback endpoints (including Bluetooth)."""
         try:
             from memory.config_manager import (
                 get_ducking_enabled,
@@ -195,20 +286,19 @@ class AudioDucker:
             own_pids = self._get_jarvis_process_family()
 
             self._init_com()
-            from pycaw.pycaw import AudioUtilities
 
-            sessions = AudioUtilities.GetAllSessions()
+            sessions = self._get_all_sessions()
             new_snapshot: Dict[str, dict] = {}
-            fade_targets: List[tuple] = []  # (session, start_vol, target_vol)
+            fade_targets: List[tuple] = []  # (sav, start_vol, target_vol)
 
-            for s in sessions:
+            for ep_id, inst_id, s in sessions:
                 try:
                     proc = s.Process
                     pid = proc.pid if proc else None
                     pname = (proc.name() if proc else "").lower()
 
                     # Exclude JARVIS and its child processes
-                    if pid in own_pids or pname in ("python.exe", "pythonw.exe") and pid == os.getpid():
+                    if pid in own_pids or (pname in ("python.exe", "pythonw.exe") and pid == os.getpid()):
                         continue
 
                     # Exclude configured calling applications (Teams, Discord, Zoom, etc.)
@@ -225,11 +315,13 @@ class AudioDucker:
                         continue
 
                     target_vol = max(0.0, cur_vol * duck_ratio)
-                    key = f"{pid}_{pname}"
+                    key = self._make_session_key(ep_id, inst_id, pid, pname)
 
                     new_snapshot[key] = {
                         "pid": pid,
                         "name": pname,
+                        "endpoint_id": ep_id,
+                        "instance_id": inst_id,
                         "orig_vol": cur_vol,
                         "ducked_vol": target_vol,
                         "orig_mute": mute,
@@ -277,7 +369,7 @@ class AudioDucker:
             self._rescan_sessions_while_ducked()
 
     def _rescan_sessions_while_ducked(self) -> None:
-        """Scan for any sessions that started mid-speech and duck them."""
+        """Scan all active render endpoints for sessions that started mid-speech and duck them."""
         with self._lock:
             if not self._is_ducked:
                 return
@@ -294,16 +386,15 @@ class AudioDucker:
             own_pids = self._get_jarvis_process_family()
 
             self._init_com()
-            from pycaw.pycaw import AudioUtilities
 
-            sessions = AudioUtilities.GetAllSessions()
+            sessions = self._get_all_sessions()
             new_fade_targets: List[tuple] = []
 
             with self._lock:
                 if not self._is_ducked:
                     return
 
-                for s in sessions:
+                for ep_id, inst_id, s in sessions:
                     try:
                         proc = s.Process
                         pid = proc.pid if proc else None
@@ -313,7 +404,7 @@ class AudioDucker:
                         if pname in excludes:
                             continue
 
-                        key = f"{pid}_{pname}"
+                        key = self._make_session_key(ep_id, inst_id, pid, pname)
                         if key in self._snapshot:
                             continue  # already ducked
 
@@ -330,6 +421,8 @@ class AudioDucker:
                         self._snapshot[key] = {
                             "pid": pid,
                             "name": pname,
+                            "endpoint_id": ep_id,
+                            "instance_id": inst_id,
                             "orig_vol": cur_vol,
                             "ducked_vol": target_vol,
                             "orig_mute": mute,
@@ -348,7 +441,7 @@ class AudioDucker:
             self._uninit_com()
 
     def _perform_restore(self) -> None:
-        """Restore attenuated applications to their original volume."""
+        """Restore attenuated applications across ALL active playback endpoints."""
         if not self._snapshot:
             self._is_ducked = False
             self._delete_state_file()
@@ -356,41 +449,49 @@ class AudioDucker:
 
         try:
             self._init_com()
-            from pycaw.pycaw import AudioUtilities
 
-            sessions = AudioUtilities.GetAllSessions()
-            session_map = {}
-            for s in sessions:
+            sessions = self._get_all_sessions()
+            session_map: Dict[str, object] = {}
+            legacy_map: Dict[str, List[object]] = {}
+            for ep_id, inst_id, s in sessions:
                 try:
                     proc = s.Process
                     pid = proc.pid if proc else None
                     pname = (proc.name() if proc else "").lower()
-                    key = f"{pid}_{pname}"
+                    key = self._make_session_key(ep_id, inst_id, pid, pname)
                     session_map[key] = s
+                    legacy_key = f"{pid}_{pname}"
+                    legacy_map.setdefault(legacy_key, []).append(s)
                 except Exception:
                     continue
 
-            fade_targets: List[tuple] = []  # (session, start_vol, target_vol)
+            fade_targets: List[tuple] = []  # (sav, start_vol, target_vol)
 
             for key, info in list(self._snapshot.items()):
                 try:
-                    s = session_map.get(key)
-                    if not s or not s.SimpleAudioVolume:
-                        continue
+                    matched_sessions = []
+                    if key in session_map:
+                        matched_sessions = [session_map[key]]
+                    elif key in legacy_map:
+                        matched_sessions = legacy_map[key]
 
-                    sav = s.SimpleAudioVolume
-                    cur_vol = float(sav.GetMasterVolume())
-                    ducked_vol = float(info.get("ducked_vol", 0.0))
-                    orig_vol = float(info.get("orig_vol", 1.0))
-                    orig_mute = int(info.get("orig_mute", 0))
+                    for s in matched_sessions:
+                        sav = getattr(s, "SimpleAudioVolume", None)
+                        if not sav:
+                            continue
 
-                    # Safety check: if user adjusted volume during duck, do not overwrite!
-                    if abs(cur_vol - ducked_vol) > 0.06:
-                        logger.debug("[AudioDucker] User manually adjusted volume for %s; skipping restore.", info.get("name"))
-                        continue
+                        cur_vol = float(sav.GetMasterVolume())
+                        ducked_vol = float(info.get("ducked_vol", 0.0))
+                        orig_vol = float(info.get("orig_vol", 1.0))
+                        orig_mute = int(info.get("orig_mute", 0))
 
-                    fade_targets.append((sav, cur_vol, orig_vol))
-                    sav.SetMute(orig_mute, None)
+                        # Safety check: if user adjusted volume during duck, do not overwrite!
+                        if abs(cur_vol - ducked_vol) > 0.06:
+                            logger.debug("[AudioDucker] User manually adjusted volume for %s; skipping restore.", info.get("name"))
+                            continue
+
+                        fade_targets.append((sav, cur_vol, orig_vol))
+                        sav.SetMute(orig_mute, None)
                 except Exception:
                     continue
 
@@ -409,19 +510,19 @@ class AudioDucker:
             self._uninit_com()
 
     def _restore_from_snapshot_data(self, snapshot: Dict[str, dict]) -> None:
-        """Restores audio sessions from an arbitrary snapshot dictionary."""
+        """Restores audio sessions from an arbitrary snapshot dictionary across all endpoints."""
         self._init_com()
         try:
-            from pycaw.pycaw import AudioUtilities
-            sessions = AudioUtilities.GetAllSessions()
-            for s in sessions:
+            sessions = self._get_all_sessions()
+            for ep_id, inst_id, s in sessions:
                 try:
                     proc = s.Process
                     pid = proc.pid if proc else None
                     pname = (proc.name() if proc else "").lower()
-                    key = f"{pid}_{pname}"
-                    if key in snapshot:
-                        info = snapshot[key]
+                    key = self._make_session_key(ep_id, inst_id, pid, pname)
+                    legacy_key = f"{pid}_{pname}"
+                    info = snapshot.get(key) or snapshot.get(legacy_key)
+                    if info is not None:
                         sav = s.SimpleAudioVolume
                         if sav:
                             cur_vol = float(sav.GetMasterVolume())

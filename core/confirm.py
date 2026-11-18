@@ -39,6 +39,25 @@ class PendingAction:
     run: Callable[[], str]
     at: float
     payment_details: Optional[dict] = None
+    visual_prompt: bool = False
+
+
+_VISUAL_CONFIRM_LEVELS = ("high_impact", "high", "heavy", "sensitive", "destructive")
+
+
+def requires_visual_prompt(risk_level: str, payment_details: Optional[dict] = None) -> bool:
+    """
+    Confirmation UI policy:
+      - Low / medium-level tasks ('confirmation', 'medium', 'low', 'normal'):
+        Voice confirmation ONLY (no visual click pop-up).
+      - High-level, heavy, or sensitive tasks ('high_impact', 'destructive',
+        'sensitive', 'high', 'heavy', or any payment/purchase):
+        BOTH voice confirmation AND visual click-based confirmation prompt.
+    """
+    if payment_details:
+        return True
+    lvl = str(risk_level or "").strip().lower()
+    return any(tok in lvl for tok in _VISUAL_CONFIRM_LEVELS)
 
 
 _pending: Optional[PendingAction] = None
@@ -78,8 +97,14 @@ class ConfirmationManager:
         run: Callable[[], str],
         payment_details: Optional[dict] = None,
     ) -> str:
-        """Park an action behind the confirmation gate."""
+        """Park an action behind the confirmation gate.
+
+        Low/medium tasks use voice confirmation only (no visual popup).
+        High-level / heavy / sensitive tasks use both voice and visual click prompts.
+        """
         global _pending
+
+        show_visual = requires_visual_prompt(risk_level, payment_details=payment_details)
 
         with _lock:
             old = _pending
@@ -93,18 +118,27 @@ class ConfirmationManager:
                 run=run,
                 at=time.monotonic(),
                 payment_details=payment_details,
+                visual_prompt=show_visual,
             )
 
         if old is not None:
             _log(f"SYS: Replaced pending action '{old.title}' with '{title}'")
 
-        if _show_cb is not None:
-            try:
-                _show_cb(title, detail)
-            except Exception:
-                pass
-
-        _log(f"SYS: Awaiting confirmation — {title} [{risk_level}]")
+        if show_visual:
+            if _show_cb is not None:
+                try:
+                    _show_cb(title, detail)
+                except Exception:
+                    pass
+            _log(f"SYS: Awaiting voice + visual confirmation — {title} [{risk_level}]")
+        else:
+            # Ensure any prior visual banner is closed for voice-only confirmations
+            if old is not None and getattr(old, "visual_prompt", False) and _hide_cb is not None:
+                try:
+                    _hide_cb()
+                except Exception:
+                    pass
+            _log(f"SYS: Awaiting voice-only confirmation — {title} [{risk_level}]")
 
         # Voice prompt phrasing
         if payment_details:
@@ -114,10 +148,10 @@ class ConfirmationManager:
                 f"[CONFIRMATION_PENDING] Shall I proceed with payment of {amt} to {recip}? "
                 f"Say confirm to execute, or no to cancel."
             )
-        elif "high_impact" in str(risk_level).lower():
+        elif show_visual:
             return (
                 f"[CONFIRMATION_PENDING] Shall I proceed with {title}? "
-                f"Note: {detail}. Say confirm to execute, or no to cancel."
+                f"Note: {detail}. Say confirm or click CONFIRM to execute, or say no to cancel."
             )
         else:
             return (

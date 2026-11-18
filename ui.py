@@ -2255,73 +2255,6 @@ class _DropCanvas(QWidget):
             z.mousePressEvent(e)
 
 
-class _CameraPreview(QWidget):
-    """Floating overlay that briefly shows what the camera captured."""
-
-    _W, _H = 244, 188
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setStyleSheet(f"""
-            _CameraPreview {{
-                background: rgba(0, 6, 10, 242);
-                border: 1px solid {C.PRI};
-                border-radius: 6px;
-            }}
-        """)
-        self.setFixedWidth(self._W)
-
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(6, 5, 6, 6)
-        lay.setSpacing(4)
-
-        hdr = QHBoxLayout()
-        title = QLabel("◈  VISUAL INPUT")
-        title.setFont(QFont("Montserrat", 7, QFont.Weight.Bold))
-        title.setStyleSheet(f"color: {C.PRI}; background: transparent;")
-        hdr.addWidget(title)
-        hdr.addStretch()
-        close_btn = QPushButton("✕")
-        close_btn.setFixedSize(16, 16)
-        close_btn.setFont(QFont("Montserrat", 8))
-        close_btn.setStyleSheet(
-            f"color: {C.TEXT_DIM}; background: transparent; border: none;"
-        )
-        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        close_btn.clicked.connect(self.hide)
-        hdr.addWidget(close_btn)
-        lay.addLayout(hdr)
-
-        self._img_lbl = QLabel()
-        self._img_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._img_lbl.setStyleSheet("background: transparent;")
-        lay.addWidget(self._img_lbl)
-
-        self._timer = QTimer(self)
-        self._timer.setSingleShot(True)
-        self._timer.timeout.connect(self.hide)
-
-        self.hide()
-
-    def show_frame(self, img_bytes: bytes) -> None:
-        px = QPixmap()
-        px.loadFromData(img_bytes)
-        if not px.isNull():
-            max_w = self._W - 12
-            scaled = px.scaled(
-                max_w, 160,
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
-            )
-            self._img_lbl.setPixmap(scaled)
-            self._img_lbl.setFixedSize(scaled.width(), scaled.height())
-            self.adjustSize()
-        self.show()
-        self.raise_()
-        self._timer.start(6_000)   # auto-dismiss after 6 s
-
-
 class SetupOverlay(QWidget):
     done = pyqtSignal(str, str)
 
@@ -8707,9 +8640,6 @@ class MainWindow(_FramelessWindowResizeMixin, QMainWindow):
     _content_sig    = pyqtSignal(str, str)   # (title, text) — thread-safe content display
     _codejob_sig    = pyqtSignal(object)     # dev_agent job state — live coding panel
     _reconfig_sig   = pyqtSignal()           # trigger setup overlay from any thread
-    _camera_sig     = pyqtSignal(bytes)      # show camera frame preview (small overlay)
-    _cam_stream_sig = pyqtSignal(bool)       # True=start live stream, False=stop
-    _cam_frame_sig  = pyqtSignal(bytes)      # live camera frame → HUD area
     _video_open_sig  = pyqtSignal(str, str, bool, str)  # video, title, muted, audio
     _wake_btns_sig   = pyqtSignal()          # wake state resolved off-thread
     _video_close_sig = pyqtSignal()
@@ -8736,6 +8666,7 @@ class MainWindow(_FramelessWindowResizeMixin, QMainWindow):
     _memory_actions_sig = pyqtSignal(str)          # (tab: "memory" | "actions")
     _screen_glow_sig = pyqtSignal(int)              # (duration_ms)
     _refresh_audio_sig = pyqtSignal()               # Trigger audio device dropdown refresh
+    _audio_status_sig = pyqtSignal(object)          # Thread-safe AudioManager status snapshot
 
     def __init__(self, face_path: str):
         super().__init__()
@@ -8800,40 +8731,6 @@ class MainWindow(_FramelessWindowResizeMixin, QMainWindow):
         self.hud.reactor_clicked.connect(self.toggle_minimize_top)
         self._content_panel = self._build_content_panel()
         self._quiz_panel = self._build_quiz_panel()
-
-        # Live camera container — replaces HUD when camera stream is active
-        _cam_cont = QWidget()
-        _cam_cont.setStyleSheet("background: #000308;")
-        _cam_v = QVBoxLayout(_cam_cont)
-        _cam_v.setContentsMargins(0, 0, 0, 0)
-        _cam_v.setSpacing(0)
-        _cam_hdr = QHBoxLayout()
-        _cam_hdr.setContentsMargins(8, 5, 8, 5)
-        _cam_title = QLabel("◈  CAMERA FEED")
-        _cam_title.setFont(QFont("Montserrat", 8, QFont.Weight.Bold))
-        _cam_title.setStyleSheet(f"color: {C.PRI}; background: transparent;")
-        _cam_hdr.addWidget(_cam_title)
-        _cam_hdr.addStretch()
-        _cam_x = QPushButton("✕  CLOSE")
-        _cam_x.setFont(QFont("Montserrat", 8, QFont.Weight.Bold))
-        _cam_x.setCursor(Qt.CursorShape.PointingHandCursor)
-        _cam_x.setStyleSheet(f"""
-            QPushButton {{
-                color: {C.TEXT_DIM}; background: transparent;
-                border: none; padding: 2px 6px;
-            }}
-            QPushButton:hover {{ color: {C.PRI}; }}
-        """)
-        _cam_x.clicked.connect(self.stop_camera_stream)
-        _cam_hdr.addWidget(_cam_x)
-        _cam_v.addLayout(_cam_hdr)
-        self._cam_live_lbl = QLabel()
-        self._cam_live_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._cam_live_lbl.setStyleSheet("background: transparent;")
-        self._cam_live_lbl.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
-        )
-        _cam_v.addWidget(self._cam_live_lbl, stretch=1)
 
         # ── Video surface ────────────────────────────────────────────────
         self._video_split = False        # is the sound a separate stream?
@@ -8920,10 +8817,9 @@ class MainWindow(_FramelessWindowResizeMixin, QMainWindow):
             _miss.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
             _vid_v.addWidget(_miss, stretch=1)
 
-        # Stack: 0 = animated HUD, 1 = live camera, 2 = video
+        # Stack: 0 = animated HUD, 1 = video
         self._hud_cam_stack = QStackedWidget()
         self._hud_cam_stack.addWidget(self.hud)
-        self._hud_cam_stack.addWidget(_cam_cont)
         self._hud_cam_stack.addWidget(self._video_cont)
 
         # ── Compact HUD container (only the compact HUD!)
@@ -8997,11 +8893,8 @@ class MainWindow(_FramelessWindowResizeMixin, QMainWindow):
         self._content_sig.connect(self._show_content)
         self._codejob_sig.connect(self._show_code_job)
         self._reconfig_sig.connect(self._show_setup)
-        self._camera_sig.connect(self._show_camera_frame)
         self._confirm_sig.connect(self._show_confirm_banner)
         self._confirm_hide_sig.connect(self._hide_confirm_banner)
-        self._cam_stream_sig.connect(self._on_cam_stream)
-        self._cam_frame_sig.connect(self._on_cam_frame)
         self._wake_btns_sig.connect(self._refresh_wake_btns)
         self._video_open_sig.connect(self._on_video_open)
         self._video_close_sig.connect(self._on_video_close)
@@ -9021,6 +8914,7 @@ class MainWindow(_FramelessWindowResizeMixin, QMainWindow):
         self._memory_actions_sig.connect(self._show_memory_actions)
         self._screen_glow_sig.connect(self._on_screen_glow)
         self._refresh_audio_sig.connect(self._refresh_audio_tab)
+        self._audio_status_sig.connect(self._apply_audio_status)
         self._screen_glow_overlay = ScreenGlowOverlay(self)
         self._search_dock_minimized_to_bar = False
         self._reminders_dock_minimized_to_bar = False
@@ -9039,10 +8933,6 @@ class MainWindow(_FramelessWindowResizeMixin, QMainWindow):
         self._maximize_display_sig.connect(self._on_maximize_display_win)
         self._minimize_display_sig.connect(self._on_minimize_display_win)
         self._close_display_sig.connect(self._on_close_display_win)
-        self._cam_stop = threading.Event()
-
-        # Camera preview overlay (child of central widget, positioned in resizeEvent)
-        self._cam_preview = _CameraPreview(self.centralWidget())
 
         # Clipboard triggers removed per user request
         self._clipboard_panel = None
@@ -9423,81 +9313,6 @@ class MainWindow(_FramelessWindowResizeMixin, QMainWindow):
             return True
         return False
 
-    def _show_camera_frame(self, img_bytes: bytes):
-        """Slot — display camera preview overlay (main thread)."""
-        self._cam_preview.show_frame(img_bytes)
-        cw = self.centralWidget()
-        pw = _CameraPreview._W
-        ph = self._cam_preview.height()
-        self._cam_preview.setGeometry(
-            cw.width() - _RIGHT_W - pw - 12,
-            cw.height() - ph - 28,
-            pw, ph,
-        )
-
-    # --- Live camera stream in HUD area ------------------------------------
-    def _on_cam_stream(self, start: bool) -> None:
-        if start:
-            self._hud_cam_stack.setCurrentIndex(1)
-        else:
-            self._hud_cam_stack.setCurrentIndex(0)
-            self._cam_live_lbl.clear()
-
-    def _on_cam_frame(self, data: bytes) -> None:
-        px = QPixmap()
-        px.loadFromData(data)
-        if not px.isNull():
-            w, h = self._cam_live_lbl.width(), self._cam_live_lbl.height()
-            if w > 1 and h > 1:
-                self._cam_live_lbl.setPixmap(
-                    px.scaled(w, h,
-                              Qt.AspectRatioMode.KeepAspectRatio,
-                              Qt.TransformationMode.SmoothTransformation)
-                )
-
-    def start_camera_stream(self) -> None:
-        self._cam_stop.clear()
-        self._cam_stream_sig.emit(True)
-        t = threading.Thread(target=self._cam_loop, daemon=True, name="cam-stream")
-        t.start()
-
-    def _cam_loop(self) -> None:
-        try:
-            import cv2
-            # Reuse camera index detected by screen_processor (cached in api_keys.json)
-            cam_idx = 0
-            try:
-                import json as _j
-                cfg = _j.loads((CONFIG_DIR / "api_keys.json").read_text())
-                cam_idx = int(cfg.get("camera_index", 0))
-            except Exception:
-                pass
-            try:
-                backend = cv2.CAP_DSHOW if _OS == "Windows" else cv2.CAP_ANY
-            except AttributeError:
-                backend = 0
-            cap = cv2.VideoCapture(cam_idx, backend)
-            if not cap.isOpened():
-                cap = cv2.VideoCapture(0)
-            if not cap.isOpened():
-                return
-            # warm-up frames
-            for _ in range(5):
-                cap.read()
-            while not self._cam_stop.wait(0.033) and cap.isOpened():
-                ret, frame = cap.read()
-                if ret and frame is not None:
-                    _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 65])
-                    self._cam_frame_sig.emit(buf.tobytes())
-            cap.release()
-        except Exception as e:
-            print(f"[Camera] Stream error: {e}")
-        finally:
-            self._cam_stream_sig.emit(False)
-
-    def stop_camera_stream(self) -> None:
-        self._cam_stop.set()
-
     def _build_hud_controls_bar(self) -> QWidget:
         bar = QWidget()
         bar.setFixedHeight(36)
@@ -9778,6 +9593,35 @@ class MainWindow(_FramelessWindowResizeMixin, QMainWindow):
             l.setStyleSheet(f"color: {C.PRI}; border-bottom: 1px solid {C.BORDER}; padding-bottom: 3px;")
             return l
 
+        lay.addWidget(_hdr("AUDIO STATUS"))
+        self._audio_status_card = QFrame()
+        self._audio_status_card.setStyleSheet(f"""
+            QFrame {{
+                background: {C.PANEL2};
+                border: 1px solid {C.BORDER};
+                border-radius: 4px;
+                padding: 4px;
+            }}
+        """)
+        st_lay = QVBoxLayout(self._audio_status_card)
+        st_lay.setContentsMargins(6, 5, 6, 5)
+        st_lay.setSpacing(3)
+
+        def _st_lbl(txt: str) -> QLabel:
+            lbl = QLabel(txt)
+            lbl.setFont(keena_font(7))
+            lbl.setWordWrap(True)
+            lbl.setStyleSheet(f"color: {C.TEXT_DIM}; border: none; background: transparent;")
+            st_lay.addWidget(lbl)
+            return lbl
+
+        self._lbl_audio_mic = _st_lbl("MIC: Initializing...")
+        self._lbl_audio_spk = _st_lbl("SPK: Initializing...")
+        self._lbl_audio_bt = _st_lbl("BLUETOOTH: Disconnected")
+        self._lbl_audio_rates = _st_lbl("RATES: IN 16000 Hz · OUT 24000 Hz")
+        self._lbl_audio_state = _st_lbl("STATUS: Initializing · Switch: Idle")
+        lay.addWidget(self._audio_status_card)
+
         lay.addWidget(_hdr("AUDIO INPUT (MICROPHONE)"))
         self._combo_mic = QComboBox()
         self._combo_mic.setStyleSheet(f"""
@@ -9788,14 +9632,13 @@ class MainWindow(_FramelessWindowResizeMixin, QMainWindow):
             QComboBox::drop-down {{ border: none; }}
         """)
         try:
-            from core.audio_devices import get_input_devices, DEFAULT_LABEL
+            from core.audio_devices import DEFAULT_LABEL
             from memory.config_manager import get_input_device
             cur_in = get_input_device() or DEFAULT_LABEL
-            for dev in get_input_devices(refresh=True):
-                self._combo_mic.addItem(dev)
-            idx_in = self._combo_mic.findText(cur_in)
-            if idx_in >= 0:
-                self._combo_mic.setCurrentIndex(idx_in)
+            self._combo_mic.addItem(DEFAULT_LABEL)
+            if cur_in != DEFAULT_LABEL:
+                self._combo_mic.addItem(cur_in)
+                self._combo_mic.setCurrentText(cur_in)
         except Exception:
             self._combo_mic.addItem("System default")
         self._combo_mic.currentTextChanged.connect(self._on_mic_combo_changed)
@@ -9805,14 +9648,13 @@ class MainWindow(_FramelessWindowResizeMixin, QMainWindow):
         self._combo_spk = QComboBox()
         self._combo_spk.setStyleSheet(self._combo_mic.styleSheet())
         try:
-            from core.audio_devices import get_output_devices, DEFAULT_LABEL
+            from core.audio_devices import DEFAULT_LABEL
             from memory.config_manager import get_output_device
             cur_out = get_output_device() or DEFAULT_LABEL
-            for dev in get_output_devices(refresh=True):
-                self._combo_spk.addItem(dev)
-            idx_out = self._combo_spk.findText(cur_out)
-            if idx_out >= 0:
-                self._combo_spk.setCurrentIndex(idx_out)
+            self._combo_spk.addItem(DEFAULT_LABEL)
+            if cur_out != DEFAULT_LABEL:
+                self._combo_spk.addItem(cur_out)
+                self._combo_spk.setCurrentText(cur_out)
         except Exception:
             self._combo_spk.addItem("System default")
         self._combo_spk.currentTextChanged.connect(self._on_spk_combo_changed)
@@ -9850,31 +9692,96 @@ class MainWindow(_FramelessWindowResizeMixin, QMainWindow):
     def _on_voice_combo_changed(self, voice_name: str):
         try:
             from memory import config_manager
-            config_manager.set_voice_name(voice_name)
-        except Exception:
-            pass
+            config_manager.save_voice(voice_name)
+        except Exception as exc:
+            print(f"[UI] Voice save failed: {exc}")
         if self.on_voice_change:
             self.on_voice_change()
 
     def _on_mic_combo_changed(self, mic_name: str):
-        try:
-            from memory import config_manager
-            from core.audio_devices import DEFAULT_LABEL
-            val = "" if mic_name == DEFAULT_LABEL else mic_name
-            config_manager.set_input_device(val)
-        except Exception:
-            pass
+        from core.audio_devices import DEFAULT_LABEL
+        val = "" if mic_name == DEFAULT_LABEL else mic_name
+        def _apply():
+            try:
+                from core.audio_manager import get_audio_manager
+                from memory import config_manager
+                mgr = get_audio_manager()
+                if mgr is not None:
+                    mgr.switch_input(val, persist=True, set_os_default=False)
+                else:
+                    config_manager.save_input_device(val)
+                    if self.on_audio_device_change:
+                        self.on_audio_device_change()
+            except Exception as exc:
+                print(f"[UI] Mic switch failed: {exc}")
+        threading.Thread(target=_apply, daemon=True, name="ui-mic-switch").start()
 
     def _on_spk_combo_changed(self, spk_name: str):
-        try:
-            from memory import config_manager
-            from core.audio_devices import DEFAULT_LABEL, set_default_endpoint
-            val = "" if spk_name == DEFAULT_LABEL else spk_name
-            config_manager.set_output_device(val)
-            if val:
-                set_default_endpoint(val, "output")
-        except Exception:
-            pass
+        from core.audio_devices import DEFAULT_LABEL
+        val = "" if spk_name == DEFAULT_LABEL else spk_name
+        def _apply():
+            try:
+                from core.audio_manager import get_audio_manager
+                from memory import config_manager
+                mgr = get_audio_manager()
+                if mgr is not None:
+                    mgr.switch_output(val, persist=True, set_os_default=bool(val))
+                else:
+                    config_manager.save_output_device(val)
+                    if self.on_audio_device_change:
+                        self.on_audio_device_change()
+            except Exception as exc:
+                print(f"[UI] Speaker switch failed: {exc}")
+        threading.Thread(target=_apply, daemon=True, name="ui-spk-switch").start()
+
+    def _apply_audio_status(self, status: dict):
+        """Update the UI audio status indicators immediately after a verified stream event."""
+        if not isinstance(status, dict):
+            return
+        self._last_audio_status = dict(status)
+
+        def _badge_color(st: str) -> str:
+            low = str(st or "").lower()
+            if "failed" in low:
+                return C.MUTED_C
+            if "disconnected" in low:
+                return "#f4b942"
+            if "switching" in low or "initializing" in low:
+                return "#38BDF8"
+            if "default" in low:
+                return "#f4b942"
+            return C.GREEN
+
+        in_dev = status.get("input_device", "System default")
+        out_dev = status.get("output_device", "System default")
+        in_st = status.get("input_status", "Initializing")
+        out_st = status.get("output_status", "Initializing")
+        bt_st = status.get("bluetooth_status", "Disconnected")
+        in_sr = status.get("input_sample_rate", 16000)
+        out_sr = status.get("output_sample_rate", 24000)
+        init_st = status.get("init_status", "Initializing")
+        sw_st = status.get("switching_status", "Idle")
+
+        if hasattr(self, "_lbl_audio_mic") and self._lbl_audio_mic:
+            self._lbl_audio_mic.setText(f"MIC: {in_dev}  [{in_st}]")
+            self._lbl_audio_mic.setStyleSheet(
+                f"color: {_badge_color(in_st)}; border: none; background: transparent;"
+            )
+        if hasattr(self, "_lbl_audio_spk") and self._lbl_audio_spk:
+            self._lbl_audio_spk.setText(f"SPK: {out_dev}  [{out_st}]")
+            self._lbl_audio_spk.setStyleSheet(
+                f"color: {_badge_color(out_st)}; border: none; background: transparent;"
+            )
+        if hasattr(self, "_lbl_audio_bt") and self._lbl_audio_bt:
+            bt_col = C.GREEN if status.get("bluetooth_connected") else C.TEXT_DIM
+            self._lbl_audio_bt.setText(f"BLUETOOTH: {bt_st}")
+            self._lbl_audio_bt.setStyleSheet(
+                f"color: {bt_col}; border: none; background: transparent;"
+            )
+        if hasattr(self, "_lbl_audio_rates") and self._lbl_audio_rates:
+            self._lbl_audio_rates.setText(f"RATES: IN {in_sr} Hz · OUT {out_sr} Hz")
+        if hasattr(self, "_lbl_audio_state") and self._lbl_audio_state:
+            self._lbl_audio_state.setText(f"INIT: {init_st} · SWITCH: {sw_st}")
 
     def _refresh_audio_tab(self):
         try:
@@ -9883,8 +9790,9 @@ class MainWindow(_FramelessWindowResizeMixin, QMainWindow):
             cur_in = get_input_device() or DEFAULT_LABEL
             cur_out = get_output_device() or DEFAULT_LABEL
 
-            in_devs = get_input_devices(refresh=True)
-            out_devs = get_output_devices(refresh=True)
+            # Never trigger a PortAudio reset from the Qt UI thread!
+            in_devs = get_input_devices(refresh=False)
+            out_devs = get_output_devices(refresh=False)
 
             if hasattr(self, "_combo_mic") and self._combo_mic:
                 self._combo_mic.blockSignals(True)
@@ -9903,8 +9811,8 @@ class MainWindow(_FramelessWindowResizeMixin, QMainWindow):
                 idx_out = self._combo_spk.findText(cur_out)
                 self._combo_spk.setCurrentIndex(idx_out if idx_out >= 0 else 0)
                 self._combo_spk.blockSignals(False)
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"[UI] Refresh audio tab error: {exc}")
 
     def _build_settings_tab(self) -> QWidget:
         w = QWidget()
@@ -10594,14 +10502,6 @@ class MainWindow(_FramelessWindowResizeMixin, QMainWindow):
                 max(0, (cw.height() - ov.height()) // 2),
                 ov.width(), ov.height(),
             )
-        # Camera preview — bottom-right corner of the center/HUD area
-        pw = _CameraPreview._W
-        ph = self._cam_preview.height() or _CameraPreview._H
-        self._cam_preview.setGeometry(
-            cw.width() - _RIGHT_W - pw - 12,
-            cw.height() - ph - 28,
-            pw, ph,
-        )
         # Clipboard panel — bottom-center (triggers removed)
         if getattr(self, '_clipboard_panel', None) is not None and self._clipboard_panel.isVisible():
             self._position_clipboard_panel()
@@ -12987,15 +12887,6 @@ class JarvisUI:
         except (RuntimeError, AttributeError):
             pass
 
-    def show_camera_frame(self, img_bytes: bytes):
-        """Thread-safe: show a webcam frame in the small overlay (screen captures)."""
-        try:
-            if not self._is_alive():
-                return
-            self._win._camera_sig.emit(img_bytes)
-        except (RuntimeError, AttributeError):
-            pass
-
     def show_video(self, source: str, title: str = "", muted: bool = True,
                    audio_source: str = "") -> None:
         """Video display on HUD is removed per user request. Opens in external player."""
@@ -13035,24 +12926,6 @@ class JarvisUI:
             return bool(self._win.video_is_playing())
         except (RuntimeError, AttributeError):
             return False
-
-    def start_camera_stream(self) -> None:
-        """Thread-safe: start live camera feed in the full HUD area."""
-        try:
-            if not self._is_alive():
-                return
-            self._win.start_camera_stream()
-        except (RuntimeError, AttributeError):
-            pass
-
-    def stop_camera_stream(self) -> None:
-        """Thread-safe: stop the live camera feed."""
-        try:
-            if not self._is_alive():
-                return
-            self._win.stop_camera_stream()
-        except (RuntimeError, AttributeError):
-            pass
 
     @property
     def assistant_name(self) -> str:
@@ -13214,6 +13087,14 @@ class JarvisUI:
         try:
             if self._is_alive():
                 self._win._refresh_audio_sig.emit()
+        except (RuntimeError, AttributeError):
+            pass
+
+    def update_audio_status(self, status: dict) -> None:
+        """Thread-safe: Push verified AudioManager status snapshot to the UI."""
+        try:
+            if self._is_alive():
+                self._win._audio_status_sig.emit(dict(status or {}))
         except (RuntimeError, AttributeError):
             pass
 
