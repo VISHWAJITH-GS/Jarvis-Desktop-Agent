@@ -867,6 +867,8 @@ class JarvisLive:
                 )
             if not self._wake_detector.ready:
                 return self._wake_detector.start()
+            if getattr(self._wake_detector, "paused", False):
+                self._wake_detector.resume()
             return True
 
     def _ensure_wake_detector_async(self) -> None:
@@ -904,6 +906,8 @@ class JarvisLive:
         if not hasattr(self, "voice_state") and not self.ui.muted:
             self.ui.set_state("LISTENING")
         self.ui.write_log(f"SYS: Awake — {reason}.")
+        if "wake word" in str(reason).lower() and getattr(self, "session", None):
+            self.speak("The user called 'Jarvis' to wake you up. Acknowledge briefly and naturally, like 'Yes, Sir?' or 'At your service, Sir.'")
 
     def sleep(self, reason: str = "idle for 3 minutes") -> None:
         if hasattr(self, "voice_state"):
@@ -919,6 +923,10 @@ class JarvisLive:
         self.set_speaking(False)
         if self._wake_enabled:
             self._ensure_wake_detector_async()
+            with self._wake_detector_lock:
+                if self._wake_detector is not None:
+                    self._wake_detector.reset_buffers()
+                    self._wake_detector.resume()
             wake_hint = f"Say {self._wake_words_label()} or press Ctrl+Alt+K to wake me."
         else:
             wake_hint = "Press Ctrl+Alt+K or tap WAKE NOW to wake me."
@@ -1070,6 +1078,8 @@ class JarvisLive:
                         if self._wake_detector is not None:
                             self._wake_detector.reset_buffers()
                             self._wake_detector.resume()
+                        elif self._wake_enabled:
+                            self._ensure_wake_detector_async()
 
                     self.ui.write_log(f"SYS: 😴 Stereo music restored. Listening for wake word on {dev_name}.")
 
@@ -1932,6 +1942,9 @@ class JarvisLive:
                     result = "Specify action (add/remove/list) and a topic."
 
             elif name == "sleep_jarvis":
+                if not self._wake_enabled:
+                    self._wake_enabled = True
+                    save_wake_word_enabled(True)
                 self.sleep(reason="voice command")
                 result = (
                     f"Going to sleep. Say {self._wake_words_label()} "
@@ -2115,7 +2128,11 @@ class JarvisLive:
             )
             if is_sleeping:
                 det = self._wake_detector
-                if det is not None and not getattr(det, "paused", False):
+                if det is None and self._wake_enabled:
+                    self._ensure_wake_detector_async()
+                elif det is not None:
+                    if getattr(det, "paused", False):
+                        det.resume()
                     det.feed(indata)
                 return
             with self._speaking_lock:

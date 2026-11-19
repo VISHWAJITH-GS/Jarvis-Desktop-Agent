@@ -55,6 +55,8 @@ def _get_api_key() -> str:
     except Exception:
         return ""
 
+_active_player = None
+
 def _get_macos_wifi_interface() -> str:
     try:
         result = subprocess.run(
@@ -735,6 +737,11 @@ def toggle_wake_word(action_name: str = "toggle_wake_word"):
     else:
         new_val = not get_wake_word_enabled()
     save_wake_word_enabled(new_val)
+    if _active_player and hasattr(_active_player, "on_wake_toggle") and callable(_active_player.on_wake_toggle):
+        try:
+            _active_player.on_wake_toggle(new_val)
+        except Exception:
+            pass
     status = "enabled" if new_val else "disabled"
     return f"Wake word is now {status}."
 
@@ -1025,6 +1032,8 @@ def computer_settings(
     ts = datetime.now().strftime("%I:%M:%S %p")
     print(f"[{ts}] [Settings] Action: {action}  Value: {value}  OS: {_OS}")
     if player:
+        global _active_player
+        _active_player = player
         print(f"[{ts}] [Settings] {action}")            # terminal, not the HUD
 
     # ── JARVIS self-control: Mute/Unmute & Window management ──────────────────

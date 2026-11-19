@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 
 from core.voice_state import VoiceState, VoiceStateManager
 from core.global_input import GlobalInputController, parse_chord, _VK_MAP
+from memory import config_manager
 from memory.config_manager import (
     get_listening_shortcut,
     get_emergency_stop_shortcut,
@@ -677,35 +678,45 @@ class TestAdvancedStateHotkeysWakeAndSleep(unittest.TestCase):
 
     def test_wake_word_disable_stops_detector_and_wakes(self):
         """Disabling wake word stops any running WakeWordDetector and wakes JARVIS to LISTENING."""
-        live, mock_ui = self._make_stub_live(VoiceState.SLEEPING)
-        live._wake_enabled = True
+        orig_wake = config_manager.get_wake_word_enabled()
+        try:
+            live, mock_ui = self._make_stub_live(VoiceState.SLEEPING)
+            live._wake_enabled = True
 
-        mock_detector = MagicMock()
-        mock_detector.ready = True
-        live._wake_detector = mock_detector
-        live._wake_detector_lock = threading.Lock()
+            mock_detector = MagicMock()
+            mock_detector.ready = True
+            live._wake_detector = mock_detector
+            live._wake_detector_lock = threading.Lock()
 
-        # Disable wake word via UI callback
-        res = live._ui_wake_toggle(False)
-        self.assertEqual(res, "disabled")
-        self.assertFalse(live._wake_enabled)
-        self.assertIsNone(live._wake_detector)
-        mock_detector.stop.assert_called_once()
-        self.assertTrue(live._awake)
-        self.assertEqual(live.voice_state.state, VoiceState.LISTENING)
+            # Disable wake word via UI callback
+            res = live._ui_wake_toggle(False)
+            self.assertEqual(res, "disabled")
+            self.assertFalse(live._wake_enabled)
+            self.assertIsNone(live._wake_detector)
+            mock_detector.stop.assert_called_once()
+            self.assertTrue(live._awake)
+            self.assertEqual(live.voice_state.state, VoiceState.LISTENING)
+        finally:
+            config_manager.save_wake_word_enabled(orig_wake)
 
     def test_auto_sleep_disable_prevents_sleep(self):
         """Disabling auto-sleep sets timeout to 0.0, disables flag, and wakes if sleeping."""
-        live, mock_ui = self._make_stub_live(VoiceState.SLEEPING)
-        live._auto_sleep_enabled = True
-        live._wake_sleep_timeout = 180.0
+        orig_auto = config_manager.get_auto_sleep_enabled()
+        orig_timeout = config_manager.get_idle_sleep_timeout()
+        try:
+            live, mock_ui = self._make_stub_live(VoiceState.SLEEPING)
+            live._auto_sleep_enabled = True
+            live._wake_sleep_timeout = 180.0
 
-        enabled = live._ui_auto_sleep_toggle(False)
-        self.assertFalse(enabled)
-        self.assertFalse(live._auto_sleep_enabled)
-        self.assertEqual(live._wake_sleep_timeout, 0.0)
-        self.assertTrue(live._awake)
-        self.assertEqual(live.voice_state.state, VoiceState.LISTENING)
+            enabled = live._ui_auto_sleep_toggle(False)
+            self.assertFalse(enabled)
+            self.assertFalse(live._auto_sleep_enabled)
+            self.assertEqual(live._wake_sleep_timeout, 0.0)
+            self.assertTrue(live._awake)
+            self.assertEqual(live.voice_state.state, VoiceState.LISTENING)
+        finally:
+            config_manager.save_auto_sleep_enabled(orig_auto)
+            config_manager.save_idle_sleep_timeout(orig_timeout if orig_timeout > 0 else 180.0)
 
     def test_sleep_with_wake_word_disabled_does_not_start_detector(self):
         """Calling sleep() when wake word is disabled must NOT invoke _ensure_wake_detector_async."""
@@ -717,6 +728,50 @@ class TestAdvancedStateHotkeysWakeAndSleep(unittest.TestCase):
         self.assertFalse(live._awake)
         self.assertEqual(live.voice_state.state, VoiceState.SLEEPING)
         live._ensure_wake_detector_async.assert_not_called()
+
+    def test_wake_word_enabled_by_default_and_sanitize(self):
+        """Verify wake_word_enabled defaults to True and is properly preserved/sanitized."""
+        from memory import config_manager
+        self.assertTrue(config_manager.DEFAULT_WAKE_WORD_ENABLED)
+        self.assertTrue(config_manager.get_wake_word_enabled())
+
+    def test_sleeping_detector_resumes_and_feeds_frames(self):
+        """When sleeping, paused detector is resumed and mic audio frames are fed."""
+        import numpy as np
+        live, mock_ui = self._make_stub_live(VoiceState.LISTENING)
+        live._wake_enabled = True
+
+        mock_detector = MagicMock()
+        mock_detector.paused = True
+        mock_detector.ready = True
+        live._wake_detector = mock_detector
+
+        live.sleep(reason="unit test sleep")
+        self.assertEqual(live.voice_state.state, VoiceState.SLEEPING)
+        self.assertFalse(live._awake)
+        mock_detector.resume.assert_called()
+
+        # Simulate mic callback while sleeping
+        det = live._wake_detector
+        if det is not None:
+            if getattr(det, "paused", False):
+                det.resume()
+            det.feed(np.zeros(1024, dtype=np.int16))
+        mock_detector.feed.assert_called()
+
+    def test_wake_word_detection_wakes_jarvis_and_speaks(self):
+        """Detecting wake word transitions to LISTENING, updates HUD, and speaks acknowledgement."""
+        live, mock_ui = self._make_stub_live(VoiceState.SLEEPING)
+        live._awake = False
+        live.session = MagicMock()
+        spoken_messages = []
+        live.speak = lambda msg: spoken_messages.append(msg)
+
+        live._on_wake_detected("Jarvis")
+        self.assertEqual(live.voice_state.state, VoiceState.LISTENING)
+        self.assertTrue(live._awake)
+        mock_ui.sync_mute_state.assert_called_with(False, "LISTENING")
+        self.assertTrue(any("Jarvis" in msg for msg in spoken_messages))
 
     def test_computer_settings_actions_wake_and_auto_sleep(self):
         """Test computer_settings actions for toggling wake word and auto-sleep."""

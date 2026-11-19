@@ -343,6 +343,7 @@ DEFAULT_WAKE_WORDS = ["Jarvis"]
 DEFAULT_WAKE_WORD_THRESHOLD = 0.200
 DEFAULT_IDLE_SLEEP_TIMEOUT = 180.0   # 3 minutes
 DEFAULT_AUTO_SLEEP_ENABLED = True
+DEFAULT_WAKE_WORD_ENABLED = True
 
 
 def get_auto_sleep_enabled() -> bool:
@@ -366,7 +367,10 @@ def save_auto_sleep_enabled(enabled: bool) -> None:
 
 def get_wake_word_enabled() -> bool:
     """Whether local wake-word gating starts asleep on boot (auto-sleep still wakes on wake word)."""
-    return load_api_keys().get("wake_word_enabled", False)
+    val = load_api_keys().get("wake_word_enabled")
+    if val is not None:
+        return bool(val)
+    return DEFAULT_WAKE_WORD_ENABLED
 
 
 def save_wake_word_enabled(enabled: bool) -> None:
@@ -530,6 +534,9 @@ def sanitize_hotkeys_and_wake_words() -> None:
         dirty = False
         if cfg.get("wake_words") != ["Jarvis"]:
             save_wake_words(["Jarvis"])
+            dirty = True
+        if cfg.get("wake_word_enabled") is None:
+            save_wake_word_enabled(DEFAULT_WAKE_WORD_ENABLED)
             dirty = True
         if cfg.get("global_listening_shortcut") != ["ctrl", "alt", "j"]:
             save_listening_shortcut(["ctrl", "alt", "j"])

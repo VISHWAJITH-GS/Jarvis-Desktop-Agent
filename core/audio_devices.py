@@ -867,14 +867,14 @@ def is_bluetooth_device(name: str) -> bool:
 
     # 2. Fallback: Keyword-based heuristics (safe against false positives)
     low = wanted.lower()
-    # Explicit USB wired / USB dongle without Bluetooth branding -> not Bluetooth
-    if "usb" in low and not ("bluetooth" in low or "bth" in low):
+    # Explicit USB wired / USB dongle / 3.5mm wired without Bluetooth branding -> not Bluetooth
+    if ("usb" in low or "wired" in low) and not ("bluetooth" in low or "bth" in low):
         res = False
     else:
         # High-confidence Bluetooth indicators (excluding generic 'wireless' or 'headset' which match USB peripherals)
         bt_keywords = (
             "bluetooth", "bth", "hands-free", "airpods",
-            "freebuds", "galaxy buds", "pixel buds", "oppo", "enco", "buds"
+            "freebuds", "galaxy buds", "pixel buds"
         )
         res = any(k in low for k in bt_keywords)
 
