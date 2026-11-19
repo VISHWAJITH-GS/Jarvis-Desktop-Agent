@@ -1,24 +1,24 @@
 """
-Local wake-word detection for JARVIS ("Jarvis" and "Hello").
+Local wake-word detection for JARVIS ("Jarvis" alone).
 
 Design goals:
   • ZERO cost when the feature is inactive — openwakeword (and the optional
     local keyword spotter for wake words without a dedicated ONNX model, such
-    as "Hello") are imported ONLY inside start()/install/worker helpers, never
+    as standalone "Jarvis") are imported ONLY inside start()/install/worker helpers, never
     at module load.
   • ZERO latency on the audio path — the microphone callback only ever does a
     cheap, non-blocking queue push (feed()); inference runs on background
     threads, so the real-time audio thread and Gemini stream are never slowed.
   • Fully local & offline — audio fed here never leaves the machine; while
-    sleeping, nothing is streamed to the cloud until a wake word ("Jarvis" or
-    "Hello") or the global Force Listening shortcut (Ctrl + Alt + K) fires.
+    sleeping, nothing is streamed to the cloud until the wake word ("Jarvis")
+    or the global Force Listening shortcut (Ctrl + Alt + K) fires.
   • Hybrid detection:
       1. Fast ONNX path via openwakeword (e.g. "hey_jarvis" + any custom ONNX
          models found for configured wake words) evaluated at threshold 0.100.
       2. Low-power RMS-VAD-gated local keyword spotter (using cached offline
          faster-whisper if installed) for wake words without a pretrained ONNX
-         model (such as "Hello" and standalone "Jarvis"). During room silence
-         the spotter sleeps with ~0% CPU.
+         model (such as standalone "Jarvis"). During room silence the spotter
+         sleeps with ~0% CPU.
 """
 from __future__ import annotations
 
@@ -32,8 +32,8 @@ import time
 from pathlib import Path
 from typing import Callable, Iterable, Optional
 
-# Active wake words and sensitivity threshold.
-DEFAULT_WAKE_WORDS: tuple[str, ...] = ("Jarvis", "Hello")
+# Active wake words and sensitivity threshold ("Jarvis" alone).
+DEFAULT_WAKE_WORDS: tuple[str, ...] = ("Jarvis",)
 DEFAULT_THRESHOLD: float = 0.100
 
 # Pretrained openwakeword model kept as a module constant for compatibility.
@@ -67,7 +67,7 @@ _VAD_MAX_UTTERANCE_S = 1.8     # flush and check after this much continuous spee
 
 
 def normalize_wake_words(wake_words: Optional[Iterable[str]]) -> list[str]:
-    """Return a clean, deduplicated list of active wake words."""
+    """Return a clean, deduplicated list of active wake words, excluding 'hello'."""
     if not wake_words:
         return list(DEFAULT_WAKE_WORDS)
     if isinstance(wake_words, str):
@@ -78,7 +78,7 @@ def normalize_wake_words(wake_words: Optional[Iterable[str]]) -> list[str]:
     out: list[str] = []
     seen: set[str] = set()
     for item in raw_items:
-        if not item:
+        if not item or item.lower() == "hello":
             continue
         key = item.lower()
         if key not in seen:
@@ -248,7 +248,7 @@ def install_and_download(logger: Callable[[str], None] = print,
 class WakeWordDetector:
     """
     Runs local wake-word detection in dedicated background threads.
-    Supports multiple wake words (default: "Jarvis" and "Hello") at configurable
+    Supports active wake word ("Jarvis" alone) at configurable
     sensitivity (default threshold: 0.100).
 
     The mic thread calls `feed()` with raw int16 frames; detections invoke
@@ -482,7 +482,7 @@ class WakeWordDetector:
                             self._trigger_detection(word, score)
                             continue
 
-                # 2. Low-power RMS-VAD accumulator for local keyword spotting ("Hello", "Jarvis")
+                # 2. Low-power RMS-VAD accumulator for local keyword spotting ("Jarvis")
                 if self._spotter_thread is not None and not self._whisper_failed:
                     f32 = arr.astype(np.float32)
                     rms = float(np.sqrt(np.mean(f32 * f32))) if f32.size else 0.0

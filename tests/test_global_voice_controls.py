@@ -49,21 +49,27 @@ class TestVoiceStateManager(unittest.TestCase):
         self.assertEqual(self.sm.generation_id, 0)
 
     def test_listening_toggle_to_disabled_and_back(self):
-        # 1. Toggle OFF -> DISABLED
+        # 1. Active (LISTENING) -> DISABLED (MUTED)
         new_state = self.sm.toggle_listening()
         self.assertEqual(new_state, VoiceState.DISABLED)
         self.assertTrue(self.sm.is_disabled)
         self.assertFalse(self.sm.is_listening)
 
-        # 2. Toggle ON -> LISTENING
+        # 2. DISABLED (MUTED) -> SLEEPING
         new_state = self.sm.toggle_listening()
-        self.assertEqual(new_state, VoiceState.LISTENING)
-        self.assertTrue(self.sm.is_listening)
+        self.assertEqual(new_state, VoiceState.SLEEPING)
+        self.assertTrue(self.sm.is_sleeping)
         self.assertFalse(self.sm.is_disabled)
 
-        self.assertEqual(len(self.state_changes), 2)
-        self.assertEqual(self.state_changes[0], (VoiceState.LISTENING, VoiceState.DISABLED))
-        self.assertEqual(self.state_changes[1], (VoiceState.DISABLED, VoiceState.LISTENING))
+        # 3. SLEEPING -> remains SLEEPING (sticky, no state change)
+        for _ in range(3):
+            new_state = self.sm.toggle_listening()
+            self.assertEqual(new_state, VoiceState.SLEEPING)
+            self.assertTrue(self.sm.is_sleeping)
+
+        # 4. Force Listening (Ctrl+Alt+K) -> LISTENING
+        self.assertEqual(self.sm.force_listening(), VoiceState.LISTENING)
+        self.assertTrue(self.sm.is_listening)
 
     def test_full_state_lifecycle_transitions(self):
         # LISTENING -> PROCESSING
@@ -356,7 +362,7 @@ class TestAdvancedStateHotkeysWakeAndSleep(unittest.TestCase):
         live._dashboard = None
         live._loop = None
         live._wake_enabled = False
-        live._wake_words = ["Jarvis", "Hello"]
+        live._wake_words = ["Jarvis"]
         live._wake_threshold = 0.100
         live._wake_detector = None
         live._wake_detector_lock = threading.Lock()
@@ -369,39 +375,39 @@ class TestAdvancedStateHotkeysWakeAndSleep(unittest.TestCase):
         )
         return live, mock_ui
 
-    def test_toggle_mute_restores_sleeping_and_listening(self):
-        """Ctrl+Alt+J from SLEEPING mutes, pressing again restores SLEEPING (not LISTENING)."""
-        sm = VoiceStateManager(initial_state=VoiceState.SLEEPING)
-        self.assertTrue(sm.is_sleeping)
-
-        # Press Ctrl+Alt+J -> MUTED (DISABLED), saving SLEEPING
-        self.assertEqual(sm.toggle_mute(), VoiceState.DISABLED)
+    def test_ctrl_alt_j_transitions_mute_to_sleep_and_sticky_sleep(self):
+        """Ctrl+Alt+J transitions: Active -> MUTED; MUTED -> SLEEPING; SLEEPING -> remains SLEEPING."""
+        # 1. From LISTENING -> MUTED (DISABLED)
+        sm = VoiceStateManager(initial_state=VoiceState.LISTENING)
+        self.assertEqual(sm.handle_mute_or_sleep(), VoiceState.DISABLED)
         self.assertTrue(sm.is_muted)
-        self.assertEqual(sm.previous_state, VoiceState.SLEEPING)
 
-        # Press Ctrl+Alt+J again -> restores SLEEPING
-        self.assertEqual(sm.toggle_mute(), VoiceState.SLEEPING)
+        # 2. From DISABLED (MUTED) -> SLEEPING
+        self.assertEqual(sm.handle_mute_or_sleep(), VoiceState.SLEEPING)
         self.assertTrue(sm.is_sleeping)
-        self.assertFalse(sm.is_muted)
 
-        # Wake to LISTENING, then toggle mute -> DISABLED -> restores LISTENING
-        self.assertTrue(sm.wake_up())
-        self.assertTrue(sm.is_listening)
-        self.assertEqual(sm.toggle_mute(), VoiceState.DISABLED)
-        self.assertEqual(sm.previous_state, VoiceState.LISTENING)
-        self.assertEqual(sm.toggle_mute(), VoiceState.LISTENING)
-        self.assertTrue(sm.is_listening)
+        # 3. From SLEEPING -> remains SLEEPING regardless of repeated presses
+        for _ in range(5):
+            self.assertEqual(sm.handle_mute_or_sleep(), VoiceState.SLEEPING)
+            self.assertTrue(sm.is_sleeping)
+            self.assertFalse(sm.is_muted)
 
-    def test_toggle_mute_from_speaking_interrupts_and_restores_listening(self):
+    def test_ctrl_alt_j_from_speaking_and_processing_interrupts_and_mutes(self):
+        """Ctrl+Alt+J while speaking or processing interrupts immediately and switches to MUTED."""
         interrupts = []
         sm = VoiceStateManager(
             initial_state=VoiceState.LISTENING,
             on_interrupt=lambda: interrupts.append(1),
         )
         sm.start_speaking()
-        self.assertEqual(sm.toggle_mute(), VoiceState.DISABLED)
+        self.assertTrue(sm.is_speaking)
+        self.assertEqual(sm.handle_mute_or_sleep(), VoiceState.DISABLED)
         self.assertEqual(len(interrupts), 1)
-        self.assertEqual(sm.toggle_mute(), VoiceState.LISTENING)
+        self.assertTrue(sm.is_muted)
+
+        # Pressing again in MUTED goes to SLEEPING
+        self.assertEqual(sm.handle_mute_or_sleep(), VoiceState.SLEEPING)
+        self.assertTrue(sm.is_sleeping)
 
     def test_force_listening_from_all_states(self):
         """Ctrl+Alt+K unconditionally forces LISTENING from muted, sleeping, speaking, processing."""
@@ -427,20 +433,27 @@ class TestAdvancedStateHotkeysWakeAndSleep(unittest.TestCase):
             else:
                 self.assertEqual(len(interrupts), 0)
 
-    def test_jarvis_live_toggle_mute_preserves_sleeping_in_ui(self):
-        """Verify JarvisLive.global_toggle_mute syncs UI atomically without clobbering SLEEPING."""
-        live, mock_ui = self._make_stub_live(VoiceState.SLEEPING)
+    def test_jarvis_live_toggle_mute_cycle_and_sticky_sleep(self):
+        """Verify JarvisLive.global_toggle_mute cycles LISTENING -> MUTED -> SLEEPING -> remains SLEEPING."""
+        live, mock_ui = self._make_stub_live(VoiceState.LISTENING)
         with patch.object(live, "_ensure_wake_detector_async"):
-            # Mute while sleeping
+            # 1. From LISTENING -> switches to MUTED
             st1 = live.global_toggle_mute()
             self.assertEqual(st1, VoiceState.DISABLED)
             mock_ui.sync_mute_state.assert_called_with(True, "MUTED")
 
-            # Unmute -> restores SLEEPING (not LISTENING!)
+            # 2. From MUTED -> switches to SLEEPING
             st2 = live.global_toggle_mute()
             self.assertEqual(st2, VoiceState.SLEEPING)
             self.assertFalse(live._awake)
             mock_ui.sync_mute_state.assert_called_with(False, "SLEEPING")
+
+            # 3. Repeated presses while in SLEEPING remain in SLEEPING
+            for _ in range(3):
+                st3 = live.global_toggle_mute()
+                self.assertEqual(st3, VoiceState.SLEEPING)
+                self.assertTrue(live.voice_state.is_sleeping)
+                self.assertFalse(live._awake)
 
     def test_jarvis_live_force_listening_from_sleep_and_mute(self):
         """Verify Ctrl+Alt+K wakes from SLEEPING and unmutes from MUTED without leaving _interrupted set."""
@@ -479,12 +492,13 @@ class TestAdvancedStateHotkeysWakeAndSleep(unittest.TestCase):
         self.assertEqual(sm.state, VoiceState.LISTENING)
 
     def test_wake_word_defaults_and_matching(self):
-        """Verify default wake words ('Jarvis', 'Hello'), threshold 0.100, and matching logic."""
+        """Verify default wake word ('Jarvis' alone), threshold 0.100, and matching logic."""
         from core.wake_word import (
             DEFAULT_WAKE_WORDS,
             DEFAULT_THRESHOLD,
             WakeWordDetector,
             match_wake_word,
+            normalize_wake_words,
         )
         from memory.config_manager import (
             DEFAULT_WAKE_WORDS as CFG_WAKE_WORDS,
@@ -492,27 +506,33 @@ class TestAdvancedStateHotkeysWakeAndSleep(unittest.TestCase):
             DEFAULT_IDLE_SLEEP_TIMEOUT as CFG_IDLE_TIMEOUT,
         )
 
-        self.assertEqual(tuple(DEFAULT_WAKE_WORDS), ("Jarvis", "Hello"))
+        self.assertEqual(tuple(DEFAULT_WAKE_WORDS), ("Jarvis",))
         self.assertAlmostEqual(DEFAULT_THRESHOLD, 0.100, places=3)
-        self.assertEqual(CFG_WAKE_WORDS, ["Jarvis", "Hello"])
+        self.assertEqual(CFG_WAKE_WORDS, ["Jarvis"])
         self.assertAlmostEqual(CFG_THRESHOLD, 0.100, places=3)
         self.assertEqual(CFG_IDLE_TIMEOUT, 180.0)
 
-        # Positive matches
-        self.assertEqual(match_wake_word("Hey Jarvis, what time is it?", ["Jarvis", "Hello"]), "Jarvis")
-        self.assertEqual(match_wake_word("JARVIS!", ["Jarvis", "Hello"]), "Jarvis")
-        self.assertEqual(match_wake_word("Hello there", ["Jarvis", "Hello"]), "Hello")
-        self.assertEqual(match_wake_word("hello.", ["Jarvis", "Hello"]), "Hello")
+        # "Hello" is explicitly stripped by normalization
+        self.assertEqual(normalize_wake_words(["Jarvis", "Hello"]), ["Jarvis"])
+        self.assertEqual(normalize_wake_words(["hello"]), ["Jarvis"])
+
+        # Positive matches for "Jarvis"
+        self.assertEqual(match_wake_word("Hey Jarvis, what time is it?", ["Jarvis"]), "Jarvis")
+        self.assertEqual(match_wake_word("JARVIS!", ["Jarvis"]), "Jarvis")
+
+        # "Hello" is NOT matched as a wake word
+        self.assertIsNone(match_wake_word("Hello there", ["Jarvis"]))
+        self.assertIsNone(match_wake_word("hello.", ["Jarvis"]))
 
         # Negative matches (no false substring triggers)
-        self.assertIsNone(match_wake_word("shell script", ["Jarvis", "Hello"]))
-        self.assertIsNone(match_wake_word("technical jargon", ["Jarvis", "Hello"]))
-        self.assertIsNone(match_wake_word("", ["Jarvis", "Hello"]))
+        self.assertIsNone(match_wake_word("shell script", ["Jarvis"]))
+        self.assertIsNone(match_wake_word("technical jargon", ["Jarvis"]))
+        self.assertIsNone(match_wake_word("", ["Jarvis"]))
 
         # Verify detector default configuration and threshold trigger
         detected = []
         det = WakeWordDetector(on_detect=lambda w: detected.append(w), enable_keyword_spotter=False)
-        self.assertEqual(det.wake_words, ["Jarvis", "Hello"])
+        self.assertEqual(det.wake_words, ["Jarvis"])
         self.assertAlmostEqual(det.threshold, 0.100, places=3)
 
         det._running = True
@@ -526,11 +546,11 @@ class TestAdvancedStateHotkeysWakeAndSleep(unittest.TestCase):
 
         # Wake word must NOT wake JARVIS while muted, MUST wake while sleeping
         live_muted, _ = self._make_stub_live(VoiceState.DISABLED)
-        live_muted._on_wake_detected("Hello")
+        live_muted._on_wake_detected("Jarvis")
         self.assertTrue(live_muted.voice_state.is_disabled)
 
         live_asleep, _ = self._make_stub_live(VoiceState.SLEEPING)
-        live_asleep._on_wake_detected("Hello")
+        live_asleep._on_wake_detected("Jarvis")
         self.assertTrue(live_asleep.voice_state.is_listening)
         self.assertTrue(live_asleep._awake)
 
@@ -559,12 +579,16 @@ class TestAdvancedStateHotkeysWakeAndSleep(unittest.TestCase):
         # end_command resets the timer, so immediately after it should NOT sleep
         self.assertFalse(sm.should_auto_sleep(180.0))
 
-        # Muted or already sleeping or speaking should NEVER trigger auto-sleep
+        # In SLEEPING, Ctrl+Alt+J remains in SLEEPING and never auto-sleeps
         sm.enter_sleep()
         self.assertTrue(sm.is_sleeping)
         self.assertFalse(sm.should_auto_sleep(180.0, now=time.monotonic() + 500.0))
-
         sm.toggle_mute()
+        self.assertTrue(sm.is_sleeping)
+        self.assertFalse(sm.should_auto_sleep(180.0, now=time.monotonic() + 500.0))
+
+        # In DISABLED (MUTED), also never auto-sleeps
+        sm.disable_listening()
         self.assertTrue(sm.is_disabled)
         self.assertFalse(sm.should_auto_sleep(180.0, now=time.monotonic() + 500.0))
 

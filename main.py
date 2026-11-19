@@ -79,6 +79,7 @@ from memory.config_manager     import (
     get_input_device, get_output_device,
     get_listening_shortcut, get_force_listening_shortcut,
     get_emergency_stop_shortcut, get_mouse_gesture_enabled,
+    sanitize_hotkeys_and_wake_words,
 )
 from core.voice_state          import VoiceStateManager, VoiceState
 from core.global_input         import GlobalInputController
@@ -755,6 +756,7 @@ class JarvisLive:
         if hasattr(self.ui, "on_mute_toggle"):
             self.ui.on_mute_toggle = self.global_toggle_mute
 
+        sanitize_hotkeys_and_wake_words()
         self._global_input = GlobalInputController(
             on_toggle_mute=self.global_toggle_mute,
             on_force_listening=self.global_force_listening,
@@ -788,7 +790,7 @@ class JarvisLive:
     # ── Wake word & idle sleep state machine ─────────────────────────────────
 
     def _wake_words_label(self) -> str:
-        words = getattr(self, "_wake_words", None) or ["Jarvis", "Hello"]
+        words = getattr(self, "_wake_words", None) or ["Jarvis"]
         if len(words) == 1:
             return f"'{words[0]}'"
         return " or ".join(f"'{w}'" for w in words)
@@ -1378,38 +1380,39 @@ class JarvisLive:
 
     def global_toggle_mute(self) -> VoiceState:
         """
-        System-wide Toggle Mute (Ctrl + Alt + J or L+R Mouse Gesture).
-        Toggles between the current state (e.g. LISTENING or SLEEPING) and MUTED.
-        Pressing again restores the exact previous resting state.
+        System-wide Toggle Mute / Sleep (Ctrl + Alt + J or L+R Mouse Gesture).
+        - From active (LISTENING, PROCESSING, SPEAKING) -> switches to MUTED.
+        - From MUTED -> switches to SLEEPING.
+        - From SLEEPING -> remains in SLEEPING (sticky; no state change).
         """
         prev_state = self.voice_state.state
+
+        if prev_state == VoiceState.SLEEPING:
+            # Sticky sleep: never change state when Ctrl+Alt+J is pressed in SLEEPING
+            return VoiceState.SLEEPING
+
         was_speaking = bool(
             self._is_speaking
             or self.voice_state.is_speaking
             or self.voice_state.is_processing
         )
-        new_state = self.voice_state.toggle_mute()
+        new_state = self.voice_state.handle_mute_or_sleep()
 
         if new_state == VoiceState.DISABLED:
             if was_speaking:
                 self.interrupt()
             self._drain_out_queue()
+            self._sync_ui_state(True, "MUTED")
             self.ui.write_log(
-                f"SYS: 🔇 Muted (was {prev_state.value}). "
-                f"Press Ctrl+Alt+J to restore or Ctrl+Alt+K to force listening."
+                "SYS: 🔇 Muted. Press Ctrl+Alt+J again for sleep, or Ctrl+Alt+K to listen."
             )
         elif new_state == VoiceState.SLEEPING:
             self._awake = False
+            self._sync_ui_state(False, "SLEEPING")
             self._ensure_wake_detector_async()
             self.ui.write_log(
-                f"SYS: 😴 Unmuted — restored SLEEPING. "
-                f"Say {self._wake_words_label()} or press Ctrl+Alt+K to wake."
+                f"SYS: 😴 Sleeping. Say {self._wake_words_label()} or press Ctrl+Alt+K to wake."
             )
-        else:
-            self._awake = True
-            self._interrupted = False
-            self._record_activity()
-            self.ui.write_log("SYS: 🎙 Unmuted — restored LISTENING.")
         return new_state
 
     def global_toggle_listening(self) -> VoiceState:
@@ -1421,7 +1424,8 @@ class JarvisLive:
         System-wide Force Listening (Ctrl + Alt + K).
         Immediately forces JARVIS into LISTENING regardless of whether it is
         MUTED, SLEEPING, SPEAKING, PROCESSING, or already LISTENING. Remains
-        globally active even when JARVIS is asleep.
+        globally active even when JARVIS is asleep. Repeated presses while
+        already in LISTENING keep it in LISTENING and never mute or sleep.
         """
         prev_state = self.voice_state.state
         was_speaking = bool(
@@ -1447,7 +1451,7 @@ class JarvisLive:
         elif was_speaking:
             self.ui.write_log("SYS: 🎙 Force Listening (Ctrl+Alt+K) — interrupted speech, now listening.")
         else:
-            self.ui.write_log("SYS: 🎙 Force Listening (Ctrl+Alt+K) — active.")
+            self.ui.write_log("SYS: 🎙 Listening (Ctrl+Alt+K) — active.")
         return new_state
 
     def global_emergency_stop(self) -> VoiceState:

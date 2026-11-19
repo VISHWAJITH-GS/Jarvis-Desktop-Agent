@@ -3,13 +3,14 @@ core/voice_state.py — Centralized Voice State Management for MARK LVI / JARVIS
 
 Manages the authoritative voice states:
 - DISABLED (MUTED): Microphone capture stopped, wake-word stopped, no audio
-                    processing, voice output stopped, queues cleared. Remembers
-                    the previous resting state (LISTENING or SLEEPING) so
-                    toggling mute off restores it cleanly.
+                    processing, voice output stopped, queues cleared.
+                    Pressing Ctrl + Alt + J while muted transitions to SLEEPING.
 - SLEEPING:         Low-power standby after idle timeout (default 3 minutes) or
-                    manual sleep. Microphone audio is NOT streamed to the cloud;
-                    only local wake-word detection ("Jarvis", "Hello") and the
-                    global Force Listening shortcut (Ctrl + Alt + K) wake it.
+                    manual sleep / Ctrl + Alt + J from MUTED. Microphone audio is
+                    NOT streamed to the cloud; only local wake-word detection
+                    ("Jarvis") and the global Force Listening shortcut
+                    (Ctrl + Alt + K) wake it. Pressing Ctrl + Alt + J while
+                    sleeping does NOT change state.
 - LISTENING:        Microphone capture active, waiting for speech/commands.
 - PROCESSING:       Command received, thinking/synthesizing response.
 - SPEAKING:         Audio response playing, cancellable immediately.
@@ -180,44 +181,45 @@ class VoiceStateManager:
 
     # ── Transition Methods ───────────────────────────────────────────────────
 
-    def toggle_mute(self) -> VoiceState:
+    def handle_mute_or_sleep(self) -> VoiceState:
         """
-        Toggle Mute (Ctrl + Alt + J):
-        - If currently NOT muted: saves the current resting state (SLEEPING if
-          sleeping, LISTENING otherwise), interrupts any active speech/processing,
-          and transitions to DISABLED (MUTED).
-        - If currently muted (DISABLED): restores the saved previous state
-          (SLEEPING or LISTENING).
-        Returns the new state.
+        State transition for Ctrl + Alt + J:
+        - If currently in SLEEPING: remain in SLEEPING (sticky; no state change).
+        - If currently in DISABLED (MUTED): transition to SLEEPING.
+        - If currently in any active state (LISTENING, PROCESSING, SPEAKING):
+          interrupt speech/processing if active and transition to DISABLED (MUTED).
+        Returns the resulting VoiceState.
         """
         with self._lock:
-            if self._state == VoiceState.DISABLED:
-                target = self._pre_mute_state
-                if target not in (VoiceState.LISTENING, VoiceState.SLEEPING):
-                    target = VoiceState.LISTENING
-                if target == VoiceState.LISTENING:
-                    self._last_activity = time.monotonic()
-                self._transition_to(target)
+            if self._state == VoiceState.SLEEPING:
+                # In sleep state: never change state on Ctrl+Alt+J
                 return self._state
 
-            # Save the resting state so toggling mute off restores it accurately.
-            if self._state == VoiceState.SLEEPING:
-                self._pre_mute_state = VoiceState.SLEEPING
-            else:
-                self._pre_mute_state = VoiceState.LISTENING
-                if self._state in (VoiceState.SPEAKING, VoiceState.PROCESSING):
-                    self._trigger_interrupt()
+            if self._state == VoiceState.DISABLED:
+                # In muted state: pressing Ctrl+Alt+J transitions to SLEEPING
+                self._transition_to(VoiceState.SLEEPING)
+                return self._state
 
+            # Any active state (LISTENING, PROCESSING, SPEAKING) transitions to DISABLED (MUTED)
+            if self._state in (VoiceState.SPEAKING, VoiceState.PROCESSING):
+                self._trigger_interrupt()
             self._transition_to(VoiceState.DISABLED)
             return self._state
+
+    def toggle_mute(self) -> VoiceState:
+        """Alias for handle_mute_or_sleep (Ctrl + Alt + J)."""
+        return self.handle_mute_or_sleep()
 
     def force_listening(self) -> VoiceState:
         """
         Force Listening (Ctrl + Alt + K):
         Unconditionally transitions JARVIS to LISTENING regardless of whether it
         is currently DISABLED (muted), SLEEPING, PROCESSING, SPEAKING, or already
-        LISTENING. Interrupts any in-flight speech/processing and resets the idle
-        timer.
+        LISTENING.
+        - Interrupts any in-flight speech/processing if active.
+        - If already in LISTENING, remains in LISTENING and touches activity.
+        - Never mutes or sleeps.
+        Returns the resulting VoiceState.
         """
         with self._lock:
             if self._state in (VoiceState.SPEAKING, VoiceState.PROCESSING):

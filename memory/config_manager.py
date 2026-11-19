@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import platform
 import re
@@ -6,6 +7,8 @@ import stat
 import subprocess
 import sys
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 def get_base_dir() -> Path:
     if getattr(sys, "frozen", False):
@@ -336,7 +339,7 @@ def save_voice(voice_name: str) -> None:
     CONFIG_FILE.write_text(json.dumps(data, indent=4), encoding="utf-8")
 
 
-DEFAULT_WAKE_WORDS = ["Jarvis", "Hello"]
+DEFAULT_WAKE_WORDS = ["Jarvis"]
 DEFAULT_WAKE_WORD_THRESHOLD = 0.100
 DEFAULT_IDLE_SLEEP_TIMEOUT = 180.0   # 3 minutes
 
@@ -359,17 +362,23 @@ def save_wake_word_enabled(enabled: bool) -> None:
 
 
 def get_wake_words() -> list[str]:
-    """Active wake words used to wake JARVIS from sleep. Default: ['Jarvis', 'Hello']."""
+    """Active wake words used to wake JARVIS from sleep. Default: ['Jarvis']."""
     v = load_api_keys().get("wake_words")
     if isinstance(v, list):
-        cleaned = [str(w).strip() for w in v if str(w).strip()]
+        cleaned = [
+            str(w).strip() for w in v
+            if str(w).strip() and str(w).strip().lower() != "hello"
+        ]
         if cleaned:
             return cleaned
     return list(DEFAULT_WAKE_WORDS)
 
 
 def save_wake_words(words: list[str]) -> None:
-    cleaned = [str(w).strip() for w in (words or []) if str(w).strip()]
+    cleaned = [
+        str(w).strip() for w in (words or [])
+        if str(w).strip() and str(w).strip().lower() != "hello"
+    ]
     _save_flag("wake_words", cleaned or list(DEFAULT_WAKE_WORDS))
 
 
@@ -417,16 +426,36 @@ def save_push_to_talk_enabled(enabled: bool) -> None:
     _save_flag("push_to_talk_enabled", enabled)
 
 
+DEFAULT_MUTE_SHORTCUT = ["ctrl", "alt", "j"]
+DEFAULT_FORCE_LISTENING_SHORTCUT = ["ctrl", "alt", "k"]
+
+
 def get_listening_shortcut() -> list[str]:
-    """Global keyboard shortcut for Toggle Mute (restores previous state). Default Ctrl+Alt+J."""
-    v = load_api_keys().get("global_listening_shortcut")
+    """Global keyboard shortcut for Toggle Mute / Sleep. Default Ctrl+Alt+J."""
+    cfg = load_api_keys()
+    v = cfg.get("global_mute_shortcut") or cfg.get("global_listening_shortcut")
     if isinstance(v, list) and v:
-        return [str(k).lower() for k in v]
-    return ["ctrl", "alt", "j"]
+        cleaned = [str(k).lower() for k in v]
+        # Auto-heal legacy inversion where mute was mapped to k or s
+        if cleaned in (["ctrl", "alt", "k"], ["ctrl", "alt", "s"]):
+            return list(DEFAULT_MUTE_SHORTCUT)
+        return cleaned
+    return list(DEFAULT_MUTE_SHORTCUT)
+
+
+def get_mute_shortcut() -> list[str]:
+    """Canonical alias for get_listening_shortcut (Ctrl+Alt+J)."""
+    return get_listening_shortcut()
 
 
 def save_listening_shortcut(chord: list[str]) -> None:
-    _save_flag("global_listening_shortcut", [str(k).lower() for k in chord])
+    cleaned = [str(k).lower() for k in chord]
+    _save_flag("global_listening_shortcut", cleaned)
+    _save_flag("global_mute_shortcut", cleaned)
+
+
+def save_mute_shortcut(chord: list[str]) -> None:
+    save_listening_shortcut(chord)
 
 
 def get_force_listening_shortcut() -> list[str]:
@@ -434,24 +463,56 @@ def get_force_listening_shortcut() -> list[str]:
     cfg = load_api_keys()
     v = cfg.get("global_force_listening_shortcut") or cfg.get("global_emergency_stop_shortcut")
     if isinstance(v, list) and v:
-        return [str(k).lower() for k in v]
-    return ["ctrl", "alt", "k"]
+        cleaned = [str(k).lower() for k in v]
+        # Auto-heal legacy inversion where force listening was mapped to s or j
+        if cleaned in (["ctrl", "alt", "s"], ["ctrl", "alt", "j"]):
+            return list(DEFAULT_FORCE_LISTENING_SHORTCUT)
+        return cleaned
+    return list(DEFAULT_FORCE_LISTENING_SHORTCUT)
 
 
 def save_force_listening_shortcut(chord: list[str]) -> None:
-    _save_flag("global_force_listening_shortcut", [str(k).lower() for k in chord])
+    cleaned = [str(k).lower() for k in chord]
+    _save_flag("global_force_listening_shortcut", cleaned)
+    _save_flag("global_emergency_stop_shortcut", cleaned)
 
 
 def get_emergency_stop_shortcut() -> list[str]:
     """Legacy alias for the Ctrl+Alt+K global shortcut."""
-    v = load_api_keys().get("global_emergency_stop_shortcut")
-    if isinstance(v, list) and v:
-        return [str(k).lower() for k in v]
-    return ["ctrl", "alt", "k"]
+    return get_force_listening_shortcut()
 
 
 def save_emergency_stop_shortcut(chord: list[str]) -> None:
-    _save_flag("global_emergency_stop_shortcut", [str(k).lower() for k in chord])
+    save_force_listening_shortcut(chord)
+
+
+def sanitize_hotkeys_and_wake_words() -> None:
+    """Ensure config/api_keys.json contains proper shortcuts and wake words."""
+    try:
+        cfg = load_api_keys()
+        dirty = False
+        if cfg.get("wake_words") != ["Jarvis"]:
+            save_wake_words(["Jarvis"])
+            dirty = True
+        if cfg.get("global_listening_shortcut") != ["ctrl", "alt", "j"]:
+            save_listening_shortcut(["ctrl", "alt", "j"])
+            dirty = True
+        if cfg.get("global_mute_shortcut") != ["ctrl", "alt", "j"]:
+            _save_flag("global_mute_shortcut", ["ctrl", "alt", "j"])
+            dirty = True
+        if cfg.get("global_force_listening_shortcut") != ["ctrl", "alt", "k"]:
+            save_force_listening_shortcut(["ctrl", "alt", "k"])
+            dirty = True
+        if cfg.get("global_emergency_stop_shortcut") != ["ctrl", "alt", "k"]:
+            _save_flag("global_emergency_stop_shortcut", ["ctrl", "alt", "k"])
+            dirty = True
+        if abs(float(cfg.get("wake_word_threshold", 0.100)) - 0.100) > 0.001:
+            save_wake_word_threshold(0.100)
+            dirty = True
+        if dirty:
+            logger.info("[Config] Sanitized hotkeys and wake word ('Jarvis' alone, Ctrl+Alt+J mute/sleep, Ctrl+Alt+K force listening)")
+    except Exception as e:
+        logger.debug("[Config] Error sanitizing hotkeys and wake words: %s", e)
 
 
 def get_mouse_gesture_enabled() -> bool:
