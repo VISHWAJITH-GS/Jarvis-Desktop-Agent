@@ -636,6 +636,118 @@ class TestAdvancedStateHotkeysWakeAndSleep(unittest.TestCase):
         self.assertFalse(hasattr(ui.JarvisUI, "show_camera_frame"))
         self.assertFalse(hasattr(ui, "_CameraPreview"))
 
+    def test_auto_sleep_and_wake_word_config(self):
+        """Verify config_manager get/save for auto_sleep_enabled, wake_word_enabled, and idle_sleep_timeout."""
+        from memory import config_manager
+
+        orig_auto = config_manager.get_auto_sleep_enabled()
+        orig_wake = config_manager.get_wake_word_enabled()
+        orig_timeout = config_manager.get_idle_sleep_timeout()
+
+        try:
+            # Test auto-sleep toggle
+            config_manager.save_auto_sleep_enabled(False)
+            self.assertFalse(config_manager.get_auto_sleep_enabled())
+            self.assertEqual(config_manager.get_idle_sleep_timeout(), 0.0)
+
+            config_manager.save_auto_sleep_enabled(True)
+            self.assertTrue(config_manager.get_auto_sleep_enabled())
+            self.assertGreaterEqual(config_manager.get_idle_sleep_timeout(), 5.0)
+
+            # Test wake-word toggle
+            config_manager.save_wake_word_enabled(False)
+            self.assertFalse(config_manager.get_wake_word_enabled())
+
+            config_manager.save_wake_word_enabled(True)
+            self.assertTrue(config_manager.get_wake_word_enabled())
+        finally:
+            config_manager.save_auto_sleep_enabled(orig_auto)
+            config_manager.save_wake_word_enabled(orig_wake)
+            config_manager.save_idle_sleep_timeout(orig_timeout if orig_timeout > 0 else 180.0)
+
+    def test_should_auto_sleep_disabled_when_zero_or_negative(self):
+        """VoiceStateManager.should_auto_sleep returns False when timeout <= 0 or None."""
+        sm = VoiceStateManager(initial_state=VoiceState.LISTENING)
+        # With normal timeout and idle time -> True
+        self.assertTrue(sm.should_auto_sleep(10.0, now=time.monotonic() + 100.0))
+        # With 0.0 or negative timeout -> False (disabled)
+        self.assertFalse(sm.should_auto_sleep(0.0, now=time.monotonic() + 100.0))
+        self.assertFalse(sm.should_auto_sleep(-1.0, now=time.monotonic() + 100.0))
+        self.assertFalse(sm.should_auto_sleep(None, now=time.monotonic() + 100.0))
+
+    def test_wake_word_disable_stops_detector_and_wakes(self):
+        """Disabling wake word stops any running WakeWordDetector and wakes JARVIS to LISTENING."""
+        live, mock_ui = self._make_stub_live(VoiceState.SLEEPING)
+        live._wake_enabled = True
+
+        mock_detector = MagicMock()
+        mock_detector.ready = True
+        live._wake_detector = mock_detector
+        live._wake_detector_lock = threading.Lock()
+
+        # Disable wake word via UI callback
+        res = live._ui_wake_toggle(False)
+        self.assertEqual(res, "disabled")
+        self.assertFalse(live._wake_enabled)
+        self.assertIsNone(live._wake_detector)
+        mock_detector.stop.assert_called_once()
+        self.assertTrue(live._awake)
+        self.assertEqual(live.voice_state.state, VoiceState.LISTENING)
+
+    def test_auto_sleep_disable_prevents_sleep(self):
+        """Disabling auto-sleep sets timeout to 0.0, disables flag, and wakes if sleeping."""
+        live, mock_ui = self._make_stub_live(VoiceState.SLEEPING)
+        live._auto_sleep_enabled = True
+        live._wake_sleep_timeout = 180.0
+
+        enabled = live._ui_auto_sleep_toggle(False)
+        self.assertFalse(enabled)
+        self.assertFalse(live._auto_sleep_enabled)
+        self.assertEqual(live._wake_sleep_timeout, 0.0)
+        self.assertTrue(live._awake)
+        self.assertEqual(live.voice_state.state, VoiceState.LISTENING)
+
+    def test_sleep_with_wake_word_disabled_does_not_start_detector(self):
+        """Calling sleep() when wake word is disabled must NOT invoke _ensure_wake_detector_async."""
+        live, mock_ui = self._make_stub_live(VoiceState.LISTENING)
+        live._wake_enabled = False
+        live._ensure_wake_detector_async = MagicMock()
+
+        live.sleep(reason="manual test sleep")
+        self.assertFalse(live._awake)
+        self.assertEqual(live.voice_state.state, VoiceState.SLEEPING)
+        live._ensure_wake_detector_async.assert_not_called()
+
+    def test_computer_settings_actions_wake_and_auto_sleep(self):
+        """Test computer_settings actions for toggling wake word and auto-sleep."""
+        from actions import computer_settings
+        from memory import config_manager
+
+        orig_auto = config_manager.get_auto_sleep_enabled()
+        orig_wake = config_manager.get_wake_word_enabled()
+
+        try:
+            # Wake word actions
+            r1 = computer_settings.toggle_wake_word("disable_wake_word")
+            self.assertIn("disabled", r1)
+            self.assertFalse(config_manager.get_wake_word_enabled())
+
+            r2 = computer_settings.toggle_wake_word("enable_wake_word")
+            self.assertIn("enabled", r2)
+            self.assertTrue(config_manager.get_wake_word_enabled())
+
+            # Auto-sleep actions
+            r3 = computer_settings.toggle_auto_sleep("disable_auto_sleep")
+            self.assertIn("disabled", r3)
+            self.assertFalse(config_manager.get_auto_sleep_enabled())
+
+            r4 = computer_settings.toggle_auto_sleep("enable_auto_sleep")
+            self.assertIn("enabled", r4)
+            self.assertTrue(config_manager.get_auto_sleep_enabled())
+        finally:
+            config_manager.save_auto_sleep_enabled(orig_auto)
+            config_manager.save_wake_word_enabled(orig_wake)
+
 
 if __name__ == "__main__":
     unittest.main()

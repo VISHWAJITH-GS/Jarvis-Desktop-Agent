@@ -726,10 +726,42 @@ def toggle_ducking(action_name: str = "toggle_ducking"):
     return f"Audio ducking is now {status}."
 
 
+def toggle_wake_word(action_name: str = "toggle_wake_word"):
+    from memory.config_manager import get_wake_word_enabled, save_wake_word_enabled
+    if "enable" in action_name or "on" in action_name:
+        new_val = True
+    elif "disable" in action_name or "off" in action_name:
+        new_val = False
+    else:
+        new_val = not get_wake_word_enabled()
+    save_wake_word_enabled(new_val)
+    status = "enabled" if new_val else "disabled"
+    return f"Wake word is now {status}."
+
+
+def toggle_auto_sleep(action_name: str = "toggle_auto_sleep"):
+    from memory.config_manager import get_auto_sleep_enabled, save_auto_sleep_enabled
+    if "enable" in action_name or "on" in action_name:
+        new_val = True
+    elif "disable" in action_name or "off" in action_name:
+        new_val = False
+    else:
+        new_val = not get_auto_sleep_enabled()
+    save_auto_sleep_enabled(new_val)
+    status = "enabled" if new_val else "disabled"
+    return f"Auto-sleep is now {status}."
+
+
 ACTION_MAP: dict[str, callable] = {
     "toggle_ducking":      toggle_ducking,
     "enable_ducking":      lambda: toggle_ducking("enable_ducking"),
     "disable_ducking":     lambda: toggle_ducking("disable_ducking"),
+    "toggle_wake_word":    toggle_wake_word,
+    "enable_wake_word":    lambda: toggle_wake_word("enable_wake_word"),
+    "disable_wake_word":   lambda: toggle_wake_word("disable_wake_word"),
+    "toggle_auto_sleep":   toggle_auto_sleep,
+    "enable_auto_sleep":   lambda: toggle_auto_sleep("enable_auto_sleep"),
+    "disable_auto_sleep":  lambda: toggle_auto_sleep("disable_auto_sleep"),
     "volume_up":           volume_up,
     "volume_down":         volume_down,
     "mute":                volume_mute,
@@ -849,6 +881,12 @@ _ALIASES = {
     "toggle_ducking":  ("toggle ducking", "ducking", "duck audio", "toggle audio ducking"),
     "enable_ducking":  ("enable ducking", "turn on ducking", "audio ducking on"),
     "disable_ducking": ("disable ducking", "turn off ducking", "audio ducking off"),
+    "toggle_wake_word":  ("toggle wake word", "switch wake word", "wake word toggle"),
+    "enable_wake_word":  ("enable wake word", "turn on wake word", "turn on wakeup word", "enable wakeup word", "wake word on"),
+    "disable_wake_word": ("disable wake word", "turn off wake word", "turn off wakeup word", "disable wakeup word", "wake word off"),
+    "toggle_auto_sleep": ("toggle auto sleep", "toggle sleep", "switch auto sleep"),
+    "enable_auto_sleep": ("enable auto sleep", "turn on auto sleep", "enable sleep", "turn on sleep", "auto sleep on"),
+    "disable_auto_sleep": ("disable auto sleep", "turn off auto sleep", "disable sleep", "turn off sleep", "never sleep", "auto sleep off", "don't sleep"),
     "task_manager":    ("processes", "task list"),
     "screenshot":      ("capture screen", "take a screenshot", "snip"),
     "refresh_page":    ("refresh", "reload page"),
@@ -1260,7 +1298,9 @@ TOOL = {
                 "type": "STRING",
                 "description": (
                     "The exact action. Prefer this over `description` — pick one of: "
-                    "wifi_status | toggle_wifi | toggle_ducking | enable_ducking | disable_ducking | volume_up | volume_down | volume_set | mute | "
+                    "wifi_status | toggle_wifi | toggle_ducking | enable_ducking | disable_ducking | "
+                    "toggle_wake_word | enable_wake_word | disable_wake_word | toggle_auto_sleep | enable_auto_sleep | disable_auto_sleep | "
+                    "volume_up | volume_down | volume_set | mute | "
                     "mute_jarvis | unmute_jarvis | minimize_jarvis | maximize_jarvis | restore_jarvis | "
                     "brightness_up | brightness_down | sleep_display | "
                     "pause_video | close_window | full_screen | "

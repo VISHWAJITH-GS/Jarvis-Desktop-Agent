@@ -294,6 +294,7 @@ class WakeWordDetector:
         self._cooldown_s = _DETECT_COOLDOWN_S
         self.last_detected_word: Optional[str] = None
         self._callback_accepts_word = self._check_callback_arity(on_detect)
+        self._paused: bool = False
 
     @staticmethod
     def _check_callback_arity(cb: Callable[..., None]) -> bool:
@@ -387,6 +388,7 @@ class WakeWordDetector:
 
     def stop(self) -> None:
         self._running = False
+        self._paused = False
         for q in (self._queue, self._spotter_queue):
             try:
                 q.put_nowait(None)
@@ -395,6 +397,36 @@ class WakeWordDetector:
         self._model = None
         self._ready = False
 
+    def pause(self) -> None:
+        """Pause wake-word processing without unloading models from memory."""
+        self._paused = True
+        self._drain()
+
+    def resume(self) -> None:
+        """Resume wake-word processing after pause."""
+        self._drain()
+        model = getattr(self, "_model", None)
+        if model is not None and hasattr(model, "reset"):
+            try:
+                model.reset()
+            except Exception:
+                pass
+        self._paused = False
+
+    def reset_buffers(self) -> None:
+        """Drain queued audio and reset openwakeword internal buffers."""
+        self._drain()
+        model = getattr(self, "_model", None)
+        if model is not None and hasattr(model, "reset"):
+            try:
+                model.reset()
+            except Exception:
+                pass
+
+    @property
+    def paused(self) -> bool:
+        return self._paused
+
     @property
     def ready(self) -> bool:
         return self._ready
@@ -402,7 +434,7 @@ class WakeWordDetector:
     def feed(self, frame_int16) -> None:
         """Called from the mic callback (real-time thread). Must stay cheap and
         never block — the frame is copied and dropped if the queue is backed up."""
-        if not self._running:
+        if not self._running or self._paused:
             return
         try:
             data = frame_int16[:, 0].copy() if getattr(frame_int16, "ndim", 1) > 1 else frame_int16.copy()
@@ -595,7 +627,9 @@ class WakeWordDetector:
                 self._logger(f"Wake word: keyword spotter error — {e}")
 
     def _drain(self) -> None:
-        for q in (self._queue, self._spotter_queue):
+        for q in (getattr(self, "_queue", None), getattr(self, "_spotter_queue", None)):
+            if q is None:
+                continue
             try:
                 while True:
                     q.get_nowait()

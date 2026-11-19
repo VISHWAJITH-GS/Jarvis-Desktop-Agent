@@ -3081,22 +3081,30 @@ class AudioDeviceOverlay(_HudOverlay):
 
         # ── Bluetooth Options & Audio Routing Controls ───────────────────────
         from memory.config_manager import (
-            get_audio_input_mode,
-            get_allow_bluetooth_mic,
+            get_audio_routing_mode, save_audio_routing_mode,
+            ROUTING_MODE_AUTO_HYBRID, ROUTING_MODE_BUILTIN_ONLY, ROUTING_MODE_BLUETOOTH_ONLY,
+            get_audio_input_mode, get_allow_bluetooth_mic,
         )
-        self._auto_avoid_box = QCheckBox("Auto-avoid Bluetooth mic (preserves stereo music quality)")
-        self._auto_avoid_box.setFont(QFont("Montserrat", 7))
-        self._auto_avoid_box.setStyleSheet(f"color: {C.TEXT_MED};")
-        self._auto_avoid_box.setChecked(get_audio_input_mode() == "auto")
-        lay.addWidget(self._auto_avoid_box)
+        rcap = QLabel("AUDIO ROUTING ARCHITECTURE")
+        rcap.setFont(QFont("Montserrat", 8, QFont.Weight.Bold))
+        rcap.setStyleSheet(f"color: {C.PRI}; background: transparent; margin-top: 4px;")
+        lay.addWidget(rcap)
 
-        self._allow_bt_box = QCheckBox("Allow Bluetooth mic (Warning: drops playback to mono call mode)")
-        self._allow_bt_box.setFont(QFont("Montserrat", 7))
-        self._allow_bt_box.setStyleSheet(f"color: {C.TEXT_DIM};")
-        self._allow_bt_box.setChecked(get_allow_bluetooth_mic())
-        lay.addWidget(self._allow_bt_box)
+        self._routing_box = QComboBox()
+        self._routing_box.setFont(QFont("Montserrat", 8))
+        self._routing_box.setFixedHeight(28)
+        self._routing_box.setStyleSheet(_combo_css)
+        self._routing_box.addItem("Automatic Hybrid (OPPO Earbuds + Laptop Wake Mic)", ROUTING_MODE_AUTO_HYBRID)
+        self._routing_box.addItem("Laptop Microphone Only (Preserves Stereo Always)", ROUTING_MODE_BUILTIN_ONLY)
+        self._routing_box.addItem("OPPO Microphone Only (Continuous Hands-Free)", ROUTING_MODE_BLUETOOTH_ONLY)
 
-        hint = QLabel("💡 Tip: If you hear unexpected volume dipping, open Windows Sound settings > Communications and choose 'Do nothing' so Windows ducking does not stack with JARVIS ducking.")
+        curr_mode = get_audio_routing_mode()
+        idx_r = self._routing_box.findData(curr_mode)
+        self._routing_box.setCurrentIndex(idx_r if idx_r >= 0 else 0)
+        self._routing_box.currentIndexChanged.connect(lambda _i: self._update_profile_info())
+        lay.addWidget(self._routing_box)
+
+        hint = QLabel("💡 Hybrid mode: Sleeps using laptop microphone so OPPO Buds 2 stay in high-fidelity A2DP stereo music. On wake word, dynamically switches to OPPO mic for conversation, then automatically restores stereo.")
         hint.setWordWrap(True)
         hint.setFont(QFont("Montserrat", 7))
         hint.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent; margin-top: 2px;")
@@ -3299,19 +3307,26 @@ class AudioDeviceOverlay(_HudOverlay):
             in_bt = False
             out_bt = False
 
-        if in_bt:
-            self._profile_lbl.setStyleSheet("color: #ffaa33; background: #201500; border: 1px solid #664400; border-radius: 3px; padding: 4px;")
+        rmode = self._routing_box.currentData() if hasattr(self, "_routing_box") else ""
+        if rmode == "auto_hybrid":
+            self._profile_lbl.setStyleSheet(f"color: {C.GREEN}; background: #001a14; border: 1px solid {C.GREEN_D}; border-radius: 3px; padding: 4px;")
             self._profile_lbl.setText(
-                "⚠️ Bluetooth mic selected: Windows switches earphones to Hands-Free (HFP) mode. "
-                "Playback quality is reduced and background media (Spotify) may sound muffled. "
-                "Tip: Select Laptop Microphone for full A2DP stereo music quality."
+                "✓ Automatic Hybrid active: While JARVIS sleeps, wake-word detection listens on your laptop mic so "
+                "OPPO Buds 2 play high-fidelity A2DP stereo music. On wake word, it switches to the OPPO mic for Gemini Live, "
+                "then releases it to restore stereo music."
             )
             self._profile_lbl.show()
-        elif out_bt:
+        elif rmode == "built_in_only" or (not in_bt and out_bt):
             self._profile_lbl.setStyleSheet(f"color: {C.PRI}; background: #001a18; border: 1px solid {C.PRI_DIM}; border-radius: 3px; padding: 4px;")
             self._profile_lbl.setText(
-                "✓ High-fidelity A2DP stereo playback active on Bluetooth earphones. "
-                "Laptop microphone selected: Spotify and media audio play with zero muffling."
+                "✓ Laptop microphone active: OPPO Buds 2 remain in continuous high-fidelity A2DP stereo playback."
+            )
+            self._profile_lbl.show()
+        elif in_bt:
+            self._profile_lbl.setStyleSheet("color: #ffaa33; background: #201500; border: 1px solid #664400; border-radius: 3px; padding: 4px;")
+            self._profile_lbl.setText(
+                "⚠️ Bluetooth mic active: Windows keeps earphones in Hands-Free (HFP) call mode. "
+                "Playback is mono and music may sound muffled. Switch to Automatic Hybrid to restore stereo."
             )
             self._profile_lbl.show()
         else:
@@ -3326,10 +3341,15 @@ class AudioDeviceOverlay(_HudOverlay):
         new_out = self._out_box.currentData() or ""
         save_input_device(new_in)
         save_output_device(new_out)
-        if hasattr(self, "_auto_avoid_box"):
-            save_audio_input_mode("auto" if self._auto_avoid_box.isChecked() else "manual")
-        if hasattr(self, "_allow_bt_box"):
-            save_allow_bluetooth_mic(self._allow_bt_box.isChecked())
+        if hasattr(self, "_routing_box"):
+            new_mode = self._routing_box.currentData() or "auto_hybrid"
+            save_audio_routing_mode(new_mode)
+            parent_win = self.window()
+            if hasattr(parent_win, "on_routing_mode_change") and parent_win.on_routing_mode_change:
+                try:
+                    parent_win.on_routing_mode_change(new_mode)
+                except Exception:
+                    pass
         self.hide()
         # Always emit picked so the session reconnects and streams re-bind directly to hardware
         self.picked.emit()
@@ -8715,6 +8735,10 @@ class MainWindow(_FramelessWindowResizeMixin, QMainWindow):
         self.get_plugin_settings = None # callable: () -> list[dict] settings schemas, set by JarvisLive
         self.on_wake_toggle    = None   # callable: (enable: bool) -> str, set by JarvisLive
         self.on_wake_manual    = None   # callable: () -> None — manual sleep/wake
+        self.on_auto_sleep_toggle = None # callable: (enable: bool) -> bool, set by JarvisLive
+        self.auto_sleep_is_enabled = None # callable: () -> bool, set by JarvisLive
+        self.on_routing_mode_change = None # callable: (mode: str) -> None, set by JarvisLive
+        self.get_routing_mode  = None   # callable: () -> str, set by JarvisLive
         self.on_push_to_talk   = None   # callable: (enable: bool) -> str scope
         self.ptt_hold          = None   # callable: (held: bool) -> None — windowed chord
         self.wake_get_state    = None   # callable: () -> dict {enabled, awake, ready}
@@ -9620,7 +9644,30 @@ class MainWindow(_FramelessWindowResizeMixin, QMainWindow):
         self._lbl_audio_bt = _st_lbl("BLUETOOTH: Disconnected")
         self._lbl_audio_rates = _st_lbl("RATES: IN 16000 Hz · OUT 24000 Hz")
         self._lbl_audio_state = _st_lbl("STATUS: Initializing · Switch: Idle")
+        self._lbl_audio_routing = _st_lbl("ROUTING: Automatic Hybrid · A2DP Stereo: Restored")
         lay.addWidget(self._audio_status_card)
+
+        lay.addWidget(_hdr("AUDIO ROUTING ARCHITECTURE"))
+        self._combo_routing = QComboBox()
+        self._combo_routing.setStyleSheet(f"""
+            QComboBox {{
+                background: {C.PANEL2}; color: {C.TEXT};
+                border: 1px solid {C.BORDER}; border-radius: 3px; padding: 5px;
+            }}
+            QComboBox::drop-down {{ border: none; }}
+        """)
+        from memory.config_manager import (
+            get_audio_routing_mode,
+            ROUTING_MODE_AUTO_HYBRID, ROUTING_MODE_BUILTIN_ONLY, ROUTING_MODE_BLUETOOTH_ONLY,
+        )
+        self._combo_routing.addItem("Automatic Hybrid (OPPO Earbuds + Laptop Wake Mic)", ROUTING_MODE_AUTO_HYBRID)
+        self._combo_routing.addItem("Laptop Microphone Only (Preserves Stereo Always)", ROUTING_MODE_BUILTIN_ONLY)
+        self._combo_routing.addItem("OPPO Microphone Only (Continuous Hands-Free)", ROUTING_MODE_BLUETOOTH_ONLY)
+        cur_rm = get_audio_routing_mode()
+        idx_rm = self._combo_routing.findData(cur_rm)
+        self._combo_routing.setCurrentIndex(idx_rm if idx_rm >= 0 else 0)
+        self._combo_routing.currentIndexChanged.connect(self._on_routing_tab_changed)
+        lay.addWidget(self._combo_routing)
 
         lay.addWidget(_hdr("AUDIO INPUT (MICROPHONE)"))
         self._combo_mic = QComboBox()
@@ -9680,6 +9727,19 @@ class MainWindow(_FramelessWindowResizeMixin, QMainWindow):
         """)
         self._wake_toggle_btn.clicked.connect(self._ui_toggle_wake)
         lay.addWidget(self._wake_toggle_btn)
+
+        self._auto_sleep_toggle_btn = QPushButton("AUTO-SLEEP: ENABLED (CLICK TO TOGGLE)")
+        self._auto_sleep_toggle_btn.setFont(keena_font(8, True))
+        self._auto_sleep_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._auto_sleep_toggle_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {C.PANEL2}; color: {C.TEXT_DIM};
+                border: 1px solid {C.BORDER_A}; border-radius: 3px; padding: 6px;
+            }}
+            QPushButton:hover {{ border-color: {C.PRI}; color: {C.TEXT}; }}
+        """)
+        self._auto_sleep_toggle_btn.clicked.connect(self._toggle_auto_sleep)
+        lay.addWidget(self._auto_sleep_toggle_btn)
 
         ptt_info = QLabel("PUSH-TO-TALK: Hold Space or Alt to speak")
         ptt_info.setFont(keena_font(8))
@@ -9782,6 +9842,34 @@ class MainWindow(_FramelessWindowResizeMixin, QMainWindow):
             self._lbl_audio_rates.setText(f"RATES: IN {in_sr} Hz · OUT {out_sr} Hz")
         if hasattr(self, "_lbl_audio_state") and self._lbl_audio_state:
             self._lbl_audio_state.setText(f"INIT: {init_st} · SWITCH: {sw_st}")
+        if hasattr(self, "_lbl_audio_routing") and self._lbl_audio_routing:
+            rmode = status.get("routing_mode", "auto_hybrid")
+            role = status.get("active_input_role", "builtin")
+            trans = status.get("transition_state", "idle")
+            a2dp = status.get("a2dp_restored", True)
+            mode_lbl = "Hybrid" if rmode == "auto_hybrid" else ("Laptop Mic" if rmode == "built_in_only" else "OPPO Mic")
+            role_lbl = "Laptop Mic" if role == "builtin" else "OPPO Mic"
+            stereo_lbl = "Stereo Restored" if a2dp else "HFP Active"
+            trans_lbl = f" · Transition: {trans}" if trans != "idle" else ""
+            self._lbl_audio_routing.setText(f"ROUTING: {mode_lbl} ({role_lbl}) · {stereo_lbl}{trans_lbl}")
+            self._lbl_audio_routing.setStyleSheet(
+                f"color: {C.GREEN if a2dp else '#38BDF8'}; border: none; background: transparent;"
+            )
+
+    def _on_routing_tab_changed(self, idx: int):
+        if not hasattr(self, "_combo_routing"):
+            return
+        mode = self._combo_routing.currentData()
+        if not mode:
+            return
+        from memory import config_manager
+        config_manager.save_audio_routing_mode(mode)
+        if hasattr(self, "on_routing_mode_change") and self.on_routing_mode_change:
+            try:
+                self.on_routing_mode_change(mode)
+            except Exception as e:
+                print(f"[UI] on_routing_mode_change error: {e}")
+        self._refresh_routing_btn()
 
     def _refresh_audio_tab(self):
         try:
@@ -9811,6 +9899,15 @@ class MainWindow(_FramelessWindowResizeMixin, QMainWindow):
                 idx_out = self._combo_spk.findText(cur_out)
                 self._combo_spk.setCurrentIndex(idx_out if idx_out >= 0 else 0)
                 self._combo_spk.blockSignals(False)
+
+            if hasattr(self, "_combo_routing") and self._combo_routing:
+                from memory.config_manager import get_audio_routing_mode
+                cur_rm = get_audio_routing_mode()
+                self._combo_routing.blockSignals(True)
+                idx_rm = self._combo_routing.findData(cur_rm)
+                if idx_rm >= 0:
+                    self._combo_routing.setCurrentIndex(idx_rm)
+                self._combo_routing.blockSignals(False)
         except Exception as exc:
             print(f"[UI] Refresh audio tab error: {exc}")
 
@@ -10965,6 +11062,15 @@ class MainWindow(_FramelessWindowResizeMixin, QMainWindow):
         self._wake_btn.setStyleSheet(self._BTN_DIM)
         self._wake_sleep_btn.hide()
 
+        self._auto_sleep_btn = _row(QPushButton())
+        self._auto_sleep_btn.clicked.connect(self._toggle_auto_sleep)
+        self._auto_sleep_btn.setText("💤  AUTO-SLEEP")
+        self._auto_sleep_btn.setStyleSheet(self._BTN_DIM)
+
+        self._routing_btn = _row(QPushButton())
+        self._routing_btn.clicked.connect(self._cycle_routing_mode)
+        self._refresh_routing_btn()
+
         self._ptt_btn = _row(QPushButton())
         self._ptt_btn.clicked.connect(self._toggle_ptt)
         self._refresh_talk_btns()
@@ -11961,6 +12067,93 @@ class MainWindow(_FramelessWindowResizeMixin, QMainWindow):
             else:
                 self._wake_sleep_btn.hide()
 
+        if hasattr(self, "_auto_sleep_btn"):
+            sleep_enabled = self.auto_sleep_is_enabled() if self.auto_sleep_is_enabled else True
+            if sleep_enabled:
+                self._auto_sleep_btn.setText("💤  AUTO-SLEEP: ON")
+                self._auto_sleep_btn.setStyleSheet(_on)
+            else:
+                self._auto_sleep_btn.setText("💤  AUTO-SLEEP: OFF")
+                self._auto_sleep_btn.setStyleSheet(_off)
+
+        if hasattr(self, "_auto_sleep_toggle_btn") and self._auto_sleep_toggle_btn:
+            sleep_enabled = self.auto_sleep_is_enabled() if self.auto_sleep_is_enabled else True
+            self._auto_sleep_toggle_btn.setText(
+                f"AUTO-SLEEP: {'ENABLED' if sleep_enabled else 'DISABLED'} (CLICK TO TOGGLE)"
+            )
+            self._auto_sleep_toggle_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background: {C.PANEL2}; color: {C.PRI if sleep_enabled else C.TEXT_DIM};
+                    border: 1px solid {C.PRI if sleep_enabled else C.BORDER_A}; border-radius: 3px; padding: 6px;
+                }}
+                QPushButton:hover {{ border-color: {C.PRI}; color: {C.TEXT}; }}
+            """)
+
+    def _toggle_auto_sleep(self):
+        if self.on_auto_sleep_toggle:
+            curr = self.auto_sleep_is_enabled() if self.auto_sleep_is_enabled else True
+            try:
+                self.on_auto_sleep_toggle(not curr)
+            except Exception:
+                pass
+        self._refresh_wake_btns()
+
+    _ui_toggle_auto_sleep = _toggle_auto_sleep
+
+    def _cycle_routing_mode(self):
+        from memory.config_manager import (
+            get_audio_routing_mode, save_audio_routing_mode,
+            ROUTING_MODE_AUTO_HYBRID, ROUTING_MODE_BUILTIN_ONLY, ROUTING_MODE_BLUETOOTH_ONLY,
+        )
+        curr = get_audio_routing_mode()
+        if curr == ROUTING_MODE_AUTO_HYBRID:
+            nxt = ROUTING_MODE_BUILTIN_ONLY
+        elif curr == ROUTING_MODE_BUILTIN_ONLY:
+            nxt = ROUTING_MODE_BLUETOOTH_ONLY
+        else:
+            nxt = ROUTING_MODE_AUTO_HYBRID
+        save_audio_routing_mode(nxt)
+        if hasattr(self, "on_routing_mode_change") and self.on_routing_mode_change:
+            try:
+                self.on_routing_mode_change(nxt)
+            except Exception:
+                pass
+        self._refresh_routing_btn()
+        if hasattr(self, "_combo_routing") and self._combo_routing:
+            self._combo_routing.blockSignals(True)
+            idx = self._combo_routing.findData(nxt)
+            if idx >= 0:
+                self._combo_routing.setCurrentIndex(idx)
+            self._combo_routing.blockSignals(False)
+
+    def _refresh_routing_btn(self):
+        if not hasattr(self, "_routing_btn"):
+            return
+        from memory.config_manager import (
+            get_audio_routing_mode,
+            ROUTING_MODE_AUTO_HYBRID, ROUTING_MODE_BUILTIN_ONLY, ROUTING_MODE_BLUETOOTH_ONLY,
+        )
+        curr = get_audio_routing_mode()
+        _on = f"""
+            QPushButton {{ background: #001a14; color: {C.PRI};
+                border: 1px solid {C.PRI_DIM}; border-radius: 3px;
+                text-align: left; padding: 0 8px; }}
+            QPushButton:hover {{ background: #00261e; }}"""
+        _off = f"""
+            QPushButton {{ background: transparent; color: {C.TEXT_DIM};
+                border: 1px solid {C.BORDER}; border-radius: 3px;
+                text-align: left; padding: 0 8px; }}
+            QPushButton:hover {{ color: {C.TEXT}; border: 1px solid {C.BORDER_B}; }}"""
+        if curr == ROUTING_MODE_AUTO_HYBRID:
+            self._routing_btn.setText("🎧  ROUTING: HYBRID (STEREO)")
+            self._routing_btn.setStyleSheet(_on)
+        elif curr == ROUTING_MODE_BUILTIN_ONLY:
+            self._routing_btn.setText("💻  ROUTING: LAPTOP ONLY")
+            self._routing_btn.setStyleSheet(_off)
+        else:
+            self._routing_btn.setText("🎧  ROUTING: OPPO ONLY")
+            self._routing_btn.setStyleSheet(_off)
+
     def _refresh_talk_btns(self):
         """Repaint the push-to-talk row from the saved setting."""
         if not hasattr(self, "_ptt_btn"):
@@ -12744,6 +12937,38 @@ class JarvisUI:
     @wake_get_state.setter
     def wake_get_state(self, cb):
         self._win.wake_get_state = cb
+
+    @property
+    def on_auto_sleep_toggle(self):
+        return self._win.on_auto_sleep_toggle
+
+    @on_auto_sleep_toggle.setter
+    def on_auto_sleep_toggle(self, cb):
+        self._win.on_auto_sleep_toggle = cb
+
+    @property
+    def auto_sleep_is_enabled(self):
+        return self._win.auto_sleep_is_enabled
+
+    @auto_sleep_is_enabled.setter
+    def auto_sleep_is_enabled(self, cb):
+        self._win.auto_sleep_is_enabled = cb
+
+    @property
+    def on_routing_mode_change(self):
+        return self._win.on_routing_mode_change
+
+    @on_routing_mode_change.setter
+    def on_routing_mode_change(self, cb):
+        self._win.on_routing_mode_change = cb
+
+    @property
+    def get_routing_mode(self):
+        return self._win.get_routing_mode
+
+    @get_routing_mode.setter
+    def get_routing_mode(self, cb):
+        self._win.get_routing_mode = cb
 
     def set_audio_level(self, level: float) -> None:
         """Thread-safe: feed a 0.0–1.0 live audio level to the HUD waveform.

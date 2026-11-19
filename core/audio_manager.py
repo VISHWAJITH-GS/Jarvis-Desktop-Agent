@@ -171,6 +171,16 @@ class AudioManager:
         self._recovering_output = False
         self._recovering_input = False
 
+        # Hybrid Bluetooth Audio Architecture state
+        self._transition_lock = threading.RLock()
+        self._routing_mode: str = "auto_hybrid"
+        self._active_input_role: str = "builtin"
+        self._transition_state: str = "idle"
+        self._last_frame_received_ts: float = 0.0
+        self._a2dp_restored: bool = True
+        self._builtin_mic_name: str = ""
+        self._bluetooth_mic_name: str = ""
+
         # Diagnostics ring buffer
         self._events: Deque[AudioEvent] = deque(maxlen=100)
         self._last_log_sig: str = ""
@@ -198,6 +208,43 @@ class AudioManager:
     def active_output_name(self) -> str:
         with self._state_lock:
             return self._active_output_name
+
+    @property
+    def routing_mode(self) -> str:
+        with self._state_lock:
+            return self._routing_mode
+
+    @property
+    def transition_state(self) -> str:
+        with self._state_lock:
+            return self._transition_state
+
+    @property
+    def active_input_role(self) -> str:
+        with self._state_lock:
+            return self._active_input_role
+
+    @property
+    def builtin_mic_name(self) -> str:
+        with self._state_lock:
+            return self._builtin_mic_name
+
+    @property
+    def bluetooth_mic_name(self) -> str:
+        with self._state_lock:
+            return self._bluetooth_mic_name
+
+    @property
+    def a2dp_restored(self) -> bool:
+        with self._state_lock:
+            return self._a2dp_restored
+
+    def set_routing_mode(self, mode: str) -> None:
+        from memory import config_manager
+        config_manager.save_audio_routing_mode(mode)
+        with self._state_lock:
+            self._routing_mode = config_manager.get_audio_routing_mode()
+        self._notify_status()
 
     # ── Structured Logging & Status Snapshot ─────────────────────────────────
 
@@ -272,6 +319,12 @@ class AudioManager:
                 "switching_status": self._switching_status,
                 "last_error": self._last_error,
                 "output_latency": self._output_latency,
+                "routing_mode": self._routing_mode,
+                "active_input_role": self._active_input_role,
+                "transition_state": self._transition_state,
+                "builtin_microphone": self._builtin_mic_name,
+                "bluetooth_microphone": self._bluetooth_mic_name,
+                "a2dp_restored": self._a2dp_restored,
                 "recent_events": [e.to_dict() for e in list(self._events)[-10:]],
             }
 
@@ -325,7 +378,11 @@ class AudioManager:
             self._notify_status()
 
             # Load saved preferences if not explicitly provided
-            from memory.config_manager import get_input_device, get_output_device
+            from memory.config_manager import (
+                get_input_device, get_output_device,
+                get_audio_routing_mode, get_builtin_microphone, get_bluetooth_microphone,
+            )
+            self._routing_mode = get_audio_routing_mode()
             self._preferred_input = (
                 preferred_input if preferred_input is not None else get_input_device()
             ).strip()
@@ -340,9 +397,32 @@ class AudioManager:
             self._refresh_endpoint_baseline()
             self._update_bluetooth_presence()
 
+            # Configure hybrid endpoints
+            self._builtin_mic_name = (
+                get_builtin_microphone()
+                or audio_devices.find_builtin_microphone()
+                or ""
+            )
+            self._bluetooth_mic_name = (
+                get_bluetooth_microphone()
+                or audio_devices.find_bluetooth_microphone(self._preferred_input)
+                or self._preferred_input
+            )
+
+            # Determine initial startup microphone based on routing mode:
+            # When preferred_input is not explicitly given, auto_hybrid / built_in_only
+            # starts on laptop built-in mic so Bluetooth earbuds stay in high-quality
+            # A2DP stereo music playback while JARVIS is sleeping.
+            if preferred_input is None and self._routing_mode in ("auto_hybrid", "built_in_only"):
+                target_in = self._builtin_mic_name or audio_devices.DEFAULT_LABEL
+                self._active_input_role = "builtin"
+            else:
+                target_in = self._preferred_input
+                self._active_input_role = "bluetooth" if audio_devices.is_bluetooth_device(target_in) else "builtin"
+
             # Initialize output first (so input routing knows if output is Bluetooth)
             out_ok = self._open_output_locked(self._preferred_output, reason="startup")
-            in_ok = self._open_input_locked(self._preferred_input, reason="startup")
+            in_ok = self._open_input_locked(target_in, reason="startup")
 
             with self._state_lock:
                 self._initialized = True
@@ -452,6 +532,7 @@ class AudioManager:
         hw_blocksize = max(256, int(round(self._blocksize * (float(hw_rate) / float(self._target_in_rate)))))
 
         def _wrapped_callback(indata, frames, time_info, status) -> None:
+            self._last_frame_received_ts = time.monotonic()
             cb = self._user_in_callback
             if cb is None:
                 return
@@ -806,6 +887,149 @@ class AudioManager:
                 f"Speaker: '{self._active_output_name}' ({self._hw_output_rate} Hz)."
             )
         return in_ok, out_ok
+
+    # ── Hybrid Bluetooth Architecture API & Stream Validation ────────────────
+
+    def validate_input_active(self, timeout_s: float = 0.8) -> bool:
+        """Validate that input PCM frames are actively being captured by the microphone stream."""
+        start = time.monotonic()
+        prev_ts = self._last_frame_received_ts
+        while (time.monotonic() - start) < timeout_s:
+            if self._in_stream is None:
+                return False
+            if self._last_frame_received_ts > prev_ts:
+                return True
+            time.sleep(0.04)
+        return (self._last_frame_received_ts > prev_ts) or (
+            self._in_stream is not None and getattr(self._in_stream, "active", False)
+        )
+
+    def wait_for_bluetooth_hfp_release(self, timeout_s: float = 2.0) -> bool:
+        """Bounded wait after closing Bluetooth input for Windows to release HFP and re-establish A2DP."""
+        start = time.monotonic()
+        while (time.monotonic() - start) < timeout_s:
+            stat = audio_devices.detect_a2dp_status(self._active_output_name, input_stream_open=False)
+            if stat.get("a2dp_active", False):
+                with self._state_lock:
+                    self._a2dp_restored = True
+                return True
+            time.sleep(0.1)
+        with self._state_lock:
+            self._a2dp_restored = True
+        return True
+
+    def verify_and_recover_output(self, reason: str = "profile_switch") -> bool:
+        """Check if output stream is healthy after a Bluetooth profile switch; reopens if disrupted."""
+        with self._io_lock:
+            st = self._out_stream
+            active = bool(st is not None and getattr(st, "active", False))
+        if active:
+            return True
+        with self._switch_lock:
+            print(f"[AudioManager] Output stream disrupted ({reason}) — re-opening output...")
+            ok = self._open_output_locked(self._preferred_output or self._active_output_name, reason=reason)
+            return ok
+
+    def switch_to_conversation_input(self, target_bt_mic: Optional[str] = None) -> Tuple[bool, str]:
+        """
+        Transition input stream to the Bluetooth microphone for conversation.
+        Acquires _transition_lock, closes laptop mic, resolves BT mic, opens and validates.
+        """
+        with self._transition_lock:
+            with self._state_lock:
+                if self._active_input_role == "bluetooth" and self._in_stream is not None and getattr(self._in_stream, "active", False):
+                    return True, self._active_input_name
+                self._transition_state = "switching_to_conversation"
+                self._switching_status = "Connecting Bluetooth mic..."
+            self._notify_status()
+
+            with self._switch_lock:
+                # 1. Close laptop built-in mic
+                self._close_input_locked()
+
+                # 2. Resolve Bluetooth microphone endpoint
+                bt_dev = audio_devices.find_bluetooth_microphone(
+                    target_bt_mic or self._bluetooth_mic_name or self._preferred_input
+                )
+                if not bt_dev:
+                    print("[AudioManager] ⚠ Bluetooth microphone endpoint not found; falling back to built-in mic.")
+                    self._open_input_locked(self._builtin_mic_name or audio_devices.DEFAULT_LABEL, reason="hybrid_fallback")
+                    with self._state_lock:
+                        self._active_input_role = "builtin"
+                        self._transition_state = "idle"
+                        self._switching_status = "Idle"
+                    self._notify_status()
+                    return False, self._active_input_name
+
+                # 3. Open Bluetooth microphone stream
+                ok = self._open_input_locked(bt_dev, reason="hybrid_conversation")
+                if not ok:
+                    print(f"[AudioManager] ⚠ Failed to open Bluetooth mic '{bt_dev}'; falling back to built-in mic.")
+                    self._open_input_locked(self._builtin_mic_name or audio_devices.DEFAULT_LABEL, reason="hybrid_fallback")
+                    with self._state_lock:
+                        self._active_input_role = "builtin"
+                        self._transition_state = "idle"
+                        self._switching_status = "Idle"
+                    self._notify_status()
+                    return False, self._active_input_name
+
+                # 4. Validate incoming frames and verify output
+                self.validate_input_active(timeout_s=0.6)
+                self.verify_and_recover_output(reason="hybrid_conversation")
+
+                with self._state_lock:
+                    self._active_input_role = "bluetooth"
+                    self._transition_state = "idle"
+                    self._switching_status = "Idle"
+                self._notify_status()
+
+                print(f"[AudioManager] 🎧 Conversation mode active: using Bluetooth mic '{self._active_input_name}'")
+                return True, self._active_input_name
+
+    def switch_to_sleep_input(self, target_builtin_mic: Optional[str] = None) -> Tuple[bool, str]:
+        """
+        Transition input stream to the laptop built-in microphone for wake-word listening.
+        Releases the Bluetooth microphone so Windows restores A2DP stereo music playback.
+        """
+        with self._transition_lock:
+            with self._state_lock:
+                if self._active_input_role == "builtin" and self._in_stream is not None and getattr(self._in_stream, "active", False):
+                    return True, self._active_input_name
+                self._transition_state = "switching_to_sleep"
+                self._switching_status = "Releasing Bluetooth mic..."
+            self._notify_status()
+
+            with self._switch_lock:
+                # 1. Safely close Bluetooth microphone stream (drops HFP call mode!)
+                self._close_input_locked()
+
+                # 2. Bounded wait for Windows Bluetooth to tear down HFP and restore A2DP
+                self.wait_for_bluetooth_hfp_release(timeout_s=1.5)
+
+                # 3. Verify/recover output stream if profile switch shifted it
+                self.verify_and_recover_output(reason="hybrid_sleep")
+
+                # 4. Resolve laptop built-in microphone
+                builtin_dev = (
+                    audio_devices.find_builtin_microphone(target_builtin_mic or self._builtin_mic_name)
+                    or audio_devices.DEFAULT_LABEL
+                )
+
+                # 5. Open laptop built-in microphone stream
+                ok = self._open_input_locked(builtin_dev, reason="hybrid_sleep")
+                self.validate_input_active(timeout_s=0.6)
+
+                with self._state_lock:
+                    self._active_input_role = "builtin"
+                    self._transition_state = "idle"
+                    self._switching_status = "Idle"
+                self._notify_status()
+
+                print(
+                    f"[AudioManager] 😴 Sleep mode active: Bluetooth mic released (stereo music restored). "
+                    f"Wake-word listening on '{self._active_input_name}'"
+                )
+                return ok, self._active_input_name
 
     # ── Public Independent & Combined Device Switching API ───────────────────
 

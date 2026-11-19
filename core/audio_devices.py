@@ -381,7 +381,8 @@ def _query() -> dict[str, list[str]]:
                 if dev.get(chan, 0) <= 0:
                     continue
                 if api_filter is not None:
-                    api = apis[dev["hostapi"]].lower() if dev.get("hostapi", -1) < len(apis) else ""
+                    h_id = dev.get("hostapi", -1)
+                    api = apis[h_id].lower() if 0 <= h_id < len(apis) else ""
                     if api_filter not in api:
                         continue
                 if not _usable(idx, kind):
@@ -623,7 +624,8 @@ def resolve_with_rate(name: str, kind: str) -> tuple[Optional[int], Optional[int
                 if dev.get(chan_key, 0) <= 0:
                     continue
                 if api_filter is not None:
-                    api = apis[dev["hostapi"]].lower() if dev.get("hostapi", -1) < len(apis) else ""
+                    h_id = dev.get("hostapi", -1)
+                    api = apis[h_id].lower() if 0 <= h_id < len(apis) else ""
                     if api_filter not in api:
                         continue
                 yield idx, (dev.get("name") or "").strip()
@@ -872,7 +874,7 @@ def is_bluetooth_device(name: str) -> bool:
         # High-confidence Bluetooth indicators (excluding generic 'wireless' or 'headset' which match USB peripherals)
         bt_keywords = (
             "bluetooth", "bth", "hands-free", "airpods",
-            "freebuds", "galaxy buds", "pixel buds"
+            "freebuds", "galaxy buds", "pixel buds", "oppo", "enco", "buds"
         )
         res = any(k in low for k in bt_keywords)
 
@@ -1233,6 +1235,137 @@ def get_device_status(name: str, kind: str) -> dict:
         "profile": profile,
         "warning": warning,
     }
+
+
+def find_builtin_microphone(configured_name: Optional[str] = None) -> Optional[str]:
+    """
+    Find the laptop's built-in microphone (e.g. ASUS Realtek Microphone Array).
+    If configured_name is provided and available, returns it.
+    Otherwise queries available inputs, filtering out virtual and Bluetooth endpoints,
+    and returns the highest-ranked built-in microphone.
+    """
+    if configured_name:
+        matched = match_device_name(configured_name, "input", refresh=False)
+        if matched and not is_bluetooth_device(matched):
+            return matched
+
+    sel = select_best_input(requested_input="", output_name="bluetooth", input_mode="auto", allow_bluetooth_mic=False)
+    dev = sel.get("device")
+    if dev and not sel.get("is_bluetooth", False):
+        return dev
+
+    # Direct search across available inputs
+    available = list_devices("input")
+    candidates = [
+        d for d in available
+        if not is_bluetooth_device(d) and not any(k in d.lower() for k in EXCLUDED_INPUT_KEYWORDS)
+    ]
+    if candidates:
+        for pref in ("array", "realtek", "conexant", "intel", "internal", "integrated", "microphone"):
+            for d in candidates:
+                if pref in d.lower():
+                    return d
+        return candidates[0]
+    return None
+
+
+def find_bluetooth_microphone(preferred: Optional[str] = None) -> Optional[str]:
+    """
+    Find the connected Bluetooth headset microphone (e.g. 'Headset (OPPO Enco Buds2)').
+    If preferred is given and valid/connected, returns it.
+    Otherwise searches input devices for any active Bluetooth endpoint.
+    """
+    available = list_devices("input")
+    if preferred:
+        matched = match_device_name(preferred, "input", refresh=False)
+        if matched and is_bluetooth_device(matched):
+            return matched
+
+    # Look for devices with bluetooth indicators or keywords
+    bt_inputs = [d for d in available if is_bluetooth_device(d)]
+    if bt_inputs:
+        for pref in ("oppo", "buds", "headset", "hands-free", "bluetooth"):
+            for d in bt_inputs:
+                if pref in d.lower():
+                    return d
+        return bt_inputs[0]
+    return None
+
+
+def find_bluetooth_output(preferred: Optional[str] = None) -> Optional[str]:
+    """
+    Find the connected Bluetooth stereo headphone endpoint (e.g. 'Headphones (OPPO Enco Buds2)').
+    """
+    available = list_devices("output")
+    if preferred:
+        matched = match_device_name(preferred, "output", refresh=False)
+        if matched and is_bluetooth_device(matched):
+            return matched
+
+    bt_outputs = [d for d in available if is_bluetooth_device(d)]
+    if bt_outputs:
+        for pref in ("oppo", "buds", "headphones", "stereo", "bluetooth"):
+            for d in bt_outputs:
+                if pref in d.lower():
+                    return d
+        return bt_outputs[0]
+    return None
+
+
+def detect_a2dp_status(output_name: str, input_stream_open: bool = False) -> dict:
+    """
+    Check if the Bluetooth output device is currently in high-quality A2DP stereo mode.
+    On Windows:
+    - If a Bluetooth capture stream is open, Windows locks the Bluetooth connection in HFP call mode.
+    - If no Bluetooth capture stream is open and the device is connected, Windows restores A2DP stereo.
+    """
+    is_bt = is_bluetooth_device(output_name)
+    if not is_bt:
+        return {
+            "is_bluetooth": False,
+            "a2dp_active": True,
+            "profile": "Built-in / Wired Audio",
+            "message": "Output is not Bluetooth; standard audio playback active.",
+        }
+
+    if input_stream_open:
+        return {
+            "is_bluetooth": True,
+            "a2dp_active": False,
+            "profile": "Bluetooth HFP (Mono Call Mode)",
+            "message": "Bluetooth microphone is active; playback quality reduced to HFP call mode.",
+        }
+
+    idx = resolve(output_name, "output")
+    if idx is None:
+        return {
+            "is_bluetooth": True,
+            "a2dp_active": False,
+            "profile": "Disconnected",
+            "message": "Bluetooth device disconnected.",
+        }
+
+    try:
+        import sounddevice as sd
+        info = sd.query_devices(idx)
+        channels = int(info.get("max_output_channels", 2))
+        rate = float(info.get("default_samplerate", 44100.0))
+        is_stereo = (channels >= 2 and rate >= 44100.0)
+        return {
+            "is_bluetooth": True,
+            "a2dp_active": is_stereo,
+            "profile": "Bluetooth A2DP (Stereo Playback)" if is_stereo else "Bluetooth Hands-Free (HFP)",
+            "sample_rate": rate,
+            "channels": channels,
+            "message": "A2DP stereo music playback active." if is_stereo else "HFP call mode active.",
+        }
+    except Exception:
+        return {
+            "is_bluetooth": True,
+            "a2dp_active": not input_stream_open,
+            "profile": "Bluetooth A2DP (Stereo Playback)" if not input_stream_open else "Bluetooth HFP",
+            "message": "Stereo music playback restored." if not input_stream_open else "HFP call mode.",
+        }
 
 
 def play_tone(name: str, seconds: float = 0.6) -> dict:

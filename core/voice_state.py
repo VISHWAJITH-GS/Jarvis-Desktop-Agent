@@ -170,8 +170,11 @@ class VoiceStateManager:
         """
         True when JARVIS is idle in LISTENING with no active commands for at
         least `timeout_seconds` (default 180s / 3 minutes).
+        Returns False if timeout_seconds <= 0 or None (auto-sleep disabled).
         """
         with self._lock:
+            if timeout_seconds is None or timeout_seconds <= 0:
+                return False
             if self._state != VoiceState.LISTENING:
                 return False
             if self._active_commands > 0:

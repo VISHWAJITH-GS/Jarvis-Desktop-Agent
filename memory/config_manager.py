@@ -342,6 +342,26 @@ def save_voice(voice_name: str) -> None:
 DEFAULT_WAKE_WORDS = ["Jarvis"]
 DEFAULT_WAKE_WORD_THRESHOLD = 0.200
 DEFAULT_IDLE_SLEEP_TIMEOUT = 180.0   # 3 minutes
+DEFAULT_AUTO_SLEEP_ENABLED = True
+
+
+def get_auto_sleep_enabled() -> bool:
+    """Whether JARVIS automatically transitions to low-power SLEEPING mode when idle."""
+    val = load_api_keys().get("auto_sleep_enabled")
+    if val is not None:
+        return bool(val)
+    raw_timeout = load_api_keys().get("idle_sleep_timeout")
+    if raw_timeout is not None:
+        try:
+            if float(raw_timeout) <= 0:
+                return False
+        except (TypeError, ValueError):
+            pass
+    return DEFAULT_AUTO_SLEEP_ENABLED
+
+
+def save_auto_sleep_enabled(enabled: bool) -> None:
+    _save_flag("auto_sleep_enabled", bool(enabled))
 
 
 def get_wake_word_enabled() -> bool:
@@ -406,10 +426,15 @@ def save_wake_word_threshold(threshold: float) -> None:
 
 
 def get_idle_sleep_timeout() -> float:
-    """Seconds of complete inactivity before auto-sleeping. Default: 180.0 (3 minutes)."""
+    """Seconds of complete inactivity before auto-sleeping. Default: 180.0 (3 minutes).
+    Returns 0.0 if auto-sleep is disabled."""
+    if not get_auto_sleep_enabled():
+        return 0.0
     raw = load_api_keys().get("idle_sleep_timeout", DEFAULT_IDLE_SLEEP_TIMEOUT)
     try:
         val = float(raw)
+        if val <= 0:
+            return 0.0
         return val if val >= 5.0 else DEFAULT_IDLE_SLEEP_TIMEOUT
     except (TypeError, ValueError):
         return DEFAULT_IDLE_SLEEP_TIMEOUT
@@ -417,7 +442,13 @@ def get_idle_sleep_timeout() -> float:
 
 def save_idle_sleep_timeout(seconds: float) -> None:
     try:
-        val = max(5.0, float(seconds))
+        val = float(seconds)
+        if val <= 0:
+            save_auto_sleep_enabled(False)
+            _save_flag("idle_sleep_timeout", 0.0)
+            return
+        val = max(5.0, val)
+        save_auto_sleep_enabled(True)
     except (TypeError, ValueError):
         val = DEFAULT_IDLE_SLEEP_TIMEOUT
     _save_flag("idle_sleep_timeout", val)
@@ -766,6 +797,57 @@ def set_voice_name(voice_name: str) -> None:
 
 
 # ── Audio Input Routing & Bluetooth Mode Settings ──────────────────────────
+
+ROUTING_MODE_AUTO_HYBRID = "auto_hybrid"
+ROUTING_MODE_BUILTIN_ONLY = "built_in_only"
+ROUTING_MODE_BLUETOOTH_ONLY = "bluetooth_only"
+DEFAULT_ROUTING_MODE = ROUTING_MODE_AUTO_HYBRID
+
+
+def get_audio_routing_mode() -> str:
+    """
+    Hybrid Bluetooth audio routing mode:
+      • 'auto_hybrid': Laptop mic for wake word in sleep (preserves A2DP stereo music);
+                       switches to OPPO Bluetooth mic during conversation.
+      • 'built_in_only': Always use Laptop built-in mic (music always stays stereo).
+      • 'bluetooth_only': Always use OPPO Bluetooth mic (holds HFP call mode).
+    Default: 'auto_hybrid'.
+    """
+    val = str(load_api_keys().get("audio_routing_mode", DEFAULT_ROUTING_MODE) or DEFAULT_ROUTING_MODE).strip().lower()
+    if val in (ROUTING_MODE_AUTO_HYBRID, ROUTING_MODE_BUILTIN_ONLY, ROUTING_MODE_BLUETOOTH_ONLY):
+        return val
+    # Backward compatibility with older audio_input_mode / allow_bluetooth_mic flags
+    if load_api_keys().get("allow_bluetooth_mic", False):
+        return ROUTING_MODE_BLUETOOTH_ONLY
+    if load_api_keys().get("audio_input_mode") == "manual":
+        return ROUTING_MODE_BUILTIN_ONLY
+    return DEFAULT_ROUTING_MODE
+
+
+def save_audio_routing_mode(mode: str) -> None:
+    norm = str(mode or "").strip().lower()
+    if norm not in (ROUTING_MODE_AUTO_HYBRID, ROUTING_MODE_BUILTIN_ONLY, ROUTING_MODE_BLUETOOTH_ONLY):
+        norm = DEFAULT_ROUTING_MODE
+    _patch_config(audio_routing_mode=norm)
+
+
+def get_builtin_microphone() -> str:
+    """User-configured laptop built-in microphone name (e.g. 'Microphone Array (Realtek(R) Audio)'), or '' for auto."""
+    return (load_api_keys().get("builtin_microphone", "") or "").strip()
+
+
+def save_builtin_microphone(name: str) -> None:
+    _patch_config(builtin_microphone=(name or "").strip())
+
+
+def get_bluetooth_microphone() -> str:
+    """User-configured Bluetooth microphone name (e.g. 'Headset (OPPO Enco Buds2)'), or '' for auto."""
+    return (load_api_keys().get("bluetooth_microphone", "") or "").strip()
+
+
+def save_bluetooth_microphone(name: str) -> None:
+    _patch_config(bluetooth_microphone=(name or "").strip())
+
 
 def get_audio_input_mode() -> str:
     """Input selection mode: 'auto' (avoid Bluetooth mic if BT output is active) or 'manual'."""
