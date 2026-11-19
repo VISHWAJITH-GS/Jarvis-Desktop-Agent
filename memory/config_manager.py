@@ -340,7 +340,7 @@ def save_voice(voice_name: str) -> None:
 
 
 DEFAULT_WAKE_WORDS = ["Jarvis"]
-DEFAULT_WAKE_WORD_THRESHOLD = 0.100
+DEFAULT_WAKE_WORD_THRESHOLD = 0.200
 DEFAULT_IDLE_SLEEP_TIMEOUT = 180.0   # 3 minutes
 
 
@@ -383,17 +383,23 @@ def save_wake_words(words: list[str]) -> None:
 
 
 def get_wake_word_threshold() -> float:
-    """Wake-word sensitivity threshold in [0.0, 1.0]. Default: 0.100."""
+    """Wake-word sensitivity threshold in [0.0, 1.0]. Default: 0.200."""
     raw = load_api_keys().get("wake_word_threshold", DEFAULT_WAKE_WORD_THRESHOLD)
     try:
-        return max(0.0, min(1.0, float(raw)))
+        t = float(raw)
+        if t > 1.0 and t <= 1000.0:
+            t = t / 1000.0
+        return max(0.0, min(1.0, t))
     except (TypeError, ValueError):
         return DEFAULT_WAKE_WORD_THRESHOLD
 
 
 def save_wake_word_threshold(threshold: float) -> None:
     try:
-        val = max(0.0, min(1.0, float(threshold)))
+        t = float(threshold)
+        if t > 1.0 and t <= 1000.0:
+            t = t / 1000.0
+        val = max(0.0, min(1.0, t))
     except (TypeError, ValueError):
         val = DEFAULT_WAKE_WORD_THRESHOLD
     _save_flag("wake_word_threshold", round(val, 4))
@@ -506,8 +512,18 @@ def sanitize_hotkeys_and_wake_words() -> None:
         if cfg.get("global_emergency_stop_shortcut") != ["ctrl", "alt", "k"]:
             _save_flag("global_emergency_stop_shortcut", ["ctrl", "alt", "k"])
             dirty = True
-        if abs(float(cfg.get("wake_word_threshold", 0.100)) - 0.100) > 0.001:
-            save_wake_word_threshold(0.100)
+        try:
+            raw_th = cfg.get("wake_word_threshold")
+            if raw_th is None:
+                save_wake_word_threshold(DEFAULT_WAKE_WORD_THRESHOLD)
+                dirty = True
+            else:
+                curr_th = float(raw_th)
+                if curr_th <= 0.0 or curr_th > 1.0:
+                    save_wake_word_threshold(DEFAULT_WAKE_WORD_THRESHOLD)
+                    dirty = True
+        except (TypeError, ValueError):
+            save_wake_word_threshold(DEFAULT_WAKE_WORD_THRESHOLD)
             dirty = True
         if dirty:
             logger.info("[Config] Sanitized hotkeys and wake word ('Jarvis' alone, Ctrl+Alt+J mute/sleep, Ctrl+Alt+K force listening)")

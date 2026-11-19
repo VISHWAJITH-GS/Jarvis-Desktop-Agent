@@ -14,7 +14,7 @@ Design goals:
     or the global Force Listening shortcut (Ctrl + Alt + K) fires.
   • Hybrid detection:
       1. Fast ONNX path via openwakeword (e.g. "hey_jarvis" + any custom ONNX
-         models found for configured wake words) evaluated at threshold 0.100.
+         models found for configured wake words) evaluated at threshold 0.200.
       2. Low-power RMS-VAD-gated local keyword spotter (using cached offline
          faster-whisper if installed) for wake words without a pretrained ONNX
          model (such as standalone "Jarvis"). During room silence the spotter
@@ -32,9 +32,9 @@ import time
 from pathlib import Path
 from typing import Callable, Iterable, Optional
 
-# Active wake words and sensitivity threshold ("Jarvis" alone).
+# Active wake words and sensitivity threshold ("Jarvis" alone, threshold 0.200 / 200).
 DEFAULT_WAKE_WORDS: tuple[str, ...] = ("Jarvis",)
-DEFAULT_THRESHOLD: float = 0.100
+DEFAULT_THRESHOLD: float = 0.200
 
 # Pretrained openwakeword model kept as a module constant for compatibility.
 WAKE_MODEL = "hey_jarvis"
@@ -249,7 +249,7 @@ class WakeWordDetector:
     """
     Runs local wake-word detection in dedicated background threads.
     Supports active wake word ("Jarvis" alone) at configurable
-    sensitivity (default threshold: 0.100).
+    sensitivity (default threshold: 0.200).
 
     The mic thread calls `feed()` with raw int16 frames; detections invoke
     `on_detect()` (or `on_detect(word)` if the callback accepts 1 argument).
@@ -265,7 +265,13 @@ class WakeWordDetector:
         enable_keyword_spotter: bool = True,
     ):
         self._on_detect = on_detect
-        self._threshold = max(0.0, min(1.0, float(threshold)))
+        try:
+            t = float(threshold)
+            if t > 1.0 and t <= 1000.0:
+                t = t / 1000.0
+            self._threshold = max(0.0, min(1.0, t))
+        except (TypeError, ValueError):
+            self._threshold = DEFAULT_THRESHOLD
         self._wake_words: list[str] = normalize_wake_words(wake_words)
         self._logger = logger
         self._notify = notify or (lambda _msg: None)

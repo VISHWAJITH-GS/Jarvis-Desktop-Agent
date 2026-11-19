@@ -363,7 +363,7 @@ class TestAdvancedStateHotkeysWakeAndSleep(unittest.TestCase):
         live._loop = None
         live._wake_enabled = False
         live._wake_words = ["Jarvis"]
-        live._wake_threshold = 0.100
+        live._wake_threshold = 0.200
         live._wake_detector = None
         live._wake_detector_lock = threading.Lock()
         live._wake_sleep_timeout = IDLE_SLEEP_TIMEOUT
@@ -492,7 +492,7 @@ class TestAdvancedStateHotkeysWakeAndSleep(unittest.TestCase):
         self.assertEqual(sm.state, VoiceState.LISTENING)
 
     def test_wake_word_defaults_and_matching(self):
-        """Verify default wake word ('Jarvis' alone), threshold 0.100, and matching logic."""
+        """Verify default wake word ('Jarvis' alone), threshold 0.200 (200), and matching logic."""
         from core.wake_word import (
             DEFAULT_WAKE_WORDS,
             DEFAULT_THRESHOLD,
@@ -504,13 +504,19 @@ class TestAdvancedStateHotkeysWakeAndSleep(unittest.TestCase):
             DEFAULT_WAKE_WORDS as CFG_WAKE_WORDS,
             DEFAULT_WAKE_WORD_THRESHOLD as CFG_THRESHOLD,
             DEFAULT_IDLE_SLEEP_TIMEOUT as CFG_IDLE_TIMEOUT,
+            save_wake_word_threshold,
+            get_wake_word_threshold,
         )
 
         self.assertEqual(tuple(DEFAULT_WAKE_WORDS), ("Jarvis",))
-        self.assertAlmostEqual(DEFAULT_THRESHOLD, 0.100, places=3)
+        self.assertAlmostEqual(DEFAULT_THRESHOLD, 0.200, places=3)
         self.assertEqual(CFG_WAKE_WORDS, ["Jarvis"])
-        self.assertAlmostEqual(CFG_THRESHOLD, 0.100, places=3)
+        self.assertAlmostEqual(CFG_THRESHOLD, 0.200, places=3)
         self.assertEqual(CFG_IDLE_TIMEOUT, 180.0)
+
+        # Passing 200 normalizes to 0.200
+        save_wake_word_threshold(200)
+        self.assertAlmostEqual(get_wake_word_threshold(), 0.200, places=3)
 
         # "Hello" is explicitly stripped by normalization
         self.assertEqual(normalize_wake_words(["Jarvis", "Hello"]), ["Jarvis"])
@@ -533,11 +539,15 @@ class TestAdvancedStateHotkeysWakeAndSleep(unittest.TestCase):
         detected = []
         det = WakeWordDetector(on_detect=lambda w: detected.append(w), enable_keyword_spotter=False)
         self.assertEqual(det.wake_words, ["Jarvis"])
-        self.assertAlmostEqual(det.threshold, 0.100, places=3)
+        self.assertAlmostEqual(det.threshold, 0.200, places=3)
+
+        # Passing 200 to detector normalizes to 0.200
+        det_200 = WakeWordDetector(on_detect=lambda w: None, threshold=200, enable_keyword_spotter=False)
+        self.assertAlmostEqual(det_200.threshold, 0.200, places=3)
 
         det._running = True
         det._model_to_word = {"hey_jarvis": "Jarvis"}
-        word, score = det._map_score_to_word({"hey_jarvis": 0.105})
+        word, score = det._map_score_to_word({"hey_jarvis": 0.205})
         self.assertEqual(word, "Jarvis")
         self.assertGreaterEqual(score, det.threshold)
         det._trigger_detection(word, score)
