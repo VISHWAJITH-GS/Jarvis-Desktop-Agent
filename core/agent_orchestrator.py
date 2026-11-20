@@ -131,20 +131,32 @@ class AgentOrchestrator:
     def observe_screen(self) -> dict:
         """Capture complete structured observation of the desktop."""
         try:
-            from actions.screen_observer import get_screen_observer
-            obs = get_screen_observer().capture_observation(trigger_reason="orchestrator_observe")
+            from core import platform_hooks
+            obs = platform_hooks.call_hook("observe_screen", default=None)
+            if obs is not None:
+                return {
+                    "window_title": obs.active_window.get("title", ""),
+                    "process_name": obs.active_window.get("process_name", ""),
+                    "cursor": obs.cursor_position,
+                    "monitors": len(obs.monitors),
+                    "browser_url": obs.browser_url,
+                    "elements": [
+                        {"name": e.get("name"), "type": e.get("control_type"), "rect": e.get("bounding_rectangle")}
+                        for e in obs.visible_elements[:25]
+                        if e.get("name")
+                    ],
+                    "summary": obs.format_for_gemini(),
+                    "status": "idle",
+                }
+            title = platform_hooks.get_active_window_title()
             return {
-                "window_title": obs.active_window.get("title", ""),
-                "process_name": obs.active_window.get("process_name", ""),
-                "cursor": obs.cursor_position,
-                "monitors": len(obs.monitors),
-                "browser_url": obs.browser_url,
-                "elements": [
-                    {"name": e.get("name"), "type": e.get("control_type"), "rect": e.get("bounding_rectangle")}
-                    for e in obs.visible_elements[:25]
-                    if e.get("name")
-                ],
-                "summary": obs.format_for_gemini(),
+                "window_title": title,
+                "process_name": "",
+                "cursor": (0, 0),
+                "monitors": 1,
+                "browser_url": "",
+                "elements": [],
+                "summary": f"Active window: {title}",
                 "status": "idle",
             }
         except Exception as e:
@@ -275,30 +287,27 @@ Return ONLY a valid JSON array of step objects:
                 act_res = self.registry.execute(action, params, _ctx)
             elif action == "uia_open":
                 name = params.get("name", "")
-                from actions import windows_uia
-                raw_res = windows_uia.open_file_explorer_item(name)
+                from core import platform_hooks
+                raw_res = platform_hooks.call_hook("open_file_explorer_item", name)
                 act_res = outcome.normalize_result(raw_res, action_name="uia_open")
             elif action == "click_element":
-                from actions import computer_use_engine
-                eng = computer_use_engine.get_computer_use_engine()
-                act_res = eng.click_element(
+                from core import platform_hooks
+                act_res = platform_hooks.call_hook(
+                    "click_element",
                     name=params.get("name") or params.get("target", ""),
                     control_type=params.get("control_type"),
                     x=params.get("x"),
                     y=params.get("y"),
                 )
             elif action in ("click_here", "click_cursor_position"):
-                from actions import computer_use_engine
-                eng = computer_use_engine.get_computer_use_engine()
-                act_res = eng.click_cursor_position()
+                from core import platform_hooks
+                act_res = platform_hooks.call_hook("click_cursor_position")
             elif action == "type_text":
-                from actions import computer_use_engine
-                eng = computer_use_engine.get_computer_use_engine()
-                act_res = eng.type_text(text=params.get("text", ""))
+                from core import platform_hooks
+                act_res = platform_hooks.call_hook("type_text", text=params.get("text", ""))
             elif action == "browser_navigate":
-                from actions import browser_session_manager
-                bm = browser_session_manager.get_browser_session_manager()
-                act_res = bm.navigate(params.get("url", ""))
+                from core import platform_hooks
+                act_res = platform_hooks.call_hook("browser_navigate", params.get("url", ""))
             elif action == "verify_state":
                 exp = params.get("expected_window", "").lower()
                 obs = self.observe_screen()
@@ -399,15 +408,11 @@ Return ONLY a valid JSON array of step objects:
                     params = current.get("parameters", {})
                     target = params.get("target") or params.get("name") or ""
                     # Attempt visual grounding fallback click
-                    from actions import target_resolver, computer_use_engine
-                    tr = target_resolver.get_target_resolver()
-                    res_target, _ = tr.resolve_target(target, prefer_visual=True)
-                    if res_target:
-                        eng = computer_use_engine.get_computer_use_engine()
-                        click_res = eng.click_coordinates(res_target.desktop_x, res_target.desktop_y)
-                        if click_res.success:
-                            recovered = True
-                            results_log[-1] += f" [Recovered via visual grounding at ({res_target.desktop_x}, {res_target.desktop_y})]"
+                    from core import platform_hooks
+                    coords = platform_hooks.call_hook("visual_grounding_click", target, default=None)
+                    if coords:
+                        recovered = True
+                        results_log[-1] += f" [Recovered via visual grounding at {coords}]"
 
                 elif action in ("open_app", "uia_open"):
                     target_app = current.get("parameters", {}).get("app_name") or current.get("parameters", {}).get("name", "")

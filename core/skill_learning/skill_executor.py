@@ -264,8 +264,8 @@ class SkillExecutor:
 
         try:
             if cond_type == "window_title_contains":
-                from actions.windows_control import get_active_window_title
-                curr_title = (get_active_window_title() or "").lower()
+                from core import platform_hooks
+                curr_title = (platform_hooks.get_active_window_title() or "").lower()
                 target_str = (target or expected).lower()
                 if target_str in curr_title:
                     return True, f"Active window title '{curr_title}' contains '{target_str}'"
@@ -277,8 +277,8 @@ class SkillExecutor:
                 return False, f"File not found: {target}"
 
             elif cond_type == "element_visible":
-                from actions.windows_uia import find_element_by_name
-                el = find_element_by_name(target or expected)
+                from core import platform_hooks
+                el = platform_hooks.call_hook("find_element_by_name", target or expected, default=None)
                 if el:
                     return True, f"Element '{target}' is visible."
                 return False, f"Element '{target}' not found in active UI."

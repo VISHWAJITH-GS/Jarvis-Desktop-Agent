@@ -230,10 +230,9 @@ class EventRecorder:
                 if now - last_window_check > 0.3:
                     last_window_check = now
                     try:
-                        from actions import windows_uia
-                        if windows_uia.is_available():
-                            win = windows_uia.get_active_window()
-                            if win.get("status") == "success":
+                        from core import platform_hooks
+                        win = platform_hooks.call_hook("get_active_window", default=None)
+                        if win and win.get("status") == "success":
                                 title = win.get("title", "")
                                 pname = win.get("process_name", "")
                                 if (title and title != self._last_window_title) or (pname and pname != self._last_process_name):

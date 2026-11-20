@@ -53,9 +53,12 @@ logs/
 downloads/
 screenshots/
 skills/.backups/
+skills/*.db
+skills/skills_manifest.db
 memory/reminders/
 reports/
 scratch/
 data/
 local_data/
 *.pyc
+*.docx

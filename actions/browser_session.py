@@ -397,3 +397,14 @@ class BrowserConsoleMessage:
 
 def get_browser_session_manager(cdp_url: Optional[str] = None) -> BrowserSessionManager:
     return BrowserSessionManager.get_instance(cdp_url)
+
+
+try:
+    from core import platform_hooks
+    def _browser_nav(url: str):
+        mgr = get_browser_session_manager()
+        return mgr.open_tab(url)
+    platform_hooks.register_hook("browser_navigate", _browser_nav)
+except Exception:
+    pass
+

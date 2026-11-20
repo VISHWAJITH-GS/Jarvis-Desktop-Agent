@@ -38,35 +38,34 @@ def get_current_ui_state(max_elements: int = 25) -> UIState:
         return state
 
     try:
-        from actions import windows_uia
-        if windows_uia.is_available():
-            win_info = windows_uia.get_active_window()
-            if win_info.get("status") == "success":
-                state.window_title = win_info.get("title", "")
-                state.process_name = win_info.get("process_name", "")
-                p_lower = state.process_name.lower()
-                state.app_name = state.process_name.replace(".exe", "").capitalize()
+        from core import platform_hooks
+        win_info = platform_hooks.call_hook("get_active_window", default=None)
+        if win_info and win_info.get("status") == "success":
+            state.window_title = win_info.get("title", "")
+            state.process_name = win_info.get("process_name", "")
+            p_lower = state.process_name.lower()
+            state.app_name = state.process_name.replace(".exe", "").capitalize()
 
-                # Detect if browser
-                if any(b in p_lower for b in ("chrome", "msedge", "edge", "firefox", "brave", "opera")):
-                    state.is_browser = True
+            # Detect if browser
+            if any(b in p_lower for b in ("chrome", "msedge", "edge", "firefox", "brave", "opera")):
+                state.is_browser = True
 
-            # Inspect actionable controls
-            ins = windows_uia.inspect_window(max_depth=3, limit=max_elements, only_actionable=True)
-            if ins.get("status") == "success":
-                clean_elems = []
-                for e in ins.get("elements", []):
-                    # Flag sensitive controls
-                    is_sens = is_sensitive_control(e)
-                    clean_elems.append({
-                        "name": "[PROTECTED]" if is_sens else e.get("name", ""),
-                        "control_type": e.get("control_type", ""),
-                        "automation_id": e.get("automation_id", ""),
-                        "class_name": e.get("class_name", ""),
-                        "bounding_rectangle": e.get("bounding_rectangle"),
-                        "is_sensitive": is_sens,
-                    })
-                state.elements = clean_elems
+        # Inspect actionable controls
+        ins = platform_hooks.call_hook("inspect_window", max_depth=3, limit=max_elements, only_actionable=True, default=None)
+        if ins and ins.get("status") == "success":
+            clean_elems = []
+            for e in ins.get("elements", []):
+                # Flag sensitive controls
+                is_sens = is_sensitive_control(e)
+                clean_elems.append({
+                    "name": "[PROTECTED]" if is_sens else e.get("name", ""),
+                    "control_type": e.get("control_type", ""),
+                    "automation_id": e.get("automation_id", ""),
+                    "class_name": e.get("class_name", ""),
+                    "bounding_rectangle": e.get("bounding_rectangle"),
+                    "is_sensitive": is_sens,
+                })
+            state.elements = clean_elems
 
     except Exception as e:
         print(f"[UIStateCapture] Error capturing UI state: {e}")
@@ -79,8 +78,8 @@ def capture_element_at_point(x: int, y: int) -> Optional[dict]:
     if not _IS_WINDOWS:
         return None
     try:
-        from actions import windows_uia
-        elem_data = windows_uia.find_element_at_point(x, y)
+        from core import platform_hooks
+        elem_data = platform_hooks.call_hook("find_element_at_point", x, y, default=None)
         if elem_data and "info" in elem_data:
             info = dict(elem_data["info"])
             is_sens = is_sensitive_control(info)

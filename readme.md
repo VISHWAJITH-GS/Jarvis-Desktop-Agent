@@ -1,4 +1,4 @@
-# ⚙️ MARK LVI (56)
+# ⚙️ Jarvis-Desktop-Agent
 ### The Ultimate Cross-Platform Personal AI Assistant — By FatihMakes
 
 > 📺 **[Watch the full setup video on YouTube](https://www.youtube.com/@FatihMakes)**
@@ -67,7 +67,11 @@ Built with **Google Gemini API as the sole reasoning engine**, Mark LVI delivers
 | ⚡ Unified Tool Architecture | Single authoritative registry, standardized `ActionResult` contract, verified outcomes |
 | 🛡️ Security & Permissions | Multi-tier permissions (`READ_ONLY`, `NORMAL`, `SENSITIVE`, `DESTRUCTIVE`) and secret scanning |
 | 🧠 Structured Memory | Segregated short-term context, task history, and persistent user preferences |
-| 🤫 Reasoning Stays Private | `` before answering, and several servers pass that through as ordinary content. Without a filter the assistant reads its own reasoning aloud: half a minute of *"the user is greeting you, you should acknowledge warmly..."* spoken in full, before the greeting. It also lands in the log, the session summary and the conversation history, where it costs context on every later turn.
+| 🤫 Reasoning Stays Private | Internal model thinking tokens are stripped on the fly so private reasoning is never spoken aloud or leaked into logs |
+
+### 🤫 Reasoning Stays Private
+
+Several servers pass thought tokens through as ordinary content. Without a filter the assistant reads its own reasoning aloud: half a minute of *"the user is greeting you, you should acknowledge warmly..."* spoken in full, before the greeting. It also lands in the log, the session summary and the conversation history, where it costs context on every later turn.
 
 It is filtered on the stream rather than with a pattern, because a tag is regularly split across two chunks — `"<thi"` then `"nk>"`. Tested against two hundred random chunk boundaries.
 

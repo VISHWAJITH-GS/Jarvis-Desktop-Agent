@@ -186,3 +186,14 @@ def get_screen_observer() -> ScreenObserver:
         _DEFAULT_SCREEN_OBSERVER = ScreenObserver()
     return _DEFAULT_SCREEN_OBSERVER
 
+
+try:
+    from core import platform_hooks
+    platform_hooks.register_hook(
+        "observe_screen",
+        lambda: get_screen_observer().capture_observation(trigger_reason="orchestrator_observe")
+    )
+except Exception:
+    pass
+
+

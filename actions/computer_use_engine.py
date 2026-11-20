@@ -673,3 +673,29 @@ TOOL = {
     "handler": computer_use,
 }
 
+
+def _visual_grounding_click(target: str):
+    try:
+        from actions import target_resolver
+        tr = target_resolver.get_target_resolver()
+        res_target, _ = tr.resolve_target(target, prefer_visual=True)
+        if res_target:
+            eng = get_computer_use_engine()
+            click_res = eng.click_coordinates(res_target.desktop_x, res_target.desktop_y)
+            if click_res.success:
+                return (res_target.desktop_x, res_target.desktop_y)
+    except Exception:
+        pass
+    return None
+
+
+try:
+    from core import platform_hooks
+    platform_hooks.register_hook("click_element", lambda **kw: get_computer_use_engine().click_element(**kw))
+    platform_hooks.register_hook("click_cursor_position", lambda: get_computer_use_engine().click_cursor_position())
+    platform_hooks.register_hook("type_text", lambda text="": get_computer_use_engine().type_text(text=text))
+    platform_hooks.register_hook("visual_grounding_click", _visual_grounding_click)
+except Exception:
+    pass
+
+

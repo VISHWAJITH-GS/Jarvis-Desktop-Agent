@@ -1341,3 +1341,11 @@ TOOL = {
     },
     "handler": computer_settings,
 }
+
+try:
+    from core import platform_hooks
+    platform_hooks.register_hook("volume_get", volume_get)
+    platform_hooks.register_hook("volume_set", volume_set)
+except Exception:
+    pass
+

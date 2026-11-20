@@ -1665,3 +1665,15 @@ TOOL = {
     },
     "handler": windows_uia,
 }
+
+try:
+    from core import platform_hooks
+    platform_hooks.register_hook("uia_is_available", is_available)
+    platform_hooks.register_hook("get_active_window", get_active_window)
+    platform_hooks.register_hook("find_element_at_point", find_element_at_point)
+    platform_hooks.register_hook("find_element_by_name", find_element_by_name)
+    platform_hooks.register_hook("inspect_window", inspect_window)
+    platform_hooks.register_hook("open_file_explorer_item", open_file_explorer_item)
+except Exception:
+    pass
+
