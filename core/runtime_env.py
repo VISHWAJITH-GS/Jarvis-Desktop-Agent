@@ -21,13 +21,13 @@ if _platform.system() == "Windows":
             kw.pop("startupinfo", None)
             super().__init__(args, **kw)
 
-    _subprocess.Popen = _Popen
+    _subprocess.Popen = _Popen  # type: ignore[misc,assignment]
 
 
 def ensure_windows_subprocess_patch():
     """Ensure CREATE_NO_WINDOW is patched on Windows."""
     if _platform.system() == "Windows":
-        _subprocess.Popen = _Popen
+        _subprocess.Popen = _Popen  # type: ignore[misc,assignment]
 
 
 def ensure_utf8_console():

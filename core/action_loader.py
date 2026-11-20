@@ -152,6 +152,12 @@ class ActionRegistry:
                 duration_ms=dur,
             )
 
+        if rec.handler is None:
+            return outcome.failed(
+                name,
+                "Action has no handler",
+                duration_ms=(time.monotonic() - t0) * 1000.0,
+            )
         from core.permissions import ActionExecutionGuard
         return ActionExecutionGuard.guard_and_execute(
             action_name=name,
@@ -236,7 +242,7 @@ def _validate_tool(tool: dict, filename: str) -> ActionRecord:
 
 def _validate(module, filename: str) -> ActionRecord:
     """Legacy module validator: delegates to _validate_tool for getattr(module, 'TOOL')."""
-    tool = getattr(module, "TOOL", None)
+    tool = getattr(module, "TOOL", None) or {}
     return _validate_tool(tool, filename)
 
 

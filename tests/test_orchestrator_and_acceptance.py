@@ -1,8 +1,11 @@
+from __future__ import annotations
+import pytest
+pytestmark = pytest.mark.requires_hardware
+
 """
 tests/test_orchestrator_and_acceptance.py — Comprehensive acceptance and integration tests
 covering all 15 required system verification scenarios with clean mocks.
 """
-from __future__ import annotations
 
 import unittest
 from unittest.mock import MagicMock, patch

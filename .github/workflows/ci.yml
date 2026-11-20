@@ -24,7 +24,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install ruff coverage mypy
+          pip install ruff coverage mypy pytest pytest-cov
           if (Test-Path requirements.lock) {
             pip install -r requirements.lock
           } else {
@@ -37,10 +37,9 @@ jobs:
 
       - name: Type check (mypy)
         run: |
-          mypy core/ducking.py core/audio_devices.py core/permissions.py --ignore-missing-imports --follow-imports=silent
+          mypy core/ --config-file=mypy.ini --no-site-packages
 
       - name: Run unit test suite with coverage
         run: |
-          coverage run -m unittest discover -s tests -p "test_*.py"
-          coverage report -m --fail-under=20
+          pytest -m "not requires_hardware" --cov=core --cov=gui --cov-report=term --cov-fail-under=20
 

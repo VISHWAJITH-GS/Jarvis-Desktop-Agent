@@ -678,7 +678,8 @@ class _JarvisProfile:
 
     def runnable(self, written: dict[str, str], log=None) -> list[str]:
         """Changed plugins safe to call with made-up arguments."""
-        run, skipped = [], []
+        run: list[str] = []
+        skipped: list[str] = []
         for rel, text in written.items():
             if rel.startswith("plugins/") and rel.endswith(".py") \
                     and not Path(rel).name.startswith("_"):

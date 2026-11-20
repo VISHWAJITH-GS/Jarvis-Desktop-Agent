@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import math
 import random
+from typing import Any
 
 import numpy as np
 from PyQt6.QtCore import QLineF, QPointF, QRectF, Qt
@@ -150,7 +151,7 @@ class HoloAvatar:
         self.SPAN = mesh["span"][0] - mesh["span"][1]
 
         self._lut_cache: list = []
-        self._lut_key = None
+        self._lut_key: tuple[Any, ...] | None = None
 
         n = self._v0.shape[0]
         self._v = np.empty((n, 3), dtype=np.float32)
@@ -190,7 +191,7 @@ class HoloAvatar:
         self._bias_at = 0.0
         self._lids = 1.0           # 1 = wide, 0 = shut; low while asleep
         self._brow_bias = 0.0      # concentration pulls the brows down
-        self._glance = None        # (dx, dy, until_t) — a deliberate look
+        self._glance: tuple[float, float, float] | None = None        # (dx, dy, until_t) — a deliberate look
 
         # ── viseme ──────────────────────────────────────────────────────────
         # Loudness alone only answers "how far open", which is why an RMS-driven

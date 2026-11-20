@@ -301,8 +301,9 @@ class KokoroTTSEngine:
         print("[TTS] Kokoro compiling (first-time only)…")
         # Warmup: compiles PyTorch JIT graph so first real speak() call is instant.
         try:
-            for _ in self._pipeline("hello", voice=self.voice, speed=self.speed):
-                pass
+            if callable(self._pipeline):
+                for _ in self._pipeline("hello", voice=self.voice, speed=self.speed):
+                    pass
             print("[TTS] Kokoro ready.")
         except Exception as e:
             print(f"[TTS] Kokoro warmup warning: {e}")
@@ -428,6 +429,7 @@ class TTSPlayer:
 
 def create_tts_player(config: dict) -> TTSPlayer:
     engine_name = config.get("tts_engine", "edgetts").lower()
+    engine: EdgeTTSEngine | KokoroTTSEngine | ElevenLabsTTSEngine
     if engine_name == "kokoro":
         voice  = config.get("tts_voice", "af_heart")
         speed  = float(config.get("tts_speed", 1.0))

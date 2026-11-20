@@ -106,14 +106,10 @@ def main():
             '    "qcol",\n',
             '    "_nvml_gpu_windows",\n',
             '    "_SysMetrics",\n',
-            '    "_metrics",\n',
             '    "rgba",\n',
             '    "_load_app_fonts",\n',
             '    "keena_font",\n',
             '    "HAVE_VIDEO",\n',
-            '    "QGraphicsVideoItem",\n',
-            '    "QAudioOutput",\n',
-            '    "QMediaPlayer",\n',
             '    "HoloAvatar",\n',
             '    "get_uicon",\n',
             "]\n",
@@ -138,7 +134,7 @@ def main():
 
     base_imports = pyqt_header + std_imports + [
         "from gui.base import *\n",
-        "from gui.base import _WIN_HIDE, _base_dir, BASE_DIR, CONFIG_DIR, API_FILE, _read_full_config, _DEFAULT_W, _DEFAULT_H, _MIN_W, _MIN_H, _LEFT_W, _RIGHT_W, _OS, _ResizeEdge, _detect_resize_edge, _cursor_for_edge, _FramelessWindowResizeMixin, _SysMetrics, _metrics, _nvml_gpu_windows, _load_app_fonts, keena_font, HAVE_VIDEO, HoloAvatar, get_uicon, QGraphicsVideoItem, QAudioOutput, QMediaPlayer\n",
+        "from gui.base import _WIN_HIDE, _base_dir, BASE_DIR, CONFIG_DIR, API_FILE, _read_full_config, _DEFAULT_W, _DEFAULT_H, _MIN_W, _MIN_H, _LEFT_W, _RIGHT_W, _OS, _ResizeEdge, _detect_resize_edge, _cursor_for_edge, _FramelessWindowResizeMixin, _SysMetrics, _load_app_fonts, keena_font, HAVE_VIDEO, HoloAvatar, get_uicon\n",
         "from gui.theme import *\n",
         "from gui.theme import _RESIZE_MARGIN, _NO_SCROLLBAR_STYLE, _HUE_LINKED, _PALETTE_DEFAULTS, _lerp_color\n",
         "\n",
@@ -222,20 +218,8 @@ def main():
     controls_start = method_offsets["_build_footer"]
     controls_end = len(mw_lines)
 
-    gui_widget_imports = [
-        "from gui.hud import *\n",
-        "from gui.widgets import *\n",
-        "from gui.overlays import *\n",
-        "from gui.providers_panel import *\n",
-        "from gui.settings_overlays import *\n",
-        "from gui.docks import *\n",
-        "from gui.display_windows import *\n",
-        "from gui.telemetry_and_displays import *\n",
-        "\n",
-    ]
-
     # WindowMediaMixin
-    media_mixin_content = base_imports + gui_widget_imports + [
+    media_mixin_content = base_imports + [
         "class WindowMediaMixin:\n",
         '    """Video playback and desktop shortcut management for MainWindow."""\n',
     ] + mw_lines[media_start:media_end]
@@ -243,7 +227,7 @@ def main():
         f.writelines(media_mixin_content)
 
     # WindowAudioMixin
-    audio_mixin_content = base_imports + gui_widget_imports + [
+    audio_mixin_content = base_imports + [
         "class WindowAudioMixin:\n",
         '    """Cyber drawer and audio management for MainWindow."""\n',
     ] + mw_lines[audio_start:audio_end]
@@ -251,7 +235,7 @@ def main():
         f.writelines(audio_mixin_content)
 
     # WindowPanelsMixin
-    panels_mixin_content = base_imports + gui_widget_imports + [
+    panels_mixin_content = base_imports + [
         "class WindowPanelsMixin:\n",
         '    """Interactive content, quiz, code job, and review panels for MainWindow."""\n',
     ] + mw_lines[panels_start:panels_end]
@@ -259,7 +243,7 @@ def main():
         f.writelines(panels_mixin_content)
 
     # WindowControlsMixin
-    controls_mixin_content = base_imports + gui_widget_imports + [
+    controls_mixin_content = base_imports + [
         "class WindowControlsMixin:\n",
         '    """Settings, PTT, wake word, overlays, and system controls for MainWindow."""\n',
     ] + mw_lines[controls_start:controls_end]
@@ -332,19 +316,6 @@ __all__ = [
     "C",
     "apply_ui_accent",
     "DEFAULT_UI_COLOR",
-    "COLOR_STATE_LISTENING",
-    "COLOR_STATE_SPEAKING",
-    "COLOR_STATE_THINKING",
-    "COLOR_STATE_PROCESSING",
-    "COLOR_BLUE_PRIMARY",
-    "COLOR_BLUE_GLOW",
-    "COLOR_BLUE_OUTER",
-    "COLOR_BLUE_HIGHLIGHT",
-    "_FramelessWindowResizeMixin",
-    "_ResizeEdge",
-    "_cursor_for_edge",
-    "_detect_resize_edge",
-    "_NO_SCROLLBAR_STYLE",
     "MainWindow",
     "JarvisUI",
     "HudCanvas",
@@ -372,7 +343,6 @@ __all__ = [
     "ClipboardPanel",
     "PluginSettingsOverlay",
     "RemoteKeyOverlay",
-    "format_visual_content_html",
 ]
 """
     with open("gui/__init__.py", "w", encoding="utf-8") as f:
@@ -382,35 +352,13 @@ __all__ = [
     ui_content = """# ui.py — Thin facade exposing JarvisUI and re-exporting all GUI symbols for compatibility.
 from __future__ import annotations
 
-import gui
-for _k, _v in gui.__dict__.items():
-    if not (_k.startswith("__") and _k.endswith("__")):
-        globals()[_k] = _v
-
+from gui import *
 from gui import __all__ as _gui_all
+
 __all__ = list(_gui_all)
 """
     with open("ui.py", "w", encoding="utf-8") as f:
         f.write(ui_content)
-
-    # Update ui/__init__.py as well so imports from `ui` directory work seamlessly
-    pkg_init = """\"\"\"
-ui/__init__.py — Jarvis UI package compatibility facade.
-Exposes JarvisUI and all GUI classes and re-exports gui.* and event_bus.
-\"\"\"
-from __future__ import annotations
-
-import gui
-for _k, _v in gui.__dict__.items():
-    if not (_k.startswith("__") and _k.endswith("__")):
-        globals()[_k] = _v
-
-from ui.event_bus import UIEventBus, get_ui_event_bus
-from gui import __all__ as _gui_all
-__all__ = list(_gui_all) + ["UIEventBus", "get_ui_event_bus"]
-"""
-    with open("ui/__init__.py", "w", encoding="utf-8") as f:
-        f.write(pkg_init)
 
     print("Successfully modularized ui.py into gui/ package!")
 

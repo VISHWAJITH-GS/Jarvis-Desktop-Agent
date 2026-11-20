@@ -1,3 +1,6 @@
+import pytest
+pytestmark = pytest.mark.requires_hardware
+
 """
 tests/test_wifi_bluetooth_system.py — Tests for Module 1 & Module 2 Wi-Fi & Bluetooth Management:
 - Wi-Fi status detection (enabled, connected, SSID, IP, internet availability)

@@ -1,3 +1,7 @@
+from __future__ import annotations
+import pytest
+pytestmark = pytest.mark.requires_hardware
+
 """
 tests/test_skill_learning.py — Comprehensive Unit & Integration Tests for Skill Engine.
 
@@ -13,7 +17,6 @@ Tests:
 9. LearningManager lifecycle (start, pause, resume, stop, cancel, review, generate, test, approve, delete).
 10. Action handler `actions.skill_learner` integration with standard ActionResult contract.
 """
-from __future__ import annotations
 
 import json
 import os

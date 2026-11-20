@@ -15,8 +15,8 @@ Verifies:
 11. Impossibility of model/AI forgery (confirmed=True in parameters ignored).
 12. Strict rejection and blocking of drive formatting across all routes.
 """
-
 from __future__ import annotations
+
 
 import time
 import unittest

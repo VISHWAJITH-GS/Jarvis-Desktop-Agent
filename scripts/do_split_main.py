@@ -105,6 +105,8 @@ class LiveVoiceMixin:
             init_cleaned.append("        self._proactive        = _pro_cls() if _pro_cls else None\n")
         elif "class JarvisLive:" in l:
             init_cleaned.append("class JarvisLive(LiveAudioMixin, LiveMonitorsMixin, LiveVoiceMixin):\n")
+        elif "def __init__(self, ui: JarvisUI):" in l:
+            init_cleaned.append("    def __init__(self, ui: Any):\n")
         else:
             init_cleaned.append(l)
 
@@ -153,7 +155,8 @@ from core.tool_dispatcher import ToolDispatcher
 from core.session_audio import LiveAudioMixin
 from core.session_monitors import LiveMonitorsMixin
 from core.session_voice import LiveVoiceMixin, IDLE_SLEEP_TIMEOUT, WAKE_SLEEP_TIMEOUT
-from core.action_loader import discover_actions
+import platform as _platform
+from core.action_loader import discover_actions, strip_meta
 from core.plugin_loader import discover_plugins
 from core.voice_state import VoiceStateManager, VoiceState
 from core.global_input import GlobalInputController

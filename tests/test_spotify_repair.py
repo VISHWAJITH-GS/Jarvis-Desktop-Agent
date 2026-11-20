@@ -1,8 +1,11 @@
+from __future__ import annotations
+import pytest
+pytestmark = pytest.mark.requires_hardware
+
 """
 tests/test_spotify_repair.py — Automated tests for Spotify track playback,
 separation from resume, outcome formatting, and failure handling.
 """
-from __future__ import annotations
 
 import unittest
 from actions import spotify_control

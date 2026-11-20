@@ -7,11 +7,23 @@ import logging
 import os
 import platform
 import re
-from typing import Optional, Set, Tuple
+from typing import Optional, Set, Tuple, Any
 
 from core import platform_hooks
 
 logger = logging.getLogger("jarvis.audio_endpoints")
+
+def _get_devices_module() -> Any:
+    from core import audio_devices
+    return audio_devices
+
+def _display_name(name: str, devices: Any) -> str:
+    return _get_devices_module()._display_name(name, devices)
+
+def _invalidate_cache() -> None:
+    _get_devices_module().invalidate_cache()
+
+DEFAULT_LABEL = "System default"
 
 def _platform_is() -> str:
     return platform.system()
@@ -163,7 +175,7 @@ def set_default_endpoint(device_name_or_id: str, kind: str = "output") -> bool:
             # 0: eConsole, 1: eMultimedia, 2: eCommunications
             for role in (0, 1, 2):
                 policy.SetDefaultEndpoint(target_id, role)
-            invalidate_cache()
+            _invalidate_cache()
             return True
         finally:
             try:
@@ -276,19 +288,7 @@ def _endpoint_for(name: str):
     return None
 
 
-def _platform_is() -> str:
-    import platform
-    return platform.system()
 
-
-def _fold(text: str) -> str:
-    """Same reduction core/appidentity uses for application names — imported
-    lazily so this module keeps working if that one is ever absent."""
-    try:
-        from core.appidentity import fold
-        return fold(text)
-    except Exception:
-        return "".join(c for c in str(text or "").lower() if c.isalnum())
 
 
 def get_output_volume(name: str = "") -> Optional[int]:

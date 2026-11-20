@@ -9,6 +9,7 @@ import json
 import os
 import threading
 import time
+import traceback
 from pathlib import Path
 from typing import Any
 
@@ -30,13 +31,15 @@ from core.tool_dispatcher import ToolDispatcher
 from core.session_audio import LiveAudioMixin
 from core.session_monitors import LiveMonitorsMixin
 from core.session_voice import LiveVoiceMixin, IDLE_SLEEP_TIMEOUT, WAKE_SLEEP_TIMEOUT
-from core.action_loader import discover_actions
+import platform as _platform
+from core.action_loader import discover_actions, strip_meta
 from core.plugin_loader import discover_plugins
 from core.voice_state import VoiceStateManager, VoiceState
 from core.global_input import GlobalInputController
 from core.audio_manager import AudioManager, set_audio_manager
 from core.viseme import VisemeStream
 from core.echo import EchoGuard
+from core import gemini as _gemini
 from core.wake_word import WakeWordDetector, is_ready as wake_is_ready
 from core import confirm as confirm_gate
 from core import platform_hooks
@@ -54,7 +57,7 @@ from memory.config_manager import (
 )
 
 class JarvisLive(LiveAudioMixin, LiveMonitorsMixin, LiveVoiceMixin):
-    def __init__(self, ui: JarvisUI):
+    def __init__(self, ui: Any):
         # Platform limits are announced once per run, not once per
         # reconnect: a dropped connection is not news about Wayland.
         self._platform_notes_shown = False
@@ -85,7 +88,7 @@ class JarvisLive(LiveAudioMixin, LiveMonitorsMixin, LiveVoiceMixin):
         # Deadline for "we sent a turn and the server has said nothing since".
         # None means nothing is outstanding. Armed by the send sites, cleared by
         # the first frame of ANY response, watched by _watch_stall().
-        self._rx_deadline          = None
+        self._rx_deadline: float | None = None
         # Transcript-driven mouth shapes for the avatar. Fed from the receive
         # loop as words arrive, drained by the playback loop against the audio.
         self._visemes              = VisemeStream()
@@ -152,7 +155,7 @@ class JarvisLive(LiveAudioMixin, LiveMonitorsMixin, LiveVoiceMixin):
         self._tuned_live    = True  # turn-taking / media / thinking knobs; same fallback
 
         _base_dir = Path(__file__).resolve().parent
-        _inline_names = {t["name"] for t in TOOL_DECLARATIONS}
+        _inline_names: set[str] = {str(t.get("name", "")) for t in TOOL_DECLARATIONS if isinstance(t, dict)}
 
         # File-backed tools: every actions/*.py with a TOOL dict, discovered the
         # same way plugins are. Reserved names = the inline tools above, so an

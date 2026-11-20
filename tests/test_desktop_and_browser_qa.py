@@ -1,9 +1,12 @@
+from __future__ import annotations
+import pytest
+pytestmark = pytest.mark.requires_hardware
+
 """
 tests/test_desktop_and_browser_qa.py — Comprehensive Test Suite for Desktop Perception,
 Coordinate Transforms, Visual Grounding, UIA Ambiguity Resolution, Browser Session Recovery,
 Autonomous Website QA, Emergency Stop, and Sanitization.
 """
-from __future__ import annotations
 
 import http.server
 import json

@@ -1,3 +1,6 @@
+import pytest
+pytestmark = pytest.mark.requires_hardware
+
 """
 tests/test_cdp_browser_engine.py — Unit Tests for CDP + AXTree + SoM Browser-Use Engine.
 """

@@ -1,3 +1,6 @@
+import pytest
+pytestmark = pytest.mark.requires_hardware
+
 import unittest
 from unittest.mock import patch, MagicMock
 from actions import computer_settings, open_app, windows_control

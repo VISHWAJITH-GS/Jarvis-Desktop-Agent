@@ -71,7 +71,7 @@ import sys
 import time
 import threading
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 if getattr(sys, "frozen", False):
     _BASE = Path(sys.executable).parent
@@ -390,7 +390,7 @@ def _to_live_parts(contents) -> list:
     import base64
 
     items = contents if isinstance(contents, (list, tuple)) else [contents]
-    parts = []
+    parts: list[dict[str, Any]] = []
     for item in items:
         if isinstance(item, str):
             parts.append({"text": item})
@@ -654,7 +654,10 @@ def _provider_call(model: str, contents, config, timeout_ms: int):
     pid = model.removeprefix(PROVIDER_PREFIX)
     cfg = get_provider_config(pid)
     from providers import registry
-    prov = getattr(registry, "build", getattr(registry, "load", None))(pid, cfg)
+    builder = getattr(registry, "build", None) or getattr(registry, "load", None)
+    if not callable(builder):
+        raise RuntimeError("Provider builder not available.")
+    prov = builder(pid, cfg)
     if not prov:
         raise RuntimeError(f"Provider '{pid}' could not be loaded.")
     messages, temperature = _to_openai_messages(contents, config)

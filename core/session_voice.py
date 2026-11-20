@@ -6,18 +6,22 @@ import asyncio
 import threading
 import time
 from typing import Any
-from core.runtime_env import _ReconnectSignal, _is_reconnect_signal, _keep_context_of
+from core.runtime_env import (
+    _ReconnectSignal, _is_reconnect_signal, _keep_context_of,
+    SEND_SAMPLE_RATE, RECEIVE_SAMPLE_RATE, CHUNK_SIZE
+)
 from core.wake_word import WakeWordDetector, is_ready as wake_is_ready, install_and_download as wake_install
 from core.voice_state import VoiceState
 from core import audio_devices
 from memory.config_manager import (
     get_input_device, get_output_device, save_wake_word_enabled, save_auto_sleep_enabled,
-    get_push_to_talk_enabled,
+    get_push_to_talk_enabled, get_idle_sleep_timeout, DEFAULT_IDLE_SLEEP_TIMEOUT,
 )
 
 IDLE_SLEEP_TIMEOUT = 180.0
 WAKE_SLEEP_TIMEOUT = 180.0
 _STALL_LIMIT = 45.0
+_TAIL_MARGIN = 0.25
 
 class LiveVoiceMixin:
     """Voice state management, wake word, and control handling."""

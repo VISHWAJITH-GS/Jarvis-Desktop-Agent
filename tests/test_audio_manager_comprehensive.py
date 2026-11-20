@@ -5,8 +5,8 @@ Independent I/O Switching, Sample-Rate Resampling, Crash Prevention, Gemini Live
 Preservation, Graceful Shutdown), Confirmation Protocols, Voice Commands, and
 nvidia-ml-py Warning-Free GPU Monitoring.
 """
-
 from __future__ import annotations
+
 
 import threading
 import time
