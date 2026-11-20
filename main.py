@@ -22,11 +22,11 @@ if _platform.system() == "Windows":
 # because most of these prints sit inside the receive loop it takes the session
 # down on startup. Reconfiguring to UTF-8 with a replacement fallback costs
 # nothing and makes the app launch the same way in every locale.
-import sys as _sys
+import sys
 
 for _stream in ("stdout", "stderr"):
     try:
-        _s = getattr(_sys, _stream, None)
+        _s = getattr(sys, _stream, None)
         if _s is not None and hasattr(_s, "reconfigure"):
             _s.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
@@ -39,7 +39,6 @@ import re
 import threading
 import time
 import json
-import sys
 import traceback
 from contextlib import asynccontextmanager
 from datetime import datetime

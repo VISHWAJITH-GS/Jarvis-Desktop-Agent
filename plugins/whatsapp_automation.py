@@ -21,6 +21,11 @@ PLUGIN = {
     "parameters": {
         "type": "OBJECT",
         "properties": {
+            "action": {
+                "type": "STRING",
+                "description": "Action to perform: 'send_message', 'read_chat', 'read_latest', or 'summarize'. Defaults to 'send_message'.",
+                "enum": ["send_message", "read_chat", "read_latest", "summarize"],
+            },
             "contact": {
                 "type": "STRING",
                 "description": "The recipient's contact name (e.g. 'Mom', 'Rahul', 'Boss').",

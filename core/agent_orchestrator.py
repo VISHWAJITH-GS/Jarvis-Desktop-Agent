@@ -158,16 +158,19 @@ class AgentOrchestrator:
 
     # ── DYNAMIC TOOL DECLARATIONS FROM REGISTRY ─────────────────────────────
     def get_registered_tool_catalog(self) -> str:
-        """Extract tool names and descriptions from the authoritative registry."""
+        """Extract tool names, descriptions, and parameter schemas from the authoritative registry."""
         decls = self.registry.get_tool_declarations()
-        lines = []
+        items = []
         for d in decls:
             name = d.get("name")
-            desc = d.get("brief") or d.get("description", "")
-            if len(desc) > 120:
-                desc = desc[:117] + "..."
-            lines.append(f'- "{name}": {desc}')
-        return "\n".join(lines)
+            desc = d.get("description") or d.get("brief", "")
+            params = d.get("parameters", {})
+            items.append({
+                "name": name,
+                "description": desc,
+                "parameters": params,
+            })
+        return json.dumps(items, indent=2)
 
     # ── PLAN USING GEMINI ────────────────────────────────────────────────────
     def plan_task(self, goal: str, observation: dict) -> list[dict]:
@@ -176,32 +179,18 @@ class AgentOrchestrator:
         obs_text = observation.get("summary") or f"Active window: {observation.get('window_title')}"
 
         prompt = f"""You are the central Windows Desktop AI Orchestrator.
-Decompose the user's desktop goal into a list of atomic executable steps using the available tools.
+Decompose the user's desktop goal into a list of atomic executable steps using the available registered tools.
 
 USER GOAL: "{goal}"
 
 CURRENT SYSTEM OBSERVATION:
 {obs_text}
 
-AVAILABLE REGISTERED TOOLS:
+AVAILABLE REGISTERED TOOLS (with parameter schemas):
 {tool_catalog}
 
-PREFERRED TOOL MAPPING:
-- Reminders: Use "reminder" with {{"action": "create" | "list" | "edit" | "delete" | "complete", "title": "...", "date_time": "..."}}
-- WhatsApp: Use "whatsapp_automation" with {{"action": "send_message", "contact": "...", "message": "..."}} or "whatsapp_read" with {{"action": "read_chat" | "read_latest" | "summarize", "contact": "..."}}
-- Windows System Settings: Use "windows_control" with {{"action": "wifi_status" | "enable_wifi" | "disable_wifi" | "list_wifi_networks" | "connect_wifi" | "disconnect_wifi" | "bluetooth_status" | "enable_bluetooth" | "disable_bluetooth" | "list_bluetooth_devices" | "pair_bluetooth_device" | "connect_bluetooth" | "disconnect_bluetooth" | "get_volume" | "set_volume" | "mute" | "unmute" | "get_brightness" | "set_brightness" | "battery_status"}}
-- Application Management: Use "computer_control" with {{"action": "open_app" | "close_app" | "minimize_app" | "maximize_app" | "switch_app" | "list_running_apps" | "get_active_window", "app_name": "..."}}
-- Music/Media: Use "media_control" with {{"action": "play" | "search" | "pause" | "resume" | "next" | "previous" | "set_volume" | "get_current_playing_media", "query": "..."}}
-- Web Search & Research: Use "web_search" with {{"action": "search" | "read" | "summarize" | "open", "query": "...", "url": "..."}}
-- Windows Notifications: Use "notification_center" with {{"action": "read_recent" | "summarize" | "filter_by_app", "app_name": "..."}}
-- LeetCode Assistant: Use "leetcode_assistant" with {{"action": "get_hint" | "explain_approach" | "debug_code" | "analyze_complexity" | "generate_edge_cases", "code": "...", "language": "..."}}
-- Web Testing / QA: Use "browser_qa" with {{"url": "...", "project_dir": "..."}}
-- Desktop Clicks / Keyboard: Use "computer_use" with {{"action": "click_element" | "click_cursor_position" | "type_text" | "press_key" | "scroll", ...}}
-- File Navigation: Use "windows_uia" or "computer_use" with {{"action": "uia_open", "name": "..."}}
-- State Assertion: Use "verify_state" with {{"expected_window": "..."}}
-
 OUTPUT FORMAT:
-Return ONLY a valid JSON array of objects, with NO surrounding explanation or markdown fences.
+Return ONLY a valid JSON array of step objects:
 [
   {{
     "thought": "1-sentence explanation of what this step does",
@@ -211,48 +200,34 @@ Return ONLY a valid JSON array of objects, with NO surrounding explanation or ma
 ]
 """
         try:
-            raw = _gemini.text(prompt, tier=_gemini.SMART)
-            if raw:
-                clean = re.sub(r"^```(?:json)?\s*", "", raw.strip(), flags=re.MULTILINE)
-                clean = re.sub(r"\s*```$", "", clean.strip(), flags=re.MULTILINE)
-                plan = json.loads(clean)
-                if isinstance(plan, list):
-                    return plan
+            plan = _gemini.as_json(prompt, tier=_gemini.SMART)
+            if isinstance(plan, list):
+                return plan
+            if isinstance(plan, dict) and "steps" in plan and isinstance(plan["steps"], list):
+                return plan["steps"]
         except Exception as e:
             self.log(f"Gemini planning fallback due to: {e}")
 
-        # Deterministic rule-based fallback
+        # Deterministic rule-based fallback (general tools only, no hardcoded personal devices/URLs)
         goal_lower = goal.lower()
         steps = []
-        if "test" in goal_lower and ("website" in goal_lower or "site" in goal_lower or "browser" in goal_lower):
-            steps.append({
-                "thought": "Launch autonomous browser QA agent to test website",
-                "action": "browser_qa",
-                "parameters": {"website_url": "http://localhost:3000"},
-            })
-            return steps
-
-        if "earbuds" in goal_lower or "buds" in goal_lower or "bluetooth" in goal_lower:
-            target_bud = "OPPO Enco Buds 2" if "enco" in goal_lower or "oppo" in goal_lower else "earbuds"
-            steps.append({
-                "thought": "Connect Bluetooth audio device",
-                "action": "windows_control",
-                "parameters": {"action": "connect_bluetooth_device", "target": target_bud},
-            })
-        if "spotify" in goal_lower or "play" in goal_lower or "song" in goal_lower:
+        if "play" in goal_lower or "song" in goal_lower or "music" in goal_lower or "spotify" in goal_lower:
             m = re.search(r"play\s+(.+?)(?:$|\s+and)", goal_lower)
             query = m.group(1).replace("the song", "").replace("spotify", "").strip() if m else "music"
             steps.append({
-                "thought": "Play music in Spotify",
-                "action": "spotify_control",
+                "thought": "Play requested media track",
+                "action": "media_control",
                 "parameters": {"action": "play", "query": query},
             })
-        if "file explorer" in goal_lower or "folder" in goal_lower or "notes" in goal_lower:
-            steps.append({
-                "thought": "Open File Explorer",
-                "action": "open_app",
-                "parameters": {"app_name": "File Explorer"},
-            })
+        elif "open" in goal_lower:
+            m = re.search(r"open\s+(.+?)(?:$|\s+and)", goal_lower)
+            app = m.group(1).strip() if m else ""
+            if app:
+                steps.append({
+                    "thought": f"Open application '{app}'",
+                    "action": "open_app",
+                    "parameters": {"app_name": app},
+                })
         return steps or [
             {"thought": "Execute task directly", "action": "computer_use", "parameters": {"action": "click_element", "name": goal}}
         ]
@@ -445,10 +420,23 @@ Return ONLY a valid JSON array of objects, with NO surrounding explanation or ma
                     except Exception:
                         pass
 
-                if not recovered:
-                    self.log(f"Prerequisite step {step_idx + 1} failed and could not be recovered. Stopping plan safely.")
-                    results_log.append(f"Plan halted: cannot proceed past failed step {step_idx + 1}.")
-                    break
+                if recovered:
+                    step_results[-1].success = True
+                    step_results[-1].verified = True
+                    step_results[-1].status = outcome.STATUS_DONE
+                else:
+                    self.log(f"Step {step_idx + 1} failed and could not be recovered. Checking dynamic replan from current screen...")
+                    replan_prompt = f"Goal: {goal}. Previous progress: {results_log}. Current state: {post_obs.get('summary', '')}"
+                    new_steps = self.plan_task(replan_prompt, post_obs)
+                    if new_steps:
+                        self.log(f"ReAct replanner formulated {len(new_steps)} replacement steps.")
+                        plan = plan[:step_idx + 1] + new_steps
+                        step_idx += 1
+                        continue
+                    else:
+                        self.log(f"Prerequisite step {step_idx + 1} failed and could not be recovered. Stopping plan safely.")
+                        results_log.append(f"Plan halted: cannot proceed past failed step {step_idx + 1}.")
+                        break
 
             step_idx += 1
 

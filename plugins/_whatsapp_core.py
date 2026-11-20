@@ -25,7 +25,7 @@ _PYPERCLIP = installed("pyperclip")
 
 
 def _configure_pyautogui(module) -> None:
-    module.FAILSAFE = False
+    module.FAILSAFE = True
     module.PAUSE = 0.05
 
 
@@ -36,19 +36,27 @@ pyperclip = LazyModule("pyperclip")
 def _paste_text(text: str) -> None:
     if not _PYAUTOGUI:
         return
-    try:
-        pyautogui.FAILSAFE = False
-    except Exception:
-        pass
+    old_clipboard = None
     if _PYPERCLIP:
         try:
-            pyperclip.copy(text)
-            time.sleep(0.1)
-            pyautogui.hotkey("ctrl", "v")
-            time.sleep(0.1)
-            return
+            old_clipboard = pyperclip.paste()
         except Exception:
-            pass
+            old_clipboard = None
+        try:
+            pyperclip.copy(text)
+            time.sleep(0.08)
+            try:
+                pyautogui.hotkey("ctrl", "v")
+                time.sleep(0.08)
+                return
+            except Exception:
+                pass
+        finally:
+            if old_clipboard is not None:
+                try:
+                    pyperclip.copy(old_clipboard)
+                except Exception:
+                    pass
     try:
         pyautogui.write(text, interval=0.02)
     except Exception:
@@ -105,20 +113,32 @@ class WhatsAppDriver:
             except Exception:
                 pass
 
+        launched = False
         try:
             os.startfile("whatsapp:")
-            time.sleep(2.0)
-            return True
+            launched = True
         except Exception:
             pass
 
-        try:
-            from actions import open_app
-            open_app.open_app({"app_name": "WhatsApp"})
-            time.sleep(2.0)
-            return True
-        except Exception:
-            pass
+        if not launched:
+            try:
+                from actions import open_app
+                open_app.open_app({"app_name": "WhatsApp"})
+                launched = True
+            except Exception:
+                pass
+
+        if launched:
+            deadline = time.monotonic() + 3.0
+            while time.monotonic() < deadline:
+                time.sleep(0.3)
+                win = self._find_whatsapp_window()
+                if win:
+                    try:
+                        win.set_focus()
+                    except Exception:
+                        pass
+                    return True
 
         return False
 
@@ -188,15 +208,21 @@ class WhatsAppDriver:
             except Exception:
                 pass
 
+        if not candidates:
+            return False, f"Contact '{contact_name}' was not found in WhatsApp.", []
+
         if len(candidates) > 1:
             return False, f"Found multiple contacts matching '{contact_name}': {', '.join(candidates[:4])}. Which one would you like to message?", candidates
 
-        # Select top search result
+        # Select top search result only when exactly 1 candidate exists
         if _PYAUTOGUI:
-            pyautogui.press("enter")
-            time.sleep(0.5)
+            try:
+                pyautogui.press("enter")
+                time.sleep(0.5)
+            except Exception:
+                pass
 
-        chosen = candidates[0] if candidates else contact_name
+        chosen = candidates[0]
         return True, chosen, candidates
 
     def open_chat(self, contact_name: str) -> Tuple[bool, str]:
@@ -233,19 +259,28 @@ class WhatsAppDriver:
                 f = self.uia.find_elements(candidate, control_type="Edit", window=win, exact=False)
                 if f.get("status") == "success" and f.get("matches"):
                     input_elem = f["matches"][0].get("_wrapper")
-                    self.uia.click_element(input_elem)
-                    time.sleep(0.2)
-                    _paste_text(message)
-                    time.sleep(0.2)
-                    if _PYAUTOGUI:
-                        pyautogui.press("enter")
-                    typed = True
                     break
 
-        if not typed and _PYAUTOGUI:
+            if not input_elem:
+                return False, "WhatsApp message input box could not be located."
+
+            self.uia.click_element(input_elem)
+            time.sleep(0.2)
             _paste_text(message)
             time.sleep(0.2)
-            pyautogui.press("enter")
+            if _PYAUTOGUI:
+                try:
+                    pyautogui.press("enter")
+                except Exception:
+                    pass
+            typed = True
+        elif _PYAUTOGUI:
+            _paste_text(message)
+            time.sleep(0.2)
+            try:
+                pyautogui.press("enter")
+            except Exception:
+                pass
             typed = True
 
         if not typed:
@@ -274,10 +309,8 @@ class WhatsAppDriver:
             except Exception as e:
                 print(f"[WhatsAppCore] Send verification error: {e}")
 
-        if not verified and typed:
-            # Fallback verification: input sent successfully
-            verified = True
-            evidence = "Message sent and Enter keystroke confirmed."
+        if not verified:
+            return False, "Message delivery could not be confirmed in WhatsApp."
 
         return True, evidence or "Message sent successfully."
 
@@ -298,8 +331,16 @@ class WhatsAppDriver:
 
         messages = []
         try:
-            # Look for conversation message items (ListItems or Text controls)
-            chat_elements = self.uia.find_elements("", control_type="ListItem", window=win, exact=False)
+            # Scope search to message list container if present
+            list_container = None
+            for container_name in ("Message list", "Chat messages", "Messages"):
+                c_res = self.uia.find_elements(container_name, control_type="List", window=win, exact=False)
+                if c_res.get("status") == "success" and c_res.get("matches"):
+                    list_container = c_res["matches"][0].get("_wrapper")
+                    break
+
+            scope_win = list_container if list_container else win
+            chat_elements = self.uia.find_elements("", control_type="ListItem", window=scope_win, exact=False)
             items = chat_elements.get("matches", []) if chat_elements.get("status") == "success" else []
 
             for item in items[-max(limit, 10):]:
@@ -322,7 +363,8 @@ class WhatsAppDriver:
         if not messages:
             # Fallback: scan for any visible Text elements in chat region
             try:
-                txt_elements = self.uia.find_elements("", control_type="Text", window=win, exact=False)
+                scope_win = list_container if list_container else win
+                txt_elements = self.uia.find_elements("", control_type="Text", window=scope_win, exact=False)
                 for t in txt_elements.get("matches", [])[-limit:]:
                     tname = t.get("name", "").strip()
                     if tname and len(tname) > 2 and tname not in ("WhatsApp", "Type a message", "Search"):

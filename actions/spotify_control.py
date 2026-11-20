@@ -227,15 +227,157 @@ def launch_spotify() -> bool:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TRACK SEARCH & SELECTION (No API Key Required)
+# TRACK SEARCH & SELECTION (Spotify Web API, Edge CDP & Discovery)
 # ══════════════════════════════════════════════════════════════════════════════
+
+def _get_spotify_api_credentials() -> tuple[str, str]:
+    """Retrieve Spotify client ID and client secret from config or environment."""
+    import os
+    cid = os.environ.get("SPOTIFY_CLIENT_ID", "").strip()
+    secret = os.environ.get("SPOTIFY_CLIENT_SECRET", "").strip()
+    if cid and secret:
+        return cid, secret
+    try:
+        from memory import config_manager
+        cfg = config_manager.load_config()
+        cid = (cfg.get("spotify_client_id") or "").strip()
+        secret = (cfg.get("spotify_client_secret") or "").strip()
+    except Exception:
+        pass
+    return cid, secret
+
+
+def _search_spotify_web_api(query: str, artist: str = "") -> Optional[dict]:
+    """Search Spotify Web API deterministically using client credentials or spotipy."""
+    cid, secret = _get_spotify_api_credentials()
+    if not cid or not secret:
+        return None
+
+    try:
+        import base64
+        import json
+        import urllib.request
+        import urllib.parse
+
+        # 1. Obtain token via Client Credentials flow
+        auth_bytes = f"{cid}:{secret}".encode("utf-8")
+        auth_b64 = base64.b64encode(auth_bytes).decode("utf-8")
+        token_req = urllib.request.Request(
+            "https://accounts.spotify.com/api/token",
+            data=b"grant_type=client_credentials",
+            headers={
+                "Authorization": f"Basic {auth_b64}",
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+        )
+        with urllib.request.urlopen(token_req, timeout=5.0) as resp:
+            token_data = json.loads(resp.read().decode("utf-8"))
+            token = token_data.get("access_token")
+
+        if not token:
+            return None
+
+        # 2. Search tracks
+        q = f"{query} {artist}".strip() if artist else query
+        search_url = f"https://api.spotify.com/v1/search?q={urllib.parse.quote(q)}&type=track&limit=5"
+        search_req = urllib.request.Request(
+            search_url,
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        with urllib.request.urlopen(search_req, timeout=5.0) as resp:
+            sdata = json.loads(resp.read().decode("utf-8"))
+            items = sdata.get("tracks", {}).get("items", [])
+            if items:
+                top = items[0]
+                track_id = top.get("id", "")
+                t_name = top.get("name", query)
+                artists = top.get("artists", [])
+                art_name = artists[0].get("name", artist) if artists else artist
+                return {
+                    "title": t_name,
+                    "artist": art_name,
+                    "track_id": track_id,
+                    "url": top.get("external_urls", {}).get("spotify", f"https://open.spotify.com/track/{track_id}"),
+                    "uri": top.get("uri") or f"spotify:track:{track_id}",
+                    "snippet": f"{t_name} by {art_name}",
+                    "raw_title": f"{t_name} - {art_name}",
+                }
+    except Exception as e:
+        print(f"[Spotify] Web API search error: {e}")
+    return None
+
+
+def _search_spotify_edge_cdp(query: str, artist: str = "") -> Optional[dict]:
+    """Search for track via active Edge CDP session on open.spotify.com if available."""
+    try:
+        from actions.browser_session import get_browser_session_manager
+        bm = get_browser_session_manager()
+        ok, _ = bm.check_connection(timeout=0.5)
+        if not ok:
+            return None
+
+        # Look for existing Spotify tab
+        tabs = bm.list_tabs()
+        sp_tab = next((t for t in tabs if "open.spotify.com" in t.url.lower()), None)
+        if not sp_tab:
+            return None
+
+        async def _eval_spotify():
+            await bm._ensure_attached()
+            page = bm._active_page
+            if not page or "open.spotify.com" not in page.url:
+                return None
+            # Evaluate track hrefs
+            track_data = await page.evaluate(r"""() => {
+                const links = Array.from(document.querySelectorAll('a[href*="/track/"]'));
+                for (const a of links) {
+                    const m = a.href.match(/track\/([a-zA-Z0-9]{22})/);
+                    if (m) {
+                        return { title: a.innerText || "", track_id: m[1], href: a.href };
+                    }
+                }
+                return null;
+            }""")
+            return track_data
+
+        data = bm.run_coroutine(_eval_spotify(), timeout=5.0)
+        if data and data.get("track_id"):
+            tid = data["track_id"]
+            return {
+                "title": data.get("title") or query,
+                "artist": artist,
+                "track_id": tid,
+                "url": data.get("href") or f"https://open.spotify.com/track/{tid}",
+                "uri": f"spotify:track:{tid}",
+                "snippet": data.get("title", ""),
+                "raw_title": data.get("title", ""),
+            }
+    except Exception as e:
+        print(f"[Spotify] Edge CDP search error: {e}")
+    return None
+
 
 def search_spotify_track(query: str, artist: str = "") -> Optional[dict]:
     """
-    Search Spotify for the requested track using public web discovery and match title & artist.
+    Search Spotify for the requested track.
+    Pipeline:
+      1. Spotify Web API (deterministic Client Credentials / OAuth).
+      2. Edge CDP on open.spotify.com.
+      3. Public web track discovery fallback.
     Returns:
       {"title": "Beat It", "artist": "Michael Jackson", "track_id": "...", "uri": "spotify:track:..."}
     """
+    # 1. Spotify Web API
+    api_result = _search_spotify_web_api(query, artist)
+    if api_result:
+        return api_result
+
+    # 2. Edge CDP
+    cdp_result = _search_spotify_edge_cdp(query, artist)
+    if cdp_result:
+        return cdp_result
+
+    # 3. Web discovery fallback
     search_term = f"site:open.spotify.com/track {query}"
     if artist and artist.lower() not in query.lower():
         search_term += f" {artist}"
@@ -254,7 +396,6 @@ def search_spotify_track(query: str, artist: str = "") -> Optional[dict]:
         m = re.search(r"track/([a-zA-Z0-9]{22})", url)
         if m:
             track_id = m.group(1)
-            # Clean title (e.g. "Beat It - song and lyrics by Michael Jackson | Spotify")
             t_clean = re.split(r"\s*[-|]\s*", title_raw)[0].replace("song and lyrics by", "").strip()
             candidates.append({
                 "title": t_clean or query,
@@ -289,6 +430,23 @@ def search_spotify_track(query: str, artist: str = "") -> Optional[dict]:
             best_candidate = c
 
     return best_candidate
+
+
+def _open_spotify_uri(uri: str) -> bool:
+    """Cross-platform launcher for Spotify URIs."""
+    try:
+        if _IS_WINDOWS:
+            subprocess.run(["cmd.exe", "/c", "start", "", uri], **_WIN_HIDE, timeout=5)
+            return True
+        elif platform.system() == "Darwin":
+            subprocess.Popen(["open", uri])
+            return True
+        else:
+            subprocess.Popen(["xdg-open", uri])
+            return True
+    except Exception as e:
+        print(f"[Spotify] URI launch error ({uri}): {e}")
+        return False
 
 
 def _try_click_uia_play_button() -> bool:
@@ -328,7 +486,7 @@ def _poll_for_verified_playback(
             last_active = active
             if verify_track_match(active, requested_track, matched_title, artist):
                 return True, active
-        time.sleep(0.25)
+        time.sleep(0.2)
     return False, last_active
 
 
@@ -336,7 +494,7 @@ def play_track(track_name: str, artist: str = "") -> dict:
     """
     Explicitly find, select, initiate, and VERIFY playback of a specific track.
     Distinguishes successful navigation from verified playback and NEVER claims
-    playback succeeded unless confirmed.
+    playback succeeded unless confirmed. Handles Spotify Free and cross-platform playback.
     """
     track_query = track_name.strip()
     if not track_query:
@@ -370,21 +528,16 @@ def play_track(track_name: str, artist: str = "") -> dict:
         }
     time.sleep(0.4)
 
-    # 3. Navigate directly to track URI (or in-app search URI fallback)
+    # 3. Navigate directly to track URI (cross-platform), or in-app search URI fallback
     navigated = False
     try:
-        if target_uri and _IS_WINDOWS:
+        if target_uri:
             print(f"[Spotify] Navigating to target URI: {target_uri}")
-            subprocess.run(["cmd.exe", "/c", "start", "", target_uri], **_WIN_HIDE, timeout=5)
-            navigated = True
+            navigated = _open_spotify_uri(target_uri)
         else:
             encoded = urllib.parse.quote(f"{track_query} {artist}".strip())
             uri = f"spotify:search:{encoded}"
-            if _IS_WINDOWS:
-                subprocess.run(["cmd.exe", "/c", "start", "", uri], **_WIN_HIDE, timeout=5)
-            else:
-                subprocess.Popen(["xdg-open", uri])
-            navigated = True
+            navigated = _open_spotify_uri(uri)
     except Exception as e:
         return {
             "success": False,
@@ -401,7 +554,7 @@ def play_track(track_name: str, artist: str = "") -> dict:
         track_query, matched_title, artist, timeout_s=1.8
     )
 
-    # 5. If not yet verified playing, explicitly trigger playback via UIA Play button / keyboard
+    # 5. If not yet verified playing (common on Spotify Free), explicitly trigger playback via UIA Play button / keyboard
     if not is_verified:
         _focus_spotify_window()
         time.sleep(0.3)
@@ -413,7 +566,7 @@ def play_track(track_name: str, artist: str = "") -> dict:
             track_query, matched_title, artist, timeout_s=1.8
         )
 
-    # 6. Secondary trigger attempt if Spotify stayed idle after URI navigation
+    # 6. Secondary trigger attempt if Spotify stayed idle after URI navigation (Spotify Free idle title)
     if not is_verified and not active_after:
         _focus_spotify_window()
         time.sleep(0.2)

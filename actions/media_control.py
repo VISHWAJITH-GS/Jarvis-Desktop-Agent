@@ -27,7 +27,7 @@ def get_current_playing_media() -> outcome.ActionResult:
     """Identify currently playing media from Spotify or active media windows."""
     # Check Spotify first
     sp_title = spotify_control.get_spotify_window_title()
-    if sp_title and sp_title.lower() != "spotify":
+    if sp_title and not spotify_control.is_spotify_idle_title(sp_title):
         return outcome.ActionResult(
             status=outcome.STATUS_DONE,
             action="get_current_playing_media",
@@ -89,12 +89,26 @@ def media_control(parameters: dict = None, player=None, **kwargs) -> str:
         return spotify_control.spotify_control({"action": "search", "query": query, "artist": artist}, player=player)
 
     if action in ("pause", "stop_music", "pause_music"):
+        sp_title = spotify_control.get_spotify_window_title()
+        is_playing = bool(sp_title and not spotify_control.is_spotify_idle_title(sp_title))
+        if not is_playing:
+            current_media = get_current_playing_media()
+            is_playing = bool(current_media.data.get("title"))
+
+        if not is_playing:
+            return outcome.done("media_control", action="pause", message="Playback is already paused.")
+
         if _PYAUTOGUI:
             pyautogui.press("playpause")
             time.sleep(0.3)
         return outcome.done("media_control", action="pause", message="Playback paused.")
 
     if action in ("resume", "continue_music", "resume_music", "unpause"):
+        sp_title = spotify_control.get_spotify_window_title()
+        is_playing = bool(sp_title and not spotify_control.is_spotify_idle_title(sp_title))
+        if is_playing:
+            return outcome.done("media_control", action="resume", message=f"Playback is already active ('{sp_title}').")
+
         if _PYAUTOGUI:
             pyautogui.press("playpause")
             time.sleep(0.3)
@@ -120,10 +134,14 @@ def media_control(parameters: dict = None, player=None, **kwargs) -> str:
         return res.to_speech_text()
 
     if action in ("volume_up", "louder"):
-        return windows_control.windows_control({"action": "set_volume", "value": 70})
+        curr = windows_control.get_volume()
+        target = min(100, curr + 10)
+        return windows_control.windows_control({"action": "set_volume", "value": target})
 
     if action in ("volume_down", "softer", "quieter"):
-        return windows_control.windows_control({"action": "set_volume", "value": 30})
+        curr = windows_control.get_volume()
+        target = max(0, curr - 10)
+        return windows_control.windows_control({"action": "set_volume", "value": target})
 
     if action in ("set_volume", "volume"):
         val = p.get("value") or query or "50"

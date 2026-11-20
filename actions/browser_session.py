@@ -378,5 +378,22 @@ class BrowserSessionManager:
         return self._active_page
 
 
+@dataclass
+class BrowserNetworkError:
+    url: str
+    method: str
+    status: Optional[int]
+    error_text: str
+    timestamp: float = field(default_factory=time.time)
+
+
+@dataclass
+class BrowserConsoleMessage:
+    msg_type: str
+    text: str
+    location: str
+    timestamp: float = field(default_factory=time.time)
+
+
 def get_browser_session_manager(cdp_url: Optional[str] = None) -> BrowserSessionManager:
     return BrowserSessionManager.get_instance(cdp_url)

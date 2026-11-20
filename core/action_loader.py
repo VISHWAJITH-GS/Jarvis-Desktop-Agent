@@ -35,67 +35,20 @@ from pathlib import Path
 from typing import Callable, Optional
 import time
 from core import outcome
+from core.schema_utils import (
+    _BEHAVIORS,
+    _SCHEDULING,
+    META_KEYS,
+    strip_meta,
+    _opt_upper,
+    _opt_tier,
+    _opt_text,
+    validate_parameters,
+)
 
 _NAME_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]{0,63}$")
 _DEFAULT_PARAMS = {"type": "OBJECT", "properties": {}}
 _CTX_KEYS = ("player", "speak", "response", "session_memory")
-
-
-# A tool may declare that the model should NOT be held up waiting for it.
-# `behavior` goes to the API with the declaration; `scheduling` decides when the
-# eventual result is allowed back into the conversation:
-#   WHEN_IDLE  — wait for a gap in the speech (the sane default)
-#   SILENT     — record it, do not prompt a reply (the tool already announced)
-#   INTERRUPT  — cut in immediately (only when the answer cannot wait)
-_BEHAVIORS = ("BLOCKING", "NON_BLOCKING")
-_SCHEDULING = ("WHEN_IDLE", "SILENT", "INTERRUPT")
-
-
-# Keys this project puts on a declaration for its own bookkeeping. They live
-# here because this file documents what a TOOL dict may contain, and both
-# loaders produce them.
-#
-# THEY MUST NEVER REACH A VENDOR. Gemini validates function declarations
-# against a fixed schema and an unknown field is an error, not something it
-# ignores — so main.py calls strip_meta() before building the Live config.
-#
-# The definition is here rather than in providers/schema.py, which is the only
-# other place that cares, because main.py must be able to strip them WITHOUT
-# importing providers: a default install never loads that package, and the
-# measured cost of deciding not to is the release's headline number.
-META_KEYS = ("tier", "brief")
-
-
-def strip_meta(decls):
-    """Declarations without META_KEYS. Non-dict entries pass through untouched;
-    a declaration carrying none is returned as the same object, so what an API
-    receives is byte-for-byte what it received before these keys existed."""
-    out = []
-    for decl in decls:
-        if isinstance(decl, dict) and any(k in decl for k in META_KEYS):
-            out.append({k: v for k, v in decl.items() if k not in META_KEYS})
-        else:
-            out.append(decl)
-    return out
-
-
-def _opt_upper(value, allowed: tuple[str, ...]) -> Optional[str]:
-    v = str(value or "").strip().upper()
-    return v if v in allowed else None
-
-def _opt_tier(value) -> Optional[str]:
-    """"core" or "extra" from a declaration, or None when it did not say.
-
-    Anything else is treated as "did not say" rather than as an error: a typo
-    should fall back to the default ranking, not stop a working tool loading.
-    """
-    text = str(value or "").strip().lower()
-    return text if text in ("core", "extra") else None
-
-
-def _opt_text(value) -> Optional[str]:
-    text = str(value or "").strip()
-    return text or None
 
 
 @dataclass
@@ -156,9 +109,6 @@ class ActionRegistry:
     def has(self, name: str) -> bool:
         return name in self._actions
 
-    def has_action(self, name: str) -> bool:
-        return self.has(name)
-
     def scheduling(self, name: str) -> Optional[str]:
         """How this action's result should re-enter the conversation, if it said."""
         rec = self._actions.get(name)
@@ -170,17 +120,8 @@ class ActionRegistry:
     def get_action_record(self, name: str) -> Optional[ActionRecord]:
         return self._actions.get(name)
 
-    def get_action(self, name: str) -> Optional[ActionRecord]:
-        return self.get_action_record(name)
-
     def _validate_parameters(self, rec: ActionRecord, parameters: dict) -> tuple[bool, str]:
-        schema = rec.parameters or {}
-        props = schema.get("properties", {})
-        required = schema.get("required", [])
-        for req in required:
-            if req not in parameters or parameters[req] is None or parameters[req] == "":
-                return False, f"Missing required parameter '{req}'"
-        return True, ""
+        return validate_parameters(rec.parameters or {}, parameters or {})
 
     def execute(self, name: str, parameters: dict, ctx: dict | None = None) -> outcome.ActionResult:
         """Authoritative execution method returning structured ActionResult."""

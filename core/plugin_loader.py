@@ -18,34 +18,17 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from memory.config_manager import get_plugin_enabled, get_plugin_config
+from core.schema_utils import (
+    _BEHAVIORS,
+    _SCHEDULING,
+    _opt_upper,
+    _opt_tier,
+    _opt_text,
+    validate_parameters,
+)
 
 _NAME_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]{0,63}$")
 _DEFAULT_PARAMS = {"type": "OBJECT", "properties": {}}
-
-# Optional, and the same contract actions use: a plugin that takes a moment can
-# say so, and the model carries on talking instead of waiting on it. See
-# core/action_loader.py for what each value means.
-_BEHAVIORS = ("BLOCKING", "NON_BLOCKING")
-_SCHEDULING = ("WHEN_IDLE", "SILENT", "INTERRUPT")
-
-
-def _opt_upper(value, allowed: tuple[str, ...]) -> Optional[str]:
-    v = str(value or "").strip().upper()
-    return v if v in allowed else None
-
-def _opt_tier(value) -> Optional[str]:
-    """"core" or "extra" from a declaration, or None when it did not say.
-
-    Anything else is treated as "did not say" rather than as an error: a typo
-    should fall back to the default ranking, not stop a working tool loading.
-    """
-    text = str(value or "").strip().lower()
-    return text if text in ("core", "extra") else None
-
-
-def _opt_text(value) -> Optional[str]:
-    text = str(value or "").strip()
-    return text or None
 
 
 @dataclass
@@ -120,13 +103,25 @@ class PluginRegistry:
             return f"Plugin '{name}' is not available."
         if not get_plugin_enabled(name):
             return f"The '{name}' plugin is currently disabled."
-        try:
+
+        val_ok, val_err = validate_parameters(rec.parameters or {}, parameters or {})
+        if not val_ok:
+            return f"Invalid arguments for plugin '{name}': {val_err}"
+
+        from core.permissions import ActionExecutionGuard
+        ctx = {"player": player, "session_memory": session_memory}
+
+        def _plugin_handler(parameters: dict, **kwargs):
             return _call_run(rec.run, parameters, player, session_memory) or "Done."
-        except Exception as e:
-            self._logger(f"Plugin '{name}' crashed during run(): {e}")
-            self._notify(f"Plugin '{name}' failed — see the console for details.")
-            traceback.print_exc()
-            return f"Sir, the '{name}' plugin failed: {e}"
+
+        act_res = ActionExecutionGuard.guard_and_execute(
+            action_name=name,
+            parameters=parameters or {},
+            handler=_plugin_handler,
+            ctx=ctx,
+            logger=self._logger,
+        )
+        return act_res.message or act_res.to_speech_text()
 
     # -- called by ui.py's settings tab to render per-plugin config forms --
     def settings_schemas(self) -> list[dict]:

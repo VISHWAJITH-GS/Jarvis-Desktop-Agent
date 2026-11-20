@@ -574,7 +574,7 @@ _prov_lock = threading.Lock()
 
 
 def _provider_settings() -> tuple[str, bool]:
-    """(provider id or '', try it before Gemini)."""
+    """(provider id or '', try it before Gemini). Cached against config file mtime."""
     global _prov_cache
     try:
         mtime = _KEY_FILE.stat().st_mtime
@@ -586,8 +586,16 @@ def _provider_settings() -> tuple[str, bool]:
             return _prov_cache[1], _prov_cache[2]
 
     try:
-        from memory.config_manager import get_sidecar_first, get_sidecar_provider
-        pid, first = get_sidecar_provider(), get_sidecar_first()
+        from memory.config_manager import (
+            get_provider_fallback_enabled,
+            get_sidecar_first,
+            get_sidecar_provider,
+        )
+        if not get_provider_fallback_enabled():
+            pid, first = "", False
+        else:
+            pid = (get_sidecar_provider() or "").strip()
+            first = bool(get_sidecar_first())
     except Exception:
         pid, first = "", False
 
@@ -598,26 +606,13 @@ def _provider_settings() -> tuple[str, bool]:
 
 def _provider_rungs(tier: str) -> tuple[str, ...]:
     """Return provider rungs if fallback is enabled by user and configured."""
-    try:
-        from memory.config_manager import get_provider_fallback_enabled, get_sidecar_provider
-        if not get_provider_fallback_enabled():
-            return ()
-        pid = get_sidecar_provider()
-        if not pid:
-            return ()
-        return (PROVIDER_PREFIX + pid,)
-    except Exception:
-        return ()
+    pid, _ = _provider_settings()
+    return (PROVIDER_PREFIX + pid,) if pid else ()
 
 
 def _provider_first() -> bool:
-    try:
-        from memory.config_manager import get_provider_fallback_enabled, get_sidecar_first
-        if not get_provider_fallback_enabled():
-            return False
-        return get_sidecar_first()
-    except Exception:
-        return False
+    _, first = _provider_settings()
+    return first
 
 
 def _to_openai_messages(contents, config) -> tuple[list[dict], Optional[float]]:
@@ -685,7 +680,7 @@ def _provider_call(model: str, contents, config, timeout_ms: int):
 
 def call(contents, tier: str = FAST, config=None,
          timeout_ms: int = DEFAULT_TIMEOUT_MS, key: str = "",
-         provider: str = ""):
+         provider: str = "", allow_live: bool = True):
     """Run one generation, walking the ladder until one answers.
 
     Returns the SDK's own response object, so callers that need more than the
@@ -729,6 +724,17 @@ def call(contents, tier: str = FAST, config=None,
             print("[Gemini] no Gemini API key is configured")
             return None
         ladder = rungs
+
+    # LIVE WebSocket audio turn does not support structured JSON or recordings
+    is_json_request = (
+        not allow_live
+        or (config is not None and (
+            getattr(config, "response_mime_type", None) == "application/json"
+            or (isinstance(config, dict) and config.get("response_mime_type") == "application/json")
+        ))
+    )
+    if is_json_request:
+        ladder = tuple(m for m in ladder if m != LIVE)
 
     # A recording can only be read by the REST models. Dropping the two rungs
     # that cannot take one is not a fallback — it is declining to make a request
@@ -826,10 +832,24 @@ def parse_json(raw: str, default=None):
 
 def as_json(contents, tier: str = FAST, config=None,
             timeout_ms: int = DEFAULT_TIMEOUT_MS, key: str = "", default=None):
-    """`text`, parsed as JSON, tolerating the fences, reasoning and prose a
-    model wraps it in. `default` when nothing answered or the answer would not
-    parse. See parse_json."""
-    raw = text(contents, tier=tier, config=config, timeout_ms=timeout_ms, key=key)
+    """`call`, parsed as JSON, routing strictly to REST models that support
+    response_mime_type='application/json' and tolerating markdown fences."""
+    cfg = config
+    if cfg is None:
+        cfg = {"response_mime_type": "application/json"}
+    elif isinstance(cfg, dict):
+        cfg = dict(cfg)
+        cfg.setdefault("response_mime_type", "application/json")
+    elif hasattr(cfg, "response_mime_type") and not getattr(cfg, "response_mime_type", None):
+        try:
+            cfg.response_mime_type = "application/json"
+        except Exception:
+            pass
+
+    resp = call(contents, tier=tier, config=cfg, timeout_ms=timeout_ms, key=key, allow_live=False)
+    if resp is None:
+        return default
+    raw = (getattr(resp, "text", None) or "").strip()
     if not raw:
         return default
     value = parse_json(raw, default=_MISSING)
