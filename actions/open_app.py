@@ -35,6 +35,7 @@ WHY IT IS NOT A LIST OF APPLICATIONS
     work exactly as well as the software we have.
 """
 
+import logging
 import os
 import platform
 import shutil
@@ -44,6 +45,8 @@ import time
 
 from core import appidentity, outcome
 from core.lazyimport import LazyModule, installed
+
+logger = logging.getLogger(__name__)
 
 _PYAUTOGUI = installed("pyautogui")
 pyautogui = LazyModule("pyautogui")
@@ -86,7 +89,7 @@ def _desktop_search(app_name: str) -> bool:
         pyautogui.press("enter")
         return True
     except Exception as exc:
-        print(f"[open_app] desktop search failed: {exc}")
+        logger.debug(f"[open_app] desktop search failed: {exc}")
         return False
 
 
@@ -170,7 +173,7 @@ def _launch_windows(app_name: str) -> bool:
             )
             return True
         except Exception as exc:
-            print(f"[open_app] Popen failed for known app {known_cmd!r}: {exc}")
+            logger.debug(f"[open_app] Popen failed for known app {known_cmd!r}: {exc}")
 
     resolved = shutil.which(app_name)
     extra_args = []
@@ -188,7 +191,7 @@ def _launch_windows(app_name: str) -> bool:
             )
             return True
         except Exception as exc:
-            print(f"[open_app] Popen failed for {resolved!r}: {exc}")
+            logger.debug(f"[open_app] Popen failed for {resolved!r}: {exc}")
 
     # Local file or directory path
     if os.path.exists(app_name):
@@ -196,7 +199,7 @@ def _launch_windows(app_name: str) -> bool:
             os.startfile(app_name)
             return True
         except Exception as exc:
-            print(f"[open_app] startfile path failed for {app_name!r}: {exc}")
+            logger.debug(f"[open_app] startfile path failed for {app_name!r}: {exc}")
 
     # A scheme, not a path: "ms-settings:", "spotify:", "steam://run/...".
     # Checked before ":" appears anywhere else — a Windows path has one too,
@@ -207,7 +210,7 @@ def _launch_windows(app_name: str) -> bool:
             os.startfile(app_name)  # noqa: S606 — no shell involved
             return True
         except Exception as exc:
-            print(f"[open_app] startfile failed for {app_name!r}: {exc}")
+            logger.debug(f"[open_app] startfile failed for {app_name!r}: {exc}")
 
     return _desktop_search(app_name)
 
@@ -359,7 +362,7 @@ def _launch_and_verify(player, spoken: str, launcher_name: str, before: set[int]
         _log(player, f"JARVIS: {trouble}")
         _say(player, f"Tell the user, in one short sentence in their own language: {trouble}")
     except Exception as exc:
-        print(f"[open_app] {type(exc).__name__}: {exc}")
+        logger.debug(f"[open_app] {type(exc).__name__}: {exc}")
         _say(player, f"Tell the user, in one short sentence in their own language: opening {spoken} failed - {exc}")
 
 
@@ -430,7 +433,7 @@ def open_app(parameters=None, response=None, player=None, session_memory=None) -
                     focused=True,
                     verified=True,
                 )
-        print(
+        logger.debug(
             f"[open_app] {best.label} is running but no window could be "
             f"raised — launching it instead, which is what brings back an "
             f"app that is only in the tray."
@@ -451,7 +454,7 @@ def open_app(parameters=None, response=None, player=None, session_memory=None) -
                             _log(player, f"JARVIS: {spoken} is open.")
                             return res
         except Exception as e:
-            print(f"[open_app] UIA check failed: {e}")
+            logger.debug(f"[open_app] UIA check failed: {e}")
 
     launcher_name = appidentity.launcher_name(spoken)
     before = appidentity.snapshot()

@@ -17,6 +17,7 @@ Capabilities:
 from __future__ import annotations
 
 import json
+import logging
 import platform
 import re
 import sqlite3
@@ -27,6 +28,8 @@ import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 from core import outcome
 
@@ -130,9 +133,9 @@ def _init_sqlite_db() -> None:
                                         item.get("error"),
                                     ),
                                 )
-                            print(f"[Reminder] 🔒 Auto-migrated {len(data)} reminders from JSON to SQLite.")
+                            logger.info(f"[Reminder] 🔒 Auto-migrated {len(data)} reminders from JSON to SQLite.")
                     except Exception as me:
-                        print(f"[Reminder] ⚠️ JSON migration error: {me}")
+                        logger.warning(f"[Reminder] ⚠️ JSON migration error: {me}")
         finally:
             conn.close()
 
@@ -159,7 +162,7 @@ def _load_db() -> List[dict]:
             rows = cur.fetchall()
             return [dict(r) for r in rows]
         except Exception as e:
-            print(f"[Reminder] DB load error: {e}")
+            logger.error(f"[Reminder] DB load error: {e}")
             return []
         finally:
             conn.close()
@@ -200,7 +203,7 @@ def _save_db(reminders: List[dict]) -> bool:
                 pass
             return True
         except Exception as e:
-            print(f"[Reminder] DB save error: {e}")
+            logger.error(f"[Reminder] DB save error: {e}")
             return False
         finally:
             conn.close()
@@ -431,7 +434,7 @@ def main():
                     (datetime.now().isoformat(), reminder_id)
                 )
     except Exception as e:
-        print(f"DB error in notifier: {e}", file=sys.stderr)
+        logger.error(f"DB error in notifier: {e}")
         return
     finally:
         try:

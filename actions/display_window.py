@@ -10,10 +10,13 @@ Allows JARVIS to:
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import urllib.request
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 def _resolve_image_source(source: str, title: str) -> str:
@@ -67,7 +70,7 @@ def _resolve_image_source(source: str, title: str) -> str:
                         except Exception:
                             continue
         except Exception as e:
-            print(f"[display_window] DDG image search fallback error: {e}")
+            logger.debug(f"[display_window] DDG image search fallback error: {e}")
 
     return source
 

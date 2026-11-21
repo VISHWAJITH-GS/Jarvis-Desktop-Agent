@@ -38,6 +38,35 @@ Built with **Google Gemini API as the primary reasoning engine**, Jarvis-Desktop
 
 ---
 
+## ⚡ Quick Start
+
+1. **Clone & Setup**:
+   ```bash
+   git clone https://github.com/vishwajith-gs/Jarvis-Desktop-Agent.git
+   cd Jarvis-Desktop-Agent
+   python setup.py
+   ```
+2. **Configure Credentials**:
+   Copy `config/api_keys.template.json` to `config/api_keys.json` and insert your free Gemini API key:
+   ```json
+   {
+     "gemini_api_key": "YOUR_GEMINI_API_KEY_HERE"
+   }
+   ```
+3. **Launch JARVIS**:
+   ```bash
+   python main.py
+   ```
+
+### 📖 Documentation Links
+- **[Architecture Deep-Dive](docs/ARCHITECTURE.md)**: Runtime threading model, GUI decomposition, and full voice-to-action-to-speech data flow.
+- **[Repository Hygiene Audit](docs/HYGIENE_AUDIT.md)**: Hygiene audit, line counts, and secret scan findings.
+- **[Contributing Guidelines](CONTRIBUTING.md)**: Essential coding rules, Qt threading boundaries, and dev agent guidelines.
+- **[Security Policy](SECURITY.md)**: Permission tiers, prompt injection defense, and responsible vulnerability disclosure.
+- **[Changelog](CHANGELOG.md)**: Release history and version updates.
+
+---
+
 ## 🚀 Capabilities
 
 ### Core Features

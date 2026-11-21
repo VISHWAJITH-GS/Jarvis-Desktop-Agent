@@ -6,11 +6,51 @@
   "os_system": "windows",
   "ui_color": "#00d4ff",
   "hud_style": "core",
+  "trust_level": "standard",
+  "auto_sleep_enabled": true,
+  "idle_sleep_timeout": 180.0,
+  "wake_word_enabled": false,
+  "wake_words": [
+    "Jarvis"
+  ],
+  "wake_word_threshold": 0.5,
   "push_to_talk_enabled": false,
   "morning_brief_enabled": false,
+  "thinking_enabled": false,
+  "media_resolution": "720p",
   "audio_input_mode": "auto",
+  "audio_routing_mode": "auto",
+  "input_device": "",
+  "output_device": "",
+  "builtin_microphone": "",
+  "bluetooth_microphone": "",
   "allow_bluetooth_mic": false,
   "ducking_enabled": true,
-  "ducking_level": 25
+  "ducking_level": 25,
+  "ducking_exclude_apps": [],
+  "dashboard_allow_lan": false,
+  "dashboard_allowed_subnets": [],
+  "global_listening_shortcut": [
+    "ctrl",
+    "alt",
+    "j"
+  ],
+  "global_mute_shortcut": [
+    "ctrl",
+    "alt",
+    "m"
+  ],
+  "global_force_listening_shortcut": [
+    "ctrl",
+    "alt",
+    "k"
+  ],
+  "global_emergency_stop_shortcut": [
+    "ctrl",
+    "alt",
+    "x"
+  ],
+  "global_mouse_gesture_enabled": false,
+  "provider_mode": "auto",
+  "provider_fallback_enabled": true
 }
-

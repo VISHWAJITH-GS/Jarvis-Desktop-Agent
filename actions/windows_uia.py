@@ -23,6 +23,7 @@ Capabilities:
 
 from __future__ import annotations
 
+import logging
 import platform
 import sys
 import time
@@ -30,6 +31,8 @@ from typing import Any, List, Optional, Tuple, Union
 
 from core import outcome
 from core.lazyimport import LazyModule, installed
+
+logger = logging.getLogger(__name__)
 
 _IS_WINDOWS = platform.system() == "Windows"
 
@@ -81,7 +84,7 @@ if _IS_WINDOWS:
             else:
                 sys.frozen = _orig_frozen
     except Exception as _e:
-        print(f"[WindowsUIA] ⚠️ Could not initialize pywinauto: {_e}")
+        logger.debug(f"[WindowsUIA] ⚠️ Could not initialize pywinauto: {_e}")
         _PYWINAUTO_AVAILABLE = False
 
 _PYAUTOGUI = installed("pyautogui")
@@ -108,7 +111,7 @@ def get_desktop() -> Any:
         try:
             _DESKTOP_UIA = Desktop(backend="uia")
         except Exception as e:
-            print(f"[WindowsUIA] ⚠️ Failed to initialize Desktop(backend='uia'): {e}")
+            logger.debug(f"[WindowsUIA] ⚠️ Failed to initialize Desktop(backend='uia'): {e}")
             return None
     return _DESKTOP_UIA
 
@@ -179,7 +182,7 @@ def get_screen_metrics() -> dict:
             "pyautogui_h": pg_h,
         }
     except Exception as e:
-        print(f"[WindowsUIA] ⚠️ Error getting screen metrics: {e}")
+        logger.debug(f"[WindowsUIA] ⚠️ Error getting screen metrics: {e}")
         return {
             "virtual_x": 0,
             "virtual_y": 0,
@@ -1120,7 +1123,7 @@ def list_open_windows(visible_only: bool = True) -> List[dict]:
             except Exception:
                 continue
     except Exception as e:
-        print(f"[WindowsUIA] list_open_windows error: {e}")
+        logger.debug(f"[WindowsUIA] list_open_windows error: {e}")
     return results
 
 
@@ -1383,7 +1386,7 @@ def open_file_explorer_item(
                     opened = True
                     method_used = "VerifiedDoubleClick"
         except Exception as e:
-            print(f"[WindowsUIA] double click fallback failed: {e}")
+            logger.debug(f"[WindowsUIA] double click fallback failed: {e}")
 
     if not opened:
         return outcome.failed(
@@ -1474,7 +1477,7 @@ def _ocr_find_text(query: str) -> Optional[Tuple[int, int]]:
                 if valid:
                     return x, y
     except Exception as e:
-        print(f"[WindowsUIA] OCR fallback failed: {e}")
+        logger.debug(f"[WindowsUIA] OCR fallback failed: {e}")
     return None
 
 

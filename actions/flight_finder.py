@@ -1,5 +1,6 @@
 # flight_finder.py
 import json
+import logging
 import re
 import subprocess
 import sys
@@ -7,6 +8,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from config import is_windows, is_mac
+
+logger = logging.getLogger(__name__)
 
 
 def _get_base_dir() -> Path:
@@ -92,7 +95,7 @@ def _parse_date(raw: str) -> str:
         if re.match(r"\d{4}-\d{2}-\d{2}", result):
             return result
     except Exception as e:
-        print(f"[FlightFinder] ⚠️ Gemini date parse failed: {e}")
+        logger.debug(f"[FlightFinder] ⚠️ Gemini date parse failed: {e}")
 
     for month_name, month_num in _MONTH_MAP.items():
         if month_name in lower:
@@ -103,7 +106,7 @@ def _parse_date(raw: str) -> str:
                 return f"{year}-{month_num:02d}-{day:02d}"
 
     # Last resort: today
-    print(f"[FlightFinder] ⚠️ Could not parse date '{raw}' — using today.")
+    logger.debug(f"[FlightFinder] ⚠️ Could not parse date '{raw}' — using today.")
     return today.strftime("%Y-%m-%d")
 
 
@@ -155,7 +158,7 @@ def _search_flights_browser(
 
     url = _build_google_flights_url(origin, destination, date, return_date, passengers, cabin)
 
-    print(f"[FlightFinder] 🌐 Opening: {url}")
+    logger.info(f"[FlightFinder] 🌐 Opening: {url}")
     browser_control({"action": "go_to", "url": url})
     time.sleep(5)
 
@@ -199,7 +202,7 @@ def _parse_flights_with_gemini(
         flights = json.loads(text)
         return flights if isinstance(flights, list) else []
     except Exception as e:
-        print(f"[FlightFinder] ⚠️ Gemini parse failed: {e}")
+        logger.debug(f"[FlightFinder] ⚠️ Gemini parse failed: {e}")
         return []
 
 
@@ -300,7 +303,7 @@ def _save_to_desktop(content: str, origin: str, destination: str) -> str:
     filepath = desktop / filename
 
     filepath.write_text(content, encoding="utf-8")
-    print(f"[FlightFinder] 💾 Saved: {filepath}")
+    logger.info(f"[FlightFinder] 💾 Saved: {filepath}")
 
     try:
         if is_windows():
@@ -310,7 +313,7 @@ def _save_to_desktop(content: str, origin: str, destination: str) -> str:
         else:
             subprocess.Popen(["xdg-open", str(filepath)])
     except Exception as e:
-        print(f"[FlightFinder] ⚠️ Could not open text editor: {e}")
+        logger.warning(f"[FlightFinder] ⚠️ Could not open text editor: {e}")
 
     return str(filepath)
 
@@ -344,7 +347,7 @@ def flight_finder(parameters: dict, player=None, speak=None) -> str:
     if speak:
         speak(f"Searching flights from {origin} to {destination} on {date}, sir.")
 
-    print(
+    logger.info(
         f"[FlightFinder] ▶️ {origin} → {destination} | {date}"
         f"{' → ' + return_date if return_date else ''}"
         f" | {cabin} | {passengers} pax"
@@ -375,7 +378,7 @@ def flight_finder(parameters: dict, player=None, speak=None) -> str:
         return result
 
     except Exception as e:
-        print(f"[FlightFinder] ❌ {e}")
+        logger.error(f"[FlightFinder] ❌ {e}")
         return f"Flight search failed, sir: {e}"
 
 

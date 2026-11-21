@@ -13,6 +13,7 @@ Full Lifecycle & Strict Verification:
 
 from __future__ import annotations
 
+import logging
 import platform
 import re
 import subprocess
@@ -22,6 +23,8 @@ from typing import Optional
 
 from core import outcome
 from core.lazyimport import LazyModule, installed
+
+logger = logging.getLogger(__name__)
 
 _PYAUTOGUI = installed("pyautogui")
 pyautogui = LazyModule("pyautogui")
@@ -248,7 +251,7 @@ def launch_spotify() -> bool:
             time.sleep(1.5)
             return True
     except Exception as e:
-        print(f"[Spotify] Launch error: {e}")
+        logger.debug(f"[Spotify] Launch error: {e}")
         return False
 
 
@@ -332,7 +335,7 @@ def _search_spotify_web_api(query: str, artist: str = "") -> Optional[dict]:
                     "raw_title": f"{t_name} - {art_name}",
                 }
     except Exception as e:
-        print(f"[Spotify] Web API search error: {e}")
+        logger.debug(f"[Spotify] Web API search error: {e}")
     return None
 
 
@@ -383,7 +386,7 @@ def _search_spotify_edge_cdp(query: str, artist: str = "") -> Optional[dict]:
                 "raw_title": data.get("title", ""),
             }
     except Exception as e:
-        print(f"[Spotify] Edge CDP search error: {e}")
+        logger.debug(f"[Spotify] Edge CDP search error: {e}")
     return None
 
 
@@ -417,7 +420,7 @@ def search_spotify_track(query: str, artist: str = "") -> Optional[dict]:
 
         results = _ddg_search(search_term, max_results=6)
     except Exception as e:
-        print(f"[Spotify] DDG track search error: {e}")
+        logger.debug(f"[Spotify] DDG track search error: {e}")
         results = []
 
     candidates = []
@@ -478,7 +481,7 @@ def _open_spotify_uri(uri: str) -> bool:
             subprocess.Popen(["xdg-open", uri])
             return True
     except Exception as e:
-        print(f"[Spotify] URI launch error ({uri}): {e}")
+        logger.debug(f"[Spotify] URI launch error ({uri}): {e}")
         return False
 
 
@@ -566,7 +569,7 @@ def play_track(track_name: str, artist: str = "") -> dict:
     navigated = False
     try:
         if target_uri:
-            print(f"[Spotify] Navigating to target URI: {target_uri}")
+            logger.info(f"[Spotify] Navigating to target URI: {target_uri}")
             navigated = _open_spotify_uri(target_uri)
         else:
             encoded = urllib.parse.quote(f"{track_query} {artist}".strip())
@@ -680,7 +683,7 @@ def _send_media_key(key_name: str) -> None:
     try:
         pyautogui.press(key_name)
     except Exception as e:
-        print(f"[Spotify] Key '{key_name}' trigger error: {e}")
+        logger.debug(f"[Spotify] Key '{key_name}' trigger error: {e}")
 
 
 def resume_playback() -> dict:

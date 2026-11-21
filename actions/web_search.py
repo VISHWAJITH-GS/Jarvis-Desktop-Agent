@@ -1,9 +1,12 @@
 # web_search.py
 import json
+import logging
 import sys
 import threading
 import time
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 # ── Gemini grounding quota circuit breaker ────────────────────────────────────
 # The google_search grounding tool has its own small quota, separate from plain
@@ -29,7 +32,7 @@ def _note_gemini_error(exc: Exception) -> None:
             already = time.monotonic() < _quota_blocked_until
             _quota_blocked_until = time.monotonic() + _QUOTA_COOLDOWN_SEC
         if not already:
-            print(
+            logger.warning(
                 "[WebSearch] Gemini grounding quota exhausted — skipping it for "
                 f"{_QUOTA_COOLDOWN_SEC // 60} min and serving results from DDG."
             )
@@ -43,7 +46,7 @@ def _log_gemini_failure(context: str, exc: Exception) -> None:
     """Log a Gemini failure — silently when it is just the expected cooldown."""
     if isinstance(exc, _QuotaCooldown):
         return  # announced once when the breaker tripped; not a warning
-    print(f"[WebSearch] \u26a0\ufe0f {context} failed ({exc}) — using DDG instead")
+    logger.warning(f"[WebSearch] \u26a0\ufe0f {context} failed ({exc}) — using DDG instead")
 
 
 def _run_bounded(fn, timeout: float, label: str = "task"):
@@ -60,7 +63,7 @@ def _run_bounded(fn, timeout: float, label: str = "task"):
     t.start()
     t.join(timeout)
     if t.is_alive():
-        print(f"[WebSearch] {label} exceeded {timeout:.0f}s — moving on")
+        logger.info(f"[WebSearch] {label} exceeded {timeout:.0f}s — moving on")
     return box[0]
 
 
@@ -131,7 +134,7 @@ def _get_ddgs():
     except ImportError:
         from duckduckgo_search import DDGS
 
-        print(
+        logger.warning(
             "[WebSearch] ⚠️ Using the deprecated 'duckduckgo-search' package — "
             "DuckDuckGo blocks its endpoints, so every search will come back "
             "empty.  Fix with:  pip install -U ddgs"
@@ -153,7 +156,7 @@ def _ddg_search(query: str, max_results: int = 6) -> list[dict]:
                     }
                 )
     except Exception as e:
-        print(f"[WebSearch] ⚠️ DDG text() failed: {e}")
+        logger.debug(f"[WebSearch] ⚠️ DDG text() failed: {e}")
     return results
 
 
@@ -173,7 +176,7 @@ def _ddg_news(query: str, max_results: int = 8) -> list[dict]:
                     }
                 )
     except Exception as e:
-        print(f"[WebSearch] ⚠️ DDG news() failed ({e}) — falling back to text search")
+        logger.debug(f"[WebSearch] ⚠️ DDG news() failed ({e}) — falling back to text search")
     # Also covers the legacy-package case, where news() returns an empty list
     # instead of raising.
     if not results:
@@ -455,9 +458,9 @@ def web_search(
         mode = "compare"
 
     if player:
-        print(f"[WebSearch] {mode}: {query or ', '.join(items)}")  # terminal
+        logger.info(f"[WebSearch] {mode}: {query or ', '.join(items)}")
 
-    print(f"[WebSearch] 🔍 mode={mode!r}  query={query!r}")
+    logger.info(f"[WebSearch] 🔍 mode={mode!r}  query={query!r}")
 
     try:
         if mode == "compare" and items:
@@ -478,7 +481,7 @@ def web_search(
             found = _search(query)
 
     except Exception as e:
-        print(f"[WebSearch] ❌ All backends failed: {e}")
+        logger.error(f"[WebSearch] ❌ All backends failed: {e}")
         return outcome.failed("web_search", f"the search failed: {e}", query=query or ", ".join(items))
 
     # EVERYTHING BELOW THIS LINE WAS WRITTEN BY STRANGERS.
