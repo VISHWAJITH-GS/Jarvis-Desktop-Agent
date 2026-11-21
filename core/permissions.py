@@ -106,6 +106,20 @@ ACTION_PERMISSIONS: dict[str, str] = {
     "browser_qa": NORMAL,
     "browser_profile": NORMAL,
 
+    # Task tools
+    "start_task": NORMAL,
+    "list_tasks": READ_ONLY,
+    "task_status": READ_ONLY,
+    "steer_task": NORMAL,
+    "stop_task": NORMAL,
+
+    # Routine tools
+    "create_routine": NORMAL,
+    "list_routines": READ_ONLY,
+    "edit_routine": NORMAL,
+    "delete_routine": NORMAL,
+    "configure_quiet_hours": NORMAL,
+
     # Sensitive tools (Require confirmation by default unless sub-action is immediate)
     "computer_control": SENSITIVE,
     "windows_control": SENSITIVE,
