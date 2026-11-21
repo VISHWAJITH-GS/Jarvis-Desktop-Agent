@@ -245,7 +245,7 @@ class WindowAudioMixin:
         tabs_row.setSpacing(4)
         self._drawer_tabs = QStackedWidget()
 
-        tab_names = [("CHAT & LOG", 0), ("TELEMETRY", 1), ("AUDIO CORE", 2), ("SETTINGS", 3)]
+        tab_names = [("CHAT & LOG", 0), ("TELEMETRY", 1), ("AUDIO CORE", 2), ("SETTINGS", 3), ("TASKS", 4)]
         self._tab_btns = []
 
         def _make_tab_btn(name, idx):
@@ -265,6 +265,8 @@ class WindowAudioMixin:
                 self._drawer_tabs.setCurrentIndex(idx)
                 if idx == 2:
                     self._refresh_audio_tab()
+                elif idx == 4:
+                    self._refresh_tasks_tab()
 
             btn.clicked.connect(_on_click)
             btn.setStyleSheet(self._tab_btn_style(idx == 0))
@@ -330,8 +332,198 @@ class WindowAudioMixin:
         p3 = self._build_settings_tab()
         self._drawer_tabs.addWidget(p3)
 
+        # Tab 4: Tasks & Habits
+        p4 = self._build_tasks_tab()
+        self._drawer_tabs.addWidget(p4)
+
         v.addWidget(self._drawer_tabs, stretch=1)
         return w
+
+    def _build_tasks_tab(self) -> QWidget:
+        w = QWidget()
+        w.setStyleSheet("background: transparent;")
+        lay = QVBoxLayout(w)
+        lay.setContentsMargins(4, 6, 4, 6)
+        lay.setSpacing(8)
+
+        # Header with Refresh button
+        top = QHBoxLayout()
+        hdr_lbl = QLabel("TODAY'S TASKS & HABITS")
+        hdr_lbl.setFont(keena_font(8, True))
+        hdr_lbl.setStyleSheet(f"color: {C.PRI}; letter-spacing: 1.5px;")
+        top.addWidget(hdr_lbl, stretch=1)
+
+        ref_btn = QPushButton("↻ REFRESH")
+        ref_btn.setFont(keena_font(8, True))
+        ref_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        ref_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: rgba(255, 255, 255, 0.05); color: {C.TEXT_DIM};
+                border: 1px solid {C.BORDER_B}; border-radius: 4px; padding: 2px 8px;
+            }}
+            QPushButton:hover {{ background: rgba(99, 102, 241, 0.2); color: {C.TEXT}; }}
+        """)
+        ref_btn.clicked.connect(self._refresh_tasks_tab)
+        top.addWidget(ref_btn)
+        lay.addLayout(top)
+
+        # Scroll area for items
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("background: transparent; border: none;")
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        self._tasks_scroll_content = QWidget()
+        self._tasks_scroll_content.setStyleSheet("background: transparent;")
+        self._tasks_layout = QVBoxLayout(self._tasks_scroll_content)
+        self._tasks_layout.setContentsMargins(0, 0, 0, 0)
+        self._tasks_layout.setSpacing(6)
+        scroll.setWidget(self._tasks_scroll_content)
+
+        lay.addWidget(scroll, stretch=1)
+        return w
+
+    def _refresh_tasks_tab(self) -> None:
+        if not hasattr(self, "_tasks_layout"):
+            return
+
+        # Clear existing items
+        while self._tasks_layout.count() > 0:
+            item = self._tasks_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+        try:
+            from plugins.productivity import get_store
+            from datetime import datetime as _dt
+            store = get_store()
+            data = store.load()
+            tasks = list(data.get("tasks", {}).values())
+            habits = list(data.get("habits", {}).values())
+            now_str = _dt.now().strftime("%Y-%m-%d")
+
+            today_tasks = [
+                t for t in tasks
+                if t.get("status") == "pending"
+                and (not t.get("due") or t["due"].startswith(now_str) or t["due"].split("T")[0] < now_str)
+            ]
+            active_habits = [h for h in habits if not h.get("archived", False)]
+
+            # Section: Tasks
+            t_hdr = QLabel(f"PENDING TASKS ({len(today_tasks)})")
+            t_hdr.setFont(keena_font(7, True))
+            t_hdr.setStyleSheet(f"color: {C.TEXT_DIM}; letter-spacing: 1px;")
+            self._tasks_layout.addWidget(t_hdr)
+
+            if not today_tasks:
+                empty_lbl = QLabel("No pending tasks due today.")
+                empty_lbl.setFont(QFont("Montserrat", 9))
+                empty_lbl.setStyleSheet(f"color: {C.TEXT_DIM}; padding: 4px;")
+                self._tasks_layout.addWidget(empty_lbl)
+            else:
+                for t in today_tasks:
+                    row = QWidget()
+                    row.setStyleSheet(f"background: rgba(255, 255, 255, 0.03); border: 1px solid {C.BORDER_B}; border-radius: 4px; padding: 4px;")
+                    r_lay = QHBoxLayout(row)
+                    r_lay.setContentsMargins(6, 4, 6, 4)
+
+                    due_txt = t.get('due', 'None')[:16].replace('T', ' ')
+                    info = QLabel(f"{t['title']}<br><span style='color:{C.TEXT_DIM};font-size:8pt;'>Due: {due_txt}</span>")
+                    info.setTextFormat(Qt.TextFormat.RichText)
+                    info.setFont(QFont("Montserrat", 9))
+                    info.setStyleSheet(f"color: {C.TEXT};")
+                    r_lay.addWidget(info, stretch=1)
+
+                    done_btn = QPushButton("✓")
+                    done_btn.setFixedSize(24, 24)
+                    done_btn.setFont(QFont("Montserrat", 10, QFont.Weight.Bold))
+                    done_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+                    done_btn.setToolTip("Mark completed")
+                    done_btn.setStyleSheet(f"""
+                        QPushButton {{
+                            background: rgba(34, 197, 94, 0.15); color: #22c55e;
+                            border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 4px;
+                        }}
+                        QPushButton:hover {{ background: rgba(34, 197, 94, 0.35); }}
+                    """)
+                    task_id = t["id"]
+                    done_btn.clicked.connect(lambda _, tid=task_id: self._ui_complete_task(tid))
+                    r_lay.addWidget(done_btn)
+                    self._tasks_layout.addWidget(row)
+
+            # Section: Habits
+            h_hdr = QLabel(f"ACTIVE HABITS ({len(active_habits)})")
+            h_hdr.setFont(keena_font(7, True))
+            h_hdr.setStyleSheet(f"color: {C.TEXT_DIM}; letter-spacing: 1px; margin-top: 8px;")
+            self._tasks_layout.addWidget(h_hdr)
+
+            if not active_habits:
+                empty_h = QLabel("No active habits tracked.")
+                empty_h.setFont(QFont("Montserrat", 9))
+                empty_h.setStyleSheet(f"color: {C.TEXT_DIM}; padding: 4px;")
+                self._tasks_layout.addWidget(empty_h)
+            else:
+                for h in active_habits:
+                    row = QWidget()
+                    row.setStyleSheet(f"background: rgba(255, 255, 255, 0.03); border: 1px solid {C.BORDER_B}; border-radius: 4px; padding: 4px;")
+                    r_lay = QHBoxLayout(row)
+                    r_lay.setContentsMargins(6, 4, 6, 4)
+
+                    logged_today = now_str in h.get("log", [])
+                    info = QLabel(f"{h['name']}<br><span style='color:{C.TEXT_DIM};font-size:8pt;'>Streak: {h.get('streak', 0)}d | Target: {h.get('target', 'daily')}</span>")
+                    info.setTextFormat(Qt.TextFormat.RichText)
+                    info.setFont(QFont("Montserrat", 9))
+                    info.setStyleSheet(f"color: {C.TEXT};")
+                    r_lay.addWidget(info, stretch=1)
+
+                    if logged_today:
+                        badge = QLabel("✓ DONE")
+                        badge.setFont(keena_font(7, True))
+                        badge.setStyleSheet("color: #22c55e; padding: 2px 6px;")
+                        r_lay.addWidget(badge)
+                    else:
+                        log_btn = QPushButton("✓")
+                        log_btn.setFixedSize(24, 24)
+                        log_btn.setFont(QFont("Montserrat", 10, QFont.Weight.Bold))
+                        log_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+                        log_btn.setToolTip("Log habit completion today")
+                        log_btn.setStyleSheet(f"""
+                            QPushButton {{
+                                background: rgba(99, 102, 241, 0.15); color: #818cf8;
+                                border: 1px solid rgba(99, 102, 241, 0.3); border-radius: 4px;
+                            }}
+                            QPushButton:hover {{ background: rgba(99, 102, 241, 0.35); }}
+                        """)
+                        hid = h["id"]
+                        log_btn.clicked.connect(lambda _, hid=hid: self._ui_log_habit(hid))
+                        r_lay.addWidget(log_btn)
+
+                    self._tasks_layout.addWidget(row)
+
+            self._tasks_layout.addStretch(1)
+        except Exception as e:
+            err_lbl = QLabel("Tasks panel: Productivity plugin not loaded")
+            err_lbl.setFont(QFont("Montserrat", 8))
+            err_lbl.setStyleSheet("color: #ef4444; padding: 6px;")
+            self._tasks_layout.addWidget(err_lbl)
+
+    def _ui_complete_task(self, task_id: str) -> None:
+        try:
+            from plugins.productivity import complete_task, get_store
+            complete_task(get_store(), {"task_id": task_id})
+            self._refresh_tasks_tab()
+        except Exception as e:
+            pass
+
+    def _ui_log_habit(self, habit_id: str) -> None:
+        try:
+            from plugins.productivity import log_habit, get_store
+            log_habit(get_store(), {"habit_id": habit_id})
+            self._refresh_tasks_tab()
+        except Exception as e:
+            pass
 
     def _build_audio_tab(self) -> QWidget:
         w = QWidget()

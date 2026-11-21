@@ -142,12 +142,47 @@
     <div class="pill" id="pill"><span class="dot"></span><span id="st">Connecting</span></div>
     <div class="enc-badge" id="enc">AES-GCM</div>
     <button class="pill" id="skills-btn" onclick="toggleSkillsModal()" style="cursor:pointer;border-color:var(--accent);color:var(--accent);margin-left:6px;"><i class="fi fi-rr-settings" style="margin-right:4px;"></i>SKILLS</button>
+    <button class="pill" id="productivity-btn" onclick="toggleProductivityModal()" style="cursor:pointer;border-color:#10b981;color:#10b981;margin-left:6px;"><i class="fi fi-rr-check" style="margin-right:4px;"></i>TASKS</button>
     <button class="pill" id="desktop-btn" onclick="toggleDesktopModal()" style="cursor:pointer;border-color:#38bdf8;color:#38bdf8;margin-left:6px;"><i class="fi fi-rr-search" style="margin-right:4px;"></i>DESKTOP & QA</button>
     <button class="pill" id="stop-btn" onclick="triggerEmergencyStop()" style="cursor:pointer;border-color:#ef4444;color:#ef4444;margin-left:6px;font-weight:bold;"><i class="fi fi-rr-shield-exclamation" style="margin-right:4px;"></i>STOP</button>
     <div class="spacer"></div>
     <div class="url">__IP__:__PORT__</div>
   </header>
   <main id="feed"></main>
+
+  <!-- ── PRODUCTIVITY MODAL ── -->
+  <div id="productivity-modal" style="display:none;position:fixed;inset:0;background:rgba(7,9,15,0.85);backdrop-filter:blur(8px);z-index:100;padding:20px;overflow-y:auto;align-items:center;justify-content:center;">
+    <div style="background:#0c0f1d;border:1px solid var(--border);border-radius:16px;max-width:650px;width:100%;padding:20px;box-shadow:0 10px 40px rgba(0,0,0,0.6);display:flex;flex-direction:column;gap:16px;margin:auto;">
+      <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);padding-bottom:12px;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <h2 style="font-size:16px;letter-spacing:1px;font-weight:700;color:#10b981;">Today's Tasks & Habits</h2>
+          <span id="productivity-date" style="font-size:11px;color:var(--muted);"></span>
+        </div>
+        <button onclick="toggleProductivityModal()" style="background:transparent;border:none;color:var(--muted);font-size:18px;cursor:pointer;">✕</button>
+      </div>
+
+      <!-- Tasks Section -->
+      <div>
+        <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);margin-bottom:8px;">Pending Tasks</h3>
+        <div id="tasks-list" style="display:flex;flex-direction:column;gap:8px;max-height:26vh;overflow-y:auto;padding-right:4px;">
+          <div style="color:var(--muted);font-size:13px;text-align:center;padding:12px;">Loading tasks...</div>
+        </div>
+      </div>
+
+      <!-- Habits Section -->
+      <div>
+        <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);margin-bottom:8px;">Active Habits</h3>
+        <div id="habits-list" style="display:flex;flex-direction:column;gap:8px;max-height:26vh;overflow-y:auto;padding-right:4px;">
+          <div style="color:var(--muted);font-size:13px;text-align:center;padding:12px;">Loading habits...</div>
+        </div>
+      </div>
+
+      <div style="display:flex;justify-content:space-between;gap:8px;margin-top:6px;">
+        <button class="btn" onclick="loadProductivityToday()" style="background:var(--surface);border:1px solid var(--border);color:var(--text);">↻ Refresh</button>
+        <button class="btn btn-send" onclick="toggleProductivityModal()">Close</button>
+      </div>
+    </div>
+  </div>
 
   <!-- ── SKILLS MODAL ── -->
   <div id="skills-modal" style="display:none;position:fixed;inset:0;background:rgba(7,9,15,0.85);backdrop-filter:blur(8px);z-index:100;padding:20px;overflow-y:auto;align-items:center;justify-content:center;">
@@ -693,6 +728,84 @@
         if (w.readyState < 2) w.close();
       }
       _micIdle();
+    }
+
+    // ── Tasks & Habits Modal Logic ────────────────────────────────────────────
+    async function toggleProductivityModal() {
+      const modal = document.getElementById('productivity-modal');
+      const isHidden = modal.style.display === 'none' || !modal.style.display;
+      modal.style.display = isHidden ? 'flex' : 'none';
+      if (isHidden) {
+        await loadProductivityToday();
+      }
+    }
+
+    async function loadProductivityToday() {
+      const tContainer = document.getElementById('tasks-list');
+      const hContainer = document.getElementById('habits-list');
+      const dateLbl = document.getElementById('productivity-date');
+      try {
+        const res = await _authFetch('/api/productivity/today');
+        if (!res.ok) throw new Error('Productivity endpoint unavailable');
+        const data = await res.json();
+        if (dateLbl) dateLbl.textContent = data.date || '';
+
+        // Render tasks
+        const tasks = data.tasks || [];
+        if (tasks.length === 0) {
+          tContainer.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:8px;text-align:center;">No pending tasks for today!</div>';
+        } else {
+          tContainer.innerHTML = tasks.map(t => `
+            <div style="display:flex;align-items:center;justify-content:space-between;background:var(--surface);border:1px solid var(--border);padding:8px 12px;border-radius:8px;">
+              <div>
+                <div style="font-size:13px;font-weight:600;">${t.title}</div>
+                <div style="font-size:11px;color:var(--muted);">Due: ${t.due ? t.due.replace('T', ' ') : 'None'} | Priority: ${t.priority || 'normal'}</div>
+              </div>
+              <button onclick="checkOffTask('${t.id}')" style="background:rgba(34,197,94,0.15);border:1px solid rgba(34,197,94,0.3);color:#22c55e;padding:4px 10px;border-radius:6px;cursor:pointer;font-weight:bold;">✓ Done</button>
+            </div>
+          `).join('');
+        }
+
+        // Render habits
+        const habits = data.habits || [];
+        if (habits.length === 0) {
+          hContainer.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:8px;text-align:center;">No active habits tracked.</div>';
+        } else {
+          hContainer.innerHTML = habits.map(h => `
+            <div style="display:flex;align-items:center;justify-content:space-between;background:var(--surface);border:1px solid var(--border);padding:8px 12px;border-radius:8px;">
+              <div>
+                <div style="font-size:13px;font-weight:600;">${h.name}</div>
+                <div style="font-size:11px;color:var(--muted);">Streak: ${h.streak} days | Target: ${h.target}</div>
+              </div>
+              ${h.done_today
+                ? '<span style="color:#22c55e;font-size:12px;font-weight:bold;">✓ Completed</span>'
+                : `<button onclick="checkOffHabit('${h.id}')" style="background:rgba(99,102,241,0.15);border:1px solid rgba(99,102,241,0.3);color:#818cf8;padding:4px 10px;border-radius:6px;cursor:pointer;font-weight:bold;">✓ Log Today</button>`
+              }
+            </div>
+          `).join('');
+        }
+      } catch (err) {
+        tContainer.innerHTML = `<div style="color:#ef4444;font-size:12px;padding:8px;">${err.message}</div>`;
+        hContainer.innerHTML = '';
+      }
+    }
+
+    async function checkOffTask(id) {
+      try {
+        const res = await _authFetch(`/api/productivity/tasks/${id}/complete`, { method: 'POST' });
+        await loadProductivityToday();
+      } catch (e) {
+        toast('Failed to complete task');
+      }
+    }
+
+    async function checkOffHabit(id) {
+      try {
+        const res = await _authFetch(`/api/productivity/habits/${id}/log`, { method: 'POST' });
+        await loadProductivityToday();
+      } catch (e) {
+        toast('Failed to log habit');
+      }
     }
 
     // ── Skills Library Logic ──────────────────────────────────────────────────

@@ -1650,6 +1650,65 @@ class DashboardServer:
             except Exception as e:
                 return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
+        # ── Productivity: Tasks & Habits endpoints ──
+        @app.get("/api/productivity/today")
+        async def productivity_today_endpoint(req: Request):
+            if not _auth(req):
+                return JSONResponse({"error": "Unauthorized"}, status_code=401)
+            try:
+                from datetime import datetime
+                from plugins import productivity
+                store = productivity.get_store()
+                data = store.load()
+                tasks = list(data.get("tasks", {}).values())
+                habits = list(data.get("habits", {}).values())
+                now_str = datetime.now().strftime("%Y-%m-%d")
+                today_tasks = [
+                    t for t in tasks
+                    if t.get("status") == "pending"
+                    and (not t.get("due") or t["due"].startswith(now_str) or t["due"].split("T")[0] < now_str)
+                ]
+                active_habits = [
+                    {
+                        "id": h["id"],
+                        "name": h["name"],
+                        "target": h.get("target", "daily"),
+                        "streak": h.get("streak", 0),
+                        "done_today": now_str in h.get("log", []),
+                    }
+                    for h in habits if not h.get("archived", False)
+                ]
+                return JSONResponse({
+                    "ok": True,
+                    "date": now_str,
+                    "tasks": today_tasks,
+                    "habits": active_habits,
+                })
+            except Exception as e:
+                return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+        @app.post("/api/productivity/tasks/{task_id}/complete")
+        async def complete_productivity_task_endpoint(task_id: str, req: Request):
+            if not _auth(req):
+                return JSONResponse({"error": "Unauthorized"}, status_code=401)
+            try:
+                from plugins import productivity
+                res = productivity.complete_task(productivity.get_store(), {"task_id": task_id})
+                return JSONResponse({"ok": "status=done" in res, "result": res})
+            except Exception as e:
+                return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+        @app.post("/api/productivity/habits/{habit_id}/log")
+        async def log_productivity_habit_endpoint(habit_id: str, req: Request):
+            if not _auth(req):
+                return JSONResponse({"error": "Unauthorized"}, status_code=401)
+            try:
+                from plugins import productivity
+                res = productivity.log_habit(productivity.get_store(), {"habit_id": habit_id})
+                return JSONResponse({"ok": "status=done" in res, "result": res})
+            except Exception as e:
+                return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
         @app.websocket("/ws")
         async def ws_ep(websocket: WebSocket, token: str = ""):
             if not _ws_check_origin(websocket):

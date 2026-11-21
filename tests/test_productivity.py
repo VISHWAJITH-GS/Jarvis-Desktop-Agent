@@ -512,5 +512,112 @@ class TestProductivityPart4(unittest.TestCase):
         self.assertIn("[PROACTIVE_CHECK]", prompt)
 
 
+class TestProductivityPart5(unittest.TestCase):
+    def setUp(self):
+        self.test_dir = tempfile.mkdtemp()
+        self.store_file = Path(self.test_dir) / "productivity.json"
+        self.store = productivity.ProductivityStore(self.store_file)
+        self._orig_store = productivity._global_store
+        productivity._global_store = self.store
+        undo.clear()
+
+        # Dashboard Test Client setup
+        from dashboard.server import DashboardServer
+        self.server = DashboardServer()
+        from fastapi.testclient import TestClient
+        self.client = TestClient(self.server.app, client=("127.0.0.1", 50000))
+        self.auth_token = self.server.new_key(expiry_secs=60)
+        # Login to get bearer token
+        login_resp = self.client.post("/login", json={"pin": self.auth_token})
+        self.token = login_resp.json().get("token")
+        self.headers = {"Authorization": f"Bearer {self.token}"}
+
+    def tearDown(self):
+        productivity._global_store = self._orig_store
+        undo.clear()
+        try:
+            shutil.rmtree(self.test_dir, ignore_errors=True)
+        except Exception:
+            pass
+
+    def test_dashboard_unauthorized(self):
+        from fastapi.testclient import TestClient
+        unauth_client = TestClient(self.server.app, client=("127.0.0.1", 50001))
+        resp = unauth_client.get("/api/productivity/today")
+        self.assertEqual(resp.status_code, 401)
+
+    def test_dashboard_today_tasks_and_checkoff(self):
+        # Add a task due today
+        add_res = productivity.run({"action": "add_task", "title": "Dashboard Test Task", "due": "today 6pm"})
+        self.assertIn("status=done", add_res)
+        data = self.store.load()
+        task_id = list(data["tasks"].keys())[0]
+
+        # Add a habit
+        add_h_res = productivity.run({"action": "add_habit", "name": "Dashboard Habit"})
+        self.assertIn("status=done", add_h_res)
+        data = self.store.load()
+        habit_id = list(data["habits"].keys())[0]
+
+        # 1. GET /api/productivity/today
+        resp = self.client.get("/api/productivity/today", headers=self.headers)
+        self.assertEqual(resp.status_code, 200)
+        json_data = resp.json()
+        self.assertTrue(json_data["ok"])
+        self.assertEqual(len(json_data["tasks"]), 1)
+        self.assertEqual(json_data["tasks"][0]["id"], task_id)
+        self.assertEqual(len(json_data["habits"]), 1)
+        self.assertEqual(json_data["habits"][0]["id"], habit_id)
+
+        # 2. Check off task via dashboard POST endpoint
+        comp_resp = self.client.post(f"/api/productivity/tasks/{task_id}/complete", headers=self.headers)
+        self.assertEqual(comp_resp.status_code, 200)
+        self.assertTrue(comp_resp.json()["ok"])
+
+        # Verify task is now marked done
+        task = self.store.load()["tasks"][task_id]
+        self.assertEqual(task["status"], "done")
+
+        # 3. Check off habit via dashboard POST endpoint
+        log_resp = self.client.post(f"/api/productivity/habits/{habit_id}/log", headers=self.headers)
+        self.assertEqual(log_resp.status_code, 200)
+        self.assertTrue(log_resp.json()["ok"])
+
+        # Verify habit has log entry for today
+        habit = self.store.load()["habits"][habit_id]
+        self.assertEqual(len(habit["log"]), 1)
+        self.assertEqual(habit["streak"], 1)
+
+    def test_plugin_removable_resilience(self):
+        """Verify dashboard endpoint handles gracefully if productivity plugin/store errors."""
+        from unittest.mock import patch
+
+        with patch("plugins.productivity.get_store", side_effect=ImportError("Simulated missing plugin")):
+            resp = self.client.get("/api/productivity/today", headers=self.headers)
+            self.assertEqual(resp.status_code, 500)
+            # Fails gracefully with JSON error rather than taking down process
+            self.assertFalse(resp.json()["ok"])
+
+    def test_hud_tasks_tab_build_and_refresh(self):
+        """Verify HUD tasks tab builds and refreshes on Qt thread without error."""
+        from PyQt6.QtWidgets import QApplication, QWidget, QTextEdit
+        app = QApplication.instance() or QApplication([])
+        from gui.window_audio import WindowAudioMixin
+
+        class DummyHUDWindow(WindowAudioMixin, QWidget):
+            def __init__(self):
+                super().__init__()
+                self._expanded = True
+                self._log = QTextEdit()
+                self._drop_zone = QWidget()
+                self._file_hint = QWidget()
+
+        hud = DummyHUDWindow()
+        tab = hud._build_tasks_tab()
+        self.assertIsNotNone(tab)
+        hud._refresh_tasks_tab()
+        self.assertIsNotNone(hud._tasks_layout)
+
+
 if __name__ == "__main__":
     unittest.main()
