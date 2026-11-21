@@ -573,6 +573,21 @@ class LiveVoiceMixin:
             )
             return
         self._record_activity()
+
+        # Intercept confirmations directly in code BEFORE the model sees them
+        try:
+            from core import confirm
+            intercepted = confirm.intercept_confirmation(
+                text,
+                player=self.ui,
+                speak=self.speak if hasattr(self, "speak") else None,
+            )
+            if intercepted is not None:
+                self.ui.write_log(f"You: {text}")
+                return
+        except Exception as c_err:
+            print(f"[Confirm] Interception error: {c_err}")
+
         asyncio.run_coroutine_threadsafe(
             self.session.send_client_content(turns={"role": "user", "parts": [{"text": text}]}, turn_complete=True),
             self._loop,

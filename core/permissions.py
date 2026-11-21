@@ -580,8 +580,17 @@ class ActionPermissionManager:
         # - Send email: IMMEDIATE
         # - Download file: CONFIRMATION REQUIRED
         # - Make payment, purchase: HIGH-IMPACT
-        if act in ("open_app", "computer_control", "browser_control", "action_executor", "web_search", "send_message"):
-            if act in ("open_app", "web_search", "send_message"):
+        if act in ("open_app", "computer_control", "browser_control", "action_executor", "web_search", "send_message", "whatsapp_send", "whatsapp"):
+            if act in ("whatsapp_send", "whatsapp"):
+                return ActionRiskLevel.CONFIRMATION_REQUIRED
+
+            if act == "send_message":
+                plat = str(params.get("platform") or "").lower()
+                if any(k in plat for k in ("whatsapp", "wp", "wapp")):
+                    return ActionRiskLevel.CONFIRMATION_REQUIRED
+                return ActionRiskLevel.IMMEDIATE
+
+            if act in ("open_app", "web_search"):
                 return ActionRiskLevel.IMMEDIATE
 
             if sub_act in (
@@ -849,6 +858,21 @@ class ActionPermissionManager:
             title = "Delete System Files"
             detail = f"Permanently delete system file '{target}'. Warning: Deleting system files can corrupt Windows."
 
+        # WhatsApp & Messaging
+        elif act in ("whatsapp_send", "whatsapp") or (
+            act == "send_message" and any(k in str(params.get("platform", "")).lower() for k in ("whatsapp", "wp", "wapp"))
+        ):
+            recip = params.get("contact") or params.get("receiver") or params.get("recipient") or target or "recipient"
+            msg_text = params.get("text") or params.get("message") or params.get("message_text") or ""
+            title = f"Send WhatsApp Message to {recip}"
+            detail = f"Send message '{msg_text}' to {recip} via WhatsApp."
+        elif act == "send_message":
+            plat = params.get("platform", "messaging app")
+            recip = params.get("contact") or params.get("receiver") or params.get("recipient") or target or "recipient"
+            msg_text = params.get("text") or params.get("message") or params.get("message_text") or ""
+            title = f"Send {plat} Message to {recip}"
+            detail = f"Send message '{msg_text}' to {recip} via {plat}."
+
         else:
             title = f"Execute {action_name}"
             detail = f"Execute action '{action_name}' with target '{target}'."
@@ -953,7 +977,7 @@ class ActionExecutionGuard:
 
         # Runner closure to execute only after user confirms
         def _confirmed_runner() -> str:
-            auth_params = {**params, "_execution_authorized": True}
+            auth_params = {**params, "_execution_authorized": True, "confirmed": True}
             try:
                 raw = _call_handler_safe(handler, auth_params, ctx)
                 res = outcome.normalize_result(raw, action_name=name)
@@ -968,7 +992,18 @@ class ActionExecutionGuard:
                 log_action_audit(name, params, str(risk_level.value), "failed", False, error=str(err))
                 return f"Failed: {err}"
 
-        # Park behind confirmation gate
+        # Park behind confirmation gate with PendingAction store
+        pending = confirm.save_pending(
+            tool=name,
+            params=dict(params),
+            run=_confirmed_runner,
+            expires_in=60.0,
+            title=title,
+            detail=detail,
+            risk_level=str(risk_level.value),
+            payment_details=payment_info,
+        )
+
         prompt_msg = confirm.request_action(
             action=name,
             parameters=params,
@@ -977,6 +1012,7 @@ class ActionExecutionGuard:
             detail=detail,
             run=_confirmed_runner,
             payment_details=payment_info,
+            action_id=pending.id,
         )
 
         dur = (time.monotonic() - start_time) * 1000
@@ -986,6 +1022,7 @@ class ActionExecutionGuard:
             success=False,
             verified=False,
             message=prompt_msg,
+            data={"id": pending.id, "tool": name, "params": pending.params},
             duration_ms=dur,
         )
         log_action_audit(name, params, str(risk_level.value), "pending_confirmation", False)

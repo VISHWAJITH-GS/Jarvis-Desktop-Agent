@@ -315,9 +315,31 @@ def _send_whatsapp(receiver: str, message: str) -> str:
         if transport is not None:
             sent, failure = transport.send_message_to(receiver, formatted_msg)
             if sent:
-                return outcome.done(
-                    "send_message", platform="WhatsApp", to=receiver, message=formatted_msg, verified=True
+                info_str = str(failure or "").lower()
+                has_negative = any(neg in info_str for neg in ("could not", "not confirmed", "unconfirmed", "not verified", "failed", "unverified"))
+                is_tick_verified = (
+                    not has_negative
+                    and (
+                        "sent tick" in info_str
+                        or "tick verified" in info_str
+                        or "tick confirmed" in info_str
+                        or "verified sent tick" in info_str
+                        or "delivered" in info_str
+                        or "read" in info_str
+                        or "confirmed visible" in info_str
+                    )
                 )
+                if is_tick_verified:
+                    return outcome.done(
+                        "send_message", platform="WhatsApp", to=receiver, message=formatted_msg, verified=True
+                    )
+                else:
+                    return outcome.unverified(
+                        "send_message",
+                        f"the message was typed into WhatsApp for {receiver}, but delivery could not be confirmed",
+                        platform="WhatsApp",
+                        to=receiver,
+                    )
             return outcome.failed("send_message", failure, platform="WhatsApp", to=receiver)
     except Exception as e:
         print(f"[SendMessage] WhatsApp driver error ({e})")
@@ -461,6 +483,34 @@ def send_message(
             platform=platform,
         )
 
+    # Deterministic confirmation gate for WhatsApp: do NOT open WhatsApp before confirmation!
+    if is_wa and not (params.get("_execution_authorized") or params.get("confirmed")):
+        from core import confirm
+
+        def _do_send_msg():
+            auth_p = {**params, "_execution_authorized": True, "confirmed": True}
+            return send_message(auth_p, response=response, player=player, session_memory=session_memory)
+
+        pending = confirm.save_pending(
+            tool="send_message",
+            params={
+                "contact": receiver,
+                "text": message_text,
+                "platform": platform,
+                "receiver": receiver,
+                "message_text": message_text,
+            },
+            run=_do_send_msg,
+            expires_in=60.0,
+            title=f"Send {platform} message to {receiver}",
+            detail=f"Message: '{message_text}'",
+        )
+        return outcome.result_needs_confirmation(
+            "send_message",
+            message=f"Shall I send the {platform} message to {receiver}: '{message_text}'? Say confirm to execute, or no to cancel.",
+            data={"id": pending.id, "tool": "send_message", "params": {"contact": receiver, "text": message_text}},
+        )
+
     preview = message_text[:50] + ("…" if len(message_text) > 50 else "")
     print(f"[SendMessage] 📨 {platform} → {receiver}: {preview}")
     if player:
@@ -483,10 +533,7 @@ def send_message(
     if not verified and player and hasattr(player, "request_say"):
         try:
             player.request_say(
-                "Tell the user, in one or two short sentences in their own "
-                "language, exactly what this says happened — and if it says "
-                "the message was not sent or not confirmed, say that plainly "
-                "rather than claiming it was sent: " + str(result)
+                f"The message was typed for {receiver}, but delivery could not be confirmed."
             )
         except Exception:
             pass

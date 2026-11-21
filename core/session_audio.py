@@ -325,14 +325,15 @@ class LiveAudioMixin:
                                 self.ui.write_log(f"You: {full_in}")
                                 self._session_log.append(f"User: {full_in}")
 
-                                # Direct voice resolution for pending confirmations
+                                # Direct resolution for pending confirmations
                                 try:
-                                    if confirm_gate.pending_title():
-                                        voice_res = confirm_gate.resolve_by_voice(full_in)
-                                        if voice_res is True:
-                                            self.ui.write_log("SYS: Confirmation accepted via voice.")
-                                        elif voice_res is False:
-                                            self.ui.write_log("SYS: Confirmation rejected via voice.")
+                                    intercepted = confirm_gate.intercept_confirmation(
+                                        full_in,
+                                        player=self.ui,
+                                        speak=self.speak if hasattr(self, "speak") else None,
+                                    )
+                                    if intercepted is not None:
+                                        print(f"[Confirm] Voice confirmation handled directly: {full_in}")
                                 except Exception as c_err:
                                     print(f"[Confirm] Voice check error: {c_err}")
 

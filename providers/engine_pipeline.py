@@ -807,6 +807,18 @@ class PipelineEngine:
             # It also clears main.py's stall watchdog immediately, so a local
             # model taking its time never looks like a dead connection.
             await self._emit(Msg.heard(text))
+
+            # Intercept confirmations directly in code BEFORE the model sees them
+            try:
+                from core import confirm
+                intercepted = confirm.intercept_confirmation(text)
+                if intercepted is not None:
+                    reply_text = intercepted.message or intercepted.to_speech_text()
+                    await self._emit(Msg.reply(reply_text))
+                    return text
+            except Exception as c_err:
+                print(f"[Confirm] Pipeline interception error: {c_err}")
+
             await self.send_client_content(turns={"role": "user", "parts": [{"text": text}]})
         return text
 

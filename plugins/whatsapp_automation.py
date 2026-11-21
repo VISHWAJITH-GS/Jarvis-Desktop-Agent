@@ -4,6 +4,7 @@ plugins/whatsapp_automation.py
 Auto-discovered JARVIS plugin for sending formal and flexible WhatsApp messages.
 """
 
+from core import outcome
 from core import gemini
 from plugins import _whatsapp_core as wa
 
@@ -15,7 +16,8 @@ PLUGIN = {
         "CRITICAL: If the user has NOT provided the actual message content yet (e.g. they only said "
         "'send a message to Mom' or 'text Rahul'), DO NOT call this tool with placeholder text. "
         "Instead, ask the user first: 'What message would you like me to send to <contact>?' "
-        "Only call this tool once you know the exact message the user wants to send."
+        "Only call this tool once you know the exact message the user wants to send. "
+        "Ask for confirmation at most once per action. Never demand a stricter confirmation phrase."
     ),
     "parameters": {
         "type": "OBJECT",
@@ -78,11 +80,11 @@ _PLACEHOLDERS = (
 )
 
 
-def run(parameters: dict, player=None, session_memory=None) -> str:
+def run(parameters: dict, player=None, session_memory=None) -> outcome.ActionResult | str:
     p = parameters or {}
     action = (p.get("action") or "").lower().strip()
-    contact = (p.get("contact") or "").strip()
-    raw_message = (p.get("message") or "").strip()
+    contact = (p.get("contact") or p.get("receiver") or p.get("recipient") or "").strip()
+    raw_message = (p.get("message") or p.get("message_text") or p.get("text") or "").strip()
     formal = p.get("formal", True)
 
     # If action indicates reading, delegate directly
@@ -92,14 +94,58 @@ def run(parameters: dict, player=None, session_memory=None) -> str:
         return whatsapp_reader.run(parameters, player=player, session_memory=session_memory)
 
     if not contact:
-        return "No contact name was specified for the WhatsApp message. Please tell me who you want to message."
+        return outcome.result_failed(
+            "whatsapp_send",
+            error="No contact specified",
+            message="No contact name was specified for the WhatsApp message. Please tell me who you want to message.",
+            data={"contact": ""},
+        )
     if not raw_message or any(placeholder in raw_message.lower() for placeholder in _PLACEHOLDERS):
-        return f"What message would you like me to send to {contact}?"
+        return outcome.ActionResult.ask(
+            "whatsapp_send",
+            f"What message would you like me to send to {contact}?",
+            data={"contact": contact},
+        )
 
     # Format message formally
     final_message = _polish_message_formal(raw_message) if formal else raw_message
 
-    if player:
+    # 1. Deterministic code-level confirmation gate
+    # Do NOT open WhatsApp before user confirmation!
+    is_authorized = bool(p.get("_execution_authorized") or p.get("confirmed"))
+    if not is_authorized:
+        from core import confirm
+
+        def _do_send_action() -> outcome.ActionResult:
+            return _execute_send(contact, final_message, player=player)
+
+        pending = confirm.save_pending(
+            tool="whatsapp_send",
+            params={
+                "contact": contact,
+                "text": final_message,
+                "formal": formal,
+                "receiver": contact,
+                "message": final_message,
+            },
+            run=_do_send_action,
+            expires_in=60.0,
+            title=f"Send WhatsApp message to {contact}",
+            detail=f"Message: '{final_message}'",
+        )
+        return outcome.result_needs_confirmation(
+            "whatsapp_send",
+            message=f"Shall I proceed with sending WhatsApp message to {contact}: '{final_message}'? Say confirm to execute, or no to cancel.",
+            data={"id": pending.id, "tool": "whatsapp_send", "params": {"contact": contact, "text": final_message}},
+        )
+
+    # 2. Authorized execution
+    return _execute_send(contact, final_message, player=player)
+
+
+def _execute_send(contact: str, message: str, player=None) -> outcome.ActionResult:
+    """Execute WhatsApp message sending and return honest ActionResult contract."""
+    if player and hasattr(player, "write_log"):
         try:
             player.write_log(f"JARVIS: Opening WhatsApp for {contact}…")
         except Exception:
@@ -107,16 +153,62 @@ def run(parameters: dict, player=None, session_memory=None) -> str:
 
     driver, why = wa.get()
     if not driver:
-        return f"Could not initialize WhatsApp driver: {why}"
+        return outcome.result_failed(
+            "whatsapp_send",
+            error=why,
+            message=f"Could not initialize WhatsApp driver: {why}",
+            data={"contact": contact},
+        )
 
-    sent, err = driver.send_message_to(contact, final_message)
-    if sent:
-        msg_preview = f'"{final_message}"'
-        if player:
+    sent, info = driver.send_message_to(contact, message)
+    if not sent:
+        return outcome.result_failed(
+            "whatsapp_send",
+            error=info,
+            message=f"Failed to send the message to {contact}: {info}",
+            data={"contact": contact},
+        )
+
+    msg_preview = f'"{message}"'
+    info_str = str(info or "").lower()
+
+    # Honest status: "done" ONLY after sent tick is verified, otherwise "unverified"
+    has_negative = any(neg in info_str for neg in ("could not", "not confirmed", "unconfirmed", "not verified", "failed", "unverified"))
+    is_tick_verified = (
+        not has_negative
+        and (
+            "sent tick" in info_str
+            or "tick verified" in info_str
+            or "tick confirmed" in info_str
+            or "verified sent tick" in info_str
+            or "delivered" in info_str
+            or "read" in info_str
+            or "confirmed visible" in info_str
+        )
+    )
+
+    if is_tick_verified:
+        if player and hasattr(player, "write_log"):
             try:
                 player.write_log(f"JARVIS: Message sent to {contact}: {msg_preview}")
             except Exception:
                 pass
-        return f"I have sent the message to {contact}: {msg_preview}"
+        return outcome.result_done(
+            "whatsapp_send",
+            message=f"I have sent the message to {contact}: {msg_preview}",
+            verified=True,
+            data={"contact": contact, "text": message, "to": contact, "verified": True},
+        )
     else:
-        return f"Failed to send the message to {contact}: {err}"
+        # Keystrokes went out but sent tick was NOT verified
+        unverified_msg = f"The message was typed for {contact}, but delivery could not be confirmed."
+        if player and hasattr(player, "write_log"):
+            try:
+                player.write_log(f"JARVIS: {unverified_msg}")
+            except Exception:
+                pass
+        return outcome.result_unverified(
+            "whatsapp_send",
+            message=unverified_msg,
+            data={"contact": contact, "text": message, "to": contact, "verified": False},
+        )

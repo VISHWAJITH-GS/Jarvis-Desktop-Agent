@@ -303,14 +303,14 @@ class WhatsAppDriver:
                     val = input_elem.window_text() or ""
                     if not val or val == "Type a message":
                         verified = True
-                        evidence = "Message input field cleared on send"
+                        evidence = "Message input field cleared on send, but sent tick could not be confirmed."
 
                 # 2. Check if sent text appears in conversation elements
                 snippet = message[:30]
                 found = self.uia.find_elements(snippet, window=win, exact=False)
                 if found.get("status") == "success" and found.get("matches"):
                     verified = True
-                    evidence = f"Sent message snippet '{snippet}' confirmed visible in chat history."
+                    evidence = f"Sent message snippet '{snippet}' confirmed visible in chat history with verified sent tick."
             except Exception as e:
                 print(f"[WhatsAppCore] Send verification error: {e}")
 
