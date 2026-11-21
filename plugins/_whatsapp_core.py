@@ -1,440 +1,60 @@
 """
-plugins/_whatsapp_core.py
+plugins/_whatsapp_core.py — Backward-compatibility bridge for WhatsApp Web driver.
 
-Verified, reliable WhatsApp driver for Mark-LVI.
-Supports:
-  1. Windows UIA (pywinauto) for WhatsApp Desktop (UWP / Win32) and WhatsApp Web
-  2. Contact identification and disambiguation (handling duplicate contact names)
-  3. Composing and sending messages with delivery & visibility verification
-  4. Reading latest incoming messages and specific contact chat history
-  5. Conversation summarization via Gemini
+Desktop WhatsApp automation has been fully migrated to WhatsApp Web over CDP
+running inside the dedicated Jarvis Chrome profile.
+This module preserves the legacy interface for tests and external callers
+without importing pyautogui, pywinauto, UIA, or referencing desktop WhatsApp.exe.
 """
 
 from __future__ import annotations
 
-import os
-import time
 from typing import Dict, List, Optional, Tuple
 
-from core import gemini
-from core.lazyimport import LazyModule, installed
-
-_PYAUTOGUI = installed("pyautogui")
-_PYPERCLIP = installed("pyperclip")
-
-
-def _configure_pyautogui(module) -> None:
-    module.FAILSAFE = True
-    module.PAUSE = 0.05
-
-
-pyautogui = LazyModule("pyautogui", _configure_pyautogui)
-pyperclip = LazyModule("pyperclip")
-
-
-def _paste_text(text: str) -> None:
-    if not _PYAUTOGUI:
-        return
-    old_clipboard = None
-    if _PYPERCLIP:
-        try:
-            old_clipboard = pyperclip.paste()
-        except Exception:
-            old_clipboard = None
-        try:
-            pyperclip.copy(text)
-            time.sleep(0.08)
-            try:
-                pyautogui.hotkey("ctrl", "v")
-                time.sleep(0.08)
-                return
-            except Exception:
-                pass
-        except Exception:
-            pass
-        finally:
-            if old_clipboard is not None:
-                try:
-                    pyperclip.copy(old_clipboard)
-                except Exception:
-                    pass
-    try:
-        pyautogui.write(text, interval=0.02)
-    except Exception:
-        pass
+from plugins import _whatsapp_web
 
 
 class WhatsAppDriver:
-    """Automates WhatsApp Desktop & Web using UIA and verified keyboard/mouse inputs."""
+    """Compatibility bridge routing legacy calls to WhatsAppWebDriver."""
 
     def __init__(self):
-        self.uia = None
-        try:
-            from actions import windows_uia
-
-            if windows_uia.is_available():
-                self.uia = windows_uia
-        except Exception:
-            pass
-
-    def _find_whatsapp_window(self):
-        """Locate active or top-level WhatsApp window."""
-        if not self.uia:
-            return None
-        desktop = self.uia.get_desktop()
-        if not desktop:
-            return None
-
-        try:
-            active = self.uia.get_active_window()
-            if active.get("status") == "success":
-                title = active.get("title", "").lower()
-                proc = active.get("process_name", "").lower()
-                if "whatsapp" in title or "whatsapp" in proc:
-                    return active.get("wrapper")
-
-            for win in desktop.windows(visible_only=True):
-                try:
-                    w_title = win.window_text().lower()
-                    if "whatsapp" in w_title:
-                        return win
-                    try:
-                        pid = win.process_id()
-                        if pid:
-                            import psutil
-                            if "whatsapp" in psutil.Process(pid).name().lower():
-                                return win
-                    except Exception:
-                        pass
-                except Exception:
-                    continue
-        except Exception as e:
-            print(f"[WhatsAppCore] Window search error: {e}")
-        return None
+        self._web = _whatsapp_web.get_driver()
 
     def open_whatsapp(self) -> bool:
-        """Ensure WhatsApp is launched and foregrounded."""
-        win = self._find_whatsapp_window()
-        if win:
-            try:
-                win.set_focus()
-                time.sleep(0.4)
-                return True
-            except Exception:
-                pass
-
-        launched = False
-        try:
-            os.startfile("whatsapp:")
-            launched = True
-        except Exception:
-            pass
-
-        if not launched:
-            try:
-                import subprocess
-                subprocess.Popen(["explorer.exe", r"shell:AppsFolder\5319275A.WhatsAppDesktop_cv1g1gvanyjgm!App"])
-                launched = True
-            except Exception:
-                pass
-
-        if not launched:
-            try:
-                from actions import open_app
-
-                open_app.open_app({"app_name": "WhatsApp"})
-                launched = True
-            except Exception:
-                pass
-
-        if launched:
-            deadline = time.monotonic() + 4.0
-            while time.monotonic() < deadline:
-                time.sleep(0.3)
-                win = self._find_whatsapp_window()
-                if win:
-                    try:
-                        win.set_focus()
-                    except Exception:
-                        pass
-                    return True
-
-            try:
-                import psutil
-                for p in psutil.process_iter(['name']):
-                    if 'whatsapp' in (p.info['name'] or '').lower():
-                        return True
-            except Exception:
-                pass
-            return True
-
-        return False
+        state, page, _ = self._web.ensure_page_ready(background=False)
+        return state in ("ready", "done")
 
     def resolve_contact(self, contact_name: str) -> Tuple[bool, str, List[str]]:
-        """
-        Search for contact and check for duplicates / ambiguous matches.
-        Returns: (success, selected_or_error_msg, candidate_list)
-        """
-        if not self.open_whatsapp():
-            return False, "Could not open or focus WhatsApp.", []
-
-        win = self._find_whatsapp_window()
-        if win:
-            try:
-                win.set_focus()
-                time.sleep(0.3)
-            except Exception:
-                pass
-
-        search_box = None
-        if self.uia and win:
-            for candidate in ("Search or start new chat", "Search", "Search…", "Search chats"):
-                f = self.uia.find_elements(candidate, control_type="Edit", window=win, exact=False)
-                if f.get("status") == "success" and f.get("matches"):
-                    search_box = f["matches"][0].get("_wrapper")
-                    break
-
-        if search_box:
-            self.uia.click_element(search_box)
-            time.sleep(0.2)
-            if _PYAUTOGUI:
-                try:
-                    pyautogui.hotkey("ctrl", "a")
-                    time.sleep(0.05)
-                    pyautogui.press("backspace")
-                    time.sleep(0.05)
-                    pyautogui.press("delete")
-                    time.sleep(0.1)
-                except Exception:
-                    pass
-            self.uia.type_text(contact_name, element_or_name=search_box, clear_first=True)
-            time.sleep(0.6)
-        elif _PYAUTOGUI:
-            pyautogui.hotkey("ctrl", "f")
-            time.sleep(0.3)
-            # Explicitly empty search bar before typing contact name
-            pyautogui.hotkey("ctrl", "a")
-            time.sleep(0.05)
-            pyautogui.press("backspace")
-            time.sleep(0.05)
-            pyautogui.press("delete")
-            time.sleep(0.12)
-            _paste_text(contact_name)
-            time.sleep(0.6)
-
-        # Inspect search results for ambiguity / duplicates
-        candidates = []
-        if self.uia and win:
-            try:
-                # Find ListItems or Text elements in search results matching contact query
-                items = self.uia.find_elements(contact_name, control_type="ListItem", window=win, exact=False)
-                if items.get("status") == "success":
-                    for m in items.get("matches", []):
-                        name = m.get("name", "").strip()
-                        if name and name not in candidates and contact_name.lower() in name.lower():
-                            candidates.append(name)
-            except Exception:
-                pass
-
-        if len(candidates) > 1:
-            return (
-                False,
-                f"Found multiple contacts matching '{contact_name}': {', '.join(candidates[:4])}. Which one would you like to message?",
-                candidates,
-            )
-
-        # Select top search result
-        if _PYAUTOGUI:
-            try:
-                pyautogui.press("enter")
-                time.sleep(0.5)
-            except Exception:
-                pass
-
-        chosen = candidates[0] if candidates else contact_name
-        return True, chosen, [chosen]
+        res = self._web.resolve_contact(contact_name)
+        if res.is_success():
+            contact = res.data.get("contact", contact_name)
+            return True, contact, [contact]
+        elif res.status == "ask":
+            candidates = res.data.get("candidates", [])
+            return False, res.message, candidates
+        return False, res.error or res.message, []
 
     def open_chat(self, contact_name: str) -> Tuple[bool, str]:
-        """Open chat for contact, handling disambiguation."""
-        ok, res_text, candidates = self.resolve_contact(contact_name)
-        if not ok:
-            return False, res_text
-        return True, res_text
+        ok, title, _ = self.resolve_contact(contact_name)
+        return ok, title
 
     def send_message_to(self, contact_name: str, message: str) -> Tuple[bool, str]:
-        """
-        Send message to contact and verify that:
-        1. Contact chat is resolved and opened.
-        2. Message is typed into input box.
-        3. Enter is sent.
-        4. The message input box is cleared and the message appears in the chat.
-        """
-        if not contact_name:
-            return False, "No contact name provided."
-        if not message:
-            return False, "No message content provided."
-
-        opened, res_info = self.open_chat(contact_name)
-        if not opened:
-            return False, res_info
-
-        time.sleep(0.4)
-        win = self._find_whatsapp_window()
-        typed = False
-        input_elem = None
-
-        if self.uia and win:
-            for candidate in ("Type a message", "Message", "Write a message"):
-                f = self.uia.find_elements(candidate, control_type="Edit", window=win, exact=False)
-                if f.get("status") == "success" and f.get("matches"):
-                    input_elem = f["matches"][0].get("_wrapper")
-                    break
-
-            if input_elem:
-                self.uia.click_element(input_elem)
-                time.sleep(0.2)
-                _paste_text(message)
-                time.sleep(0.2)
-                if _PYAUTOGUI:
-                    try:
-                        pyautogui.press("enter")
-                    except Exception:
-                        pass
-                typed = True
-
-        if not typed and _PYAUTOGUI:
-            # Fallback: Chat is open, cursor is focused in message input box
-            _paste_text(message)
-            time.sleep(0.2)
-            try:
-                pyautogui.press("enter")
-            except Exception:
-                pass
-            typed = True
-
-        if not typed:
-            return False, "Failed to type message into chat box."
-
-        # VERIFICATION: Verify whether sent tick is confirmed in UI
-        time.sleep(0.8)
-        evidence = ""
-
-        if self.uia and win:
-            try:
-                # 1. Check if sent text appears in conversation elements with sent tick
-                snippet = message[:30]
-                found = self.uia.find_elements(snippet, window=win, exact=False)
-                if found.get("status") == "success" and found.get("matches"):
-                    evidence = f"Sent message snippet '{snippet}' confirmed visible in chat history with verified sent tick."
-                elif input_elem:
-                    val = input_elem.window_text() or ""
-                    if not val or val == "Type a message":
-                        evidence = "Message input field cleared on send, but sent tick could not be confirmed."
-            except Exception as e:
-                print(f"[WhatsAppCore] Send verification error: {e}")
-
-        if not evidence:
-            evidence = f"Message input field cleared on send, but sent tick could not be confirmed."
-
-        return True, evidence
+        return self._web.send_message_to(contact_name, message)
 
     def read_chat_messages(
         self, contact_name: Optional[str] = None, limit: int = 5
     ) -> Tuple[bool, List[Dict[str, str]], str]:
-        """
-        Read recent incoming and outgoing messages from the chat with contact.
-        Returns: (success, list_of_messages, error_message)
-        Each message dict: {"sender": str, "text": str, "time": str}
-        """
-        if contact_name:
-            opened, err = self.open_chat(contact_name)
-            if not opened:
-                return False, [], err
+        return self._web.read_chat_messages(contact_name=contact_name, limit=limit)
 
-        win = self._find_whatsapp_window()
-        if not win or not self.uia:
-            return False, [], "WhatsApp window or UI automation is unavailable."
-
-        messages = []
-        try:
-            # Scope search to message list container if present
-            list_container = None
-            for container_name in ("Message list", "Chat messages", "Messages"):
-                c_res = self.uia.find_elements(container_name, control_type="List", window=win, exact=False)
-                if c_res.get("status") == "success" and c_res.get("matches"):
-                    list_container = c_res["matches"][0].get("_wrapper")
-                    break
-
-            scope_win = list_container if list_container else win
-            chat_elements = self.uia.find_elements("", control_type="ListItem", window=scope_win, exact=False)
-            items = chat_elements.get("matches", []) if chat_elements.get("status") == "success" else []
-
-            for item in items[-max(limit, 10) :]:
-                name = item.get("name", "").strip()
-                if not name or len(name) < 2:
-                    continue
-
-                # Format in WhatsApp Desktop often: "[Time] Sender: Message" or "Message, Time"
-                sender = contact_name or "Contact"
-                if "you:" in name.lower() or "outgoing" in name.lower():
-                    sender = "You"
-                messages.append(
-                    {
-                        "sender": sender,
-                        "text": name,
-                        "time": "Recent",
-                    }
-                )
-        except Exception as e:
-            return False, [], f"Could not extract messages: {e}"
-
-        if not messages:
-            # Fallback: scan for any visible Text elements in chat region
-            try:
-                scope_win = list_container if list_container else win
-                txt_elements = self.uia.find_elements("", control_type="Text", window=scope_win, exact=False)
-                for t in txt_elements.get("matches", [])[-limit:]:
-                    tname = t.get("name", "").strip()
-                    if tname and len(tname) > 2 and tname not in ("WhatsApp", "Type a message", "Search"):
-                        messages.append({"sender": contact_name or "Contact", "text": tname, "time": "Recent"})
-            except Exception:
-                pass
-
-        if not messages:
-            return False, [], f"No recent messages could be read from {contact_name or 'current chat'}."
-
-        return True, messages[-limit:], ""
-
-    def read_latest_incoming_messages(self, limit: int = 5) -> Tuple[bool, List[Dict[str, str]], str]:
-        """Read recent incoming messages from the active or latest conversations."""
-        return self.read_chat_messages(contact_name=None, limit=limit)
+    def read_latest_incoming_messages(
+        self, limit: int = 5
+    ) -> Tuple[bool, List[Dict[str, str]], str]:
+        return self._web.read_latest_incoming_messages(limit=limit)
 
     def summarize_conversation(self, contact_name: str) -> Tuple[bool, str]:
-        """Summarize recent conversation history with a contact."""
-        ok, msgs, err = self.read_chat_messages(contact_name=contact_name, limit=10)
-        if not ok or not msgs:
-            return False, err or f"No messages available to summarize for {contact_name}."
-
-        raw_transcript = "\n".join([f"{m['sender']}: {m['text']}" for m in msgs])
-        prompt = (
-            f"You are JARVIS. Summarize the following recent WhatsApp conversation with {contact_name} "
-            f"in 2 clear, concise sentences. Do not mention message IDs, timestamps or technical details:\n\n{raw_transcript}"
-        )
-        try:
-            summary = gemini.text(prompt, tier=gemini.FAST, timeout_ms=5000)
-            if summary and summary.strip():
-                return True, summary.strip()
-        except Exception:
-            pass
-
-        # Fallback summary
-        last_msg = msgs[-1]["text"]
-        return (
-            True,
-            f"The recent conversation with {contact_name} consists of {len(msgs)} messages. The last message was: '{last_msg}'.",
-        )
+        return self._web.summarize_conversation(contact_name)
 
 
-def get():
-    """Return (driver, reason). Compatible with send_message.py."""
+def get() -> Tuple[WhatsAppDriver, str]:
+    """Return compatibility driver and status reason."""
     return WhatsAppDriver(), ""

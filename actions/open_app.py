@@ -152,6 +152,19 @@ def _resolve_windows_known_app(app_name: str) -> tuple[list[str] | None, list[st
     if clean in ("notepad", "notepad.exe"):
         return ["notepad.exe"], []
 
+    # 6. WhatsApp -> route to web.whatsapp.com in Jarvis dedicated profile
+    if clean in ("whatsapp", "whatsapp web", "whatsapp desktop", "whatsappweb", "wapp", "wp"):
+        from memory import config_manager
+        from actions.browser_session import build_browser_launch_command, get_default_cdp_port, locate_browser_executable
+
+        engine = config_manager.get_browser_engine()
+        exe = locate_browser_executable(engine)
+        profile_dir = config_manager.get_browser_profile_dir()
+        os.makedirs(profile_dir, exist_ok=True)
+        port = get_default_cdp_port(engine)
+        cmd = build_browser_launch_command(exe, profile_dir, port, engine=engine)
+        return [exe], cmd[1:] + ["https://web.whatsapp.com"]
+
     return None, []
 
 
@@ -382,6 +395,27 @@ def open_app(parameters=None, response=None, player=None, session_memory=None) -
             f"this operating system ({_SYSTEM}) is not supported",
             app=spoken,
         )
+
+    clean_spoken = spoken.lower().strip()
+    if clean_spoken in ("whatsapp", "whatsapp web", "whatsapp desktop", "whatsappweb", "wapp", "wp"):
+        try:
+            from plugins import _whatsapp_web
+
+            driver = _whatsapp_web.get_driver()
+            state, page, reason = driver.ensure_page_ready(background=False)
+            if state == "blocked":
+                return outcome.blocked("open_app", reason, app="WhatsApp Web")
+            elif state in ("ready", "done"):
+                _log(player, "JARVIS: WhatsApp Web opened in Jarvis browser.")
+                return outcome.done(
+                    "open_app",
+                    "WhatsApp Web opened in Jarvis browser.",
+                    app="WhatsApp Web",
+                    verified=True,
+                )
+            return outcome.failed("open_app", reason, app="WhatsApp Web")
+        except Exception as e:
+            return outcome.failed("open_app", f"Could not open WhatsApp Web: {e}", app="WhatsApp Web")
 
     # Already open? Then there is nothing to launch and nothing to wait for,
     # and saying so is more useful than a second copy. This is also the one
