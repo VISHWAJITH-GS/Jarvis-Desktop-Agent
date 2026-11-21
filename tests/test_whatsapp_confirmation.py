@@ -340,31 +340,19 @@ class TestWhatsAppConfirmation(unittest.TestCase):
         # Should now return False, allowing subsequent messages to be sent!
         self.assertFalse(confirm.has_recent_execution("whatsapp_send", seconds=5.0))
 
-    # ── Test 12: WhatsAppDriver UIA fallback allows contact selection & sending ──
+    # ── Test 12: WhatsAppDriver Web bridge contact resolution ────────────────
 
     def test_whatsapp_driver_resolve_contact_fallback(self):
-        """When UIA returns 0 list items, resolve_contact falls back to Enter rather than aborting."""
+        """WhatsAppDriver bridge delegates contact resolution to the WhatsApp Web driver."""
         from plugins._whatsapp_core import WhatsAppDriver
         driver = WhatsAppDriver()
 
-        # Mock open_whatsapp and find_whatsapp_window
-        mock_win = MagicMock()
-        with patch.object(driver, "open_whatsapp", return_value=True), \
-             patch.object(driver, "_find_whatsapp_window", return_value=mock_win), \
-             patch("plugins._whatsapp_core._paste_text"), \
-             patch("plugins._whatsapp_core._PYAUTOGUI", True), \
-             patch("plugins._whatsapp_core.pyautogui") as mock_pag:
-            # UIA search returns no list items
-            if driver.uia:
-                with patch.object(driver.uia, "find_elements", return_value={"status": "success", "matches": []}):
-                    ok, chosen, candidates = driver.resolve_contact("Mom")
-            else:
-                ok, chosen, candidates = driver.resolve_contact("Mom")
-
+        mock_res = outcome.result_done("resolve_contact", "Verified", verified=True, data={"contact": "Mom"})
+        with patch.object(driver._web, "resolve_contact", return_value=mock_res):
+            ok, chosen, candidates = driver.resolve_contact("Mom")
             self.assertTrue(ok)
             self.assertEqual(chosen, "Mom")
-            # Verify Enter was pressed to select the search result
-            mock_pag.press.assert_any_call("enter")
+            self.assertEqual(candidates, ["Mom"])
 
 
 if __name__ == "__main__":

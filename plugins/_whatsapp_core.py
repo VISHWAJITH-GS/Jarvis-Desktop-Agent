@@ -4,7 +4,7 @@ plugins/_whatsapp_core.py — Backward-compatibility bridge for WhatsApp Web dri
 Desktop WhatsApp automation has been fully migrated to WhatsApp Web over CDP
 running inside the dedicated Jarvis Chrome profile.
 This module preserves the legacy interface for tests and external callers
-without importing pyautogui, pywinauto, UIA, or referencing desktop WhatsApp.exe.
+with zero desktop application dependencies.
 """
 
 from __future__ import annotations
