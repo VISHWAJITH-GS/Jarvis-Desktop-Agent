@@ -6,13 +6,12 @@ Tests for SQLite stores (Task 10):
 
 from datetime import datetime, timedelta
 import json
-import os
 import shutil
 import sqlite3
 import tempfile
 import threading
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import actions.reminder as reminder_mod
 from core.skill_learning import skill_storage

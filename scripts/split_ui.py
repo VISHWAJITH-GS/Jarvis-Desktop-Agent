@@ -3,7 +3,6 @@ scripts/split_ui.py — Script to modularize ui.py into gui/ package.
 """
 
 import os
-import sys
 
 
 def main():

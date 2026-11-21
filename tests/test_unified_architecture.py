@@ -6,12 +6,10 @@ Result Normalization Contract, Security Permissions, and Intelligent Memory.
 from __future__ import annotations
 
 import inspect
-from pathlib import Path
 import unittest
-from unittest.mock import MagicMock, patch
 
 from core import outcome, permissions, llm_client
-from core.action_loader import get_default_registry, discover_actions
+from core.action_loader import get_default_registry
 from memory import config_manager, memory_manager
 
 

@@ -4,8 +4,6 @@ scripts/build_core_modules.py — Extracts main.py into modular core/ modules.
 
 from __future__ import annotations
 
-import os
-import sys
 
 
 def main():

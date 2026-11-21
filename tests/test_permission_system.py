@@ -21,17 +21,12 @@ from __future__ import annotations
 
 import time
 import unittest
-from unittest.mock import MagicMock, patch
 
 from core import confirm, outcome
-from core.confirm import ConfirmationManager, PendingAction
 from core.permissions import (
     ActionExecutionGuard,
     ActionPermissionManager,
     ActionRiskLevel,
-    get_action_permission,
-    log_action_audit,
-    requires_confirmation,
 )
 
 

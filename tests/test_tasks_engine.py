@@ -14,20 +14,15 @@ Covers:
 
 from __future__ import annotations
 
-import json
-import sqlite3
 import tempfile
-import time
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-from core import outcome, permissions
-from core.permissions import ActionRiskLevel
-from core.tasks.budgets import TaskBudget
+from core import outcome
 from core.tasks.control import cancel_task, steer_task
 from core.tasks.engine import TaskEngine
-from core.tasks.security import execute_task_tool, is_tool_allowed, wrap_untrusted
+from core.tasks.security import execute_task_tool, wrap_untrusted
 from core.tasks.store import TaskRecord, TaskStore
 
 

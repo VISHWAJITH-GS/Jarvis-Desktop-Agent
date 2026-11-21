@@ -13,10 +13,10 @@ Tests:
 """
 
 import unittest
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import patch
 
 from actions.code_helper import code_helper
-from actions.computer_control import _insert_code, _is_code_or_multiline, _type, computer_control
+from actions.computer_control import _insert_code, _is_code_or_multiline, _type
 
 
 class TestCodeTypingAndEditors(unittest.TestCase):

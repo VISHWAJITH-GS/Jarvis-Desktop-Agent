@@ -17,10 +17,8 @@ Capabilities:
 from __future__ import annotations
 
 import json
-import os
 import platform
 import re
-import shutil
 import sqlite3
 import subprocess
 import sys
@@ -28,7 +26,7 @@ import threading
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 from core import outcome
 

@@ -23,17 +23,14 @@ import datetime
 import json
 import logging
 import os
-import platform
 import re
 import socket
-import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from core import gemini as _gemini
-from core import outcome
 from actions.browser_session_manager import get_browser_session_manager, BrowserSessionManager
 
 logger = logging.getLogger(__name__)

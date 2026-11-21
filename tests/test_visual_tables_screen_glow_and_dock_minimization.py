@@ -9,7 +9,7 @@ Unit tests for:
 
 import sys
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from PyQt6.QtWidgets import QApplication
 
@@ -20,7 +20,6 @@ from ui import (
     ScreenGlowOverlay,
     format_visual_content_html,
     MinimizedDisplayPill,
-    MinimizedDisplaysDock,
 )
 from actions import screen_processor
 

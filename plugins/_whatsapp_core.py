@@ -13,12 +13,10 @@ Supports:
 from __future__ import annotations
 
 import os
-import sys
 import time
-import urllib.parse
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
-from core import outcome, gemini
+from core import gemini
 from core.lazyimport import LazyModule, installed
 
 _PYAUTOGUI = installed("pyautogui")

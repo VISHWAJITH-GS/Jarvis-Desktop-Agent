@@ -12,7 +12,7 @@ Covers:
 
 from __future__ import annotations
 
-from datetime import datetime, time as dtime, timedelta
+from datetime import datetime
 import json
 from pathlib import Path
 import tempfile

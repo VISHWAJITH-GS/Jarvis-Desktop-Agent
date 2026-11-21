@@ -6,30 +6,21 @@ pytestmark = pytest.mark.requires_hardware
 tests/test_cdp_browser_engine.py — Unit Tests for CDP + AXTree + SoM Browser-Use Engine.
 """
 import unittest
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import patch
 
 from actions.browser_session import (
-    BrowserSessionManager,
     BrowserSessionState,
-    CDPConnectionError,
     TabInfo,
     get_browser_session_manager,
 )
 from actions.dom_distiller import (
     BoundingBox,
     DistilledElement,
-    DOMDistiller,
     get_dom_distiller,
 )
 from actions.action_executor import (
-    ActionExecutor,
     KEY_MAP,
-    TOOLS as EXECUTOR_TOOLS,
     get_action_executor,
-    tool_click_element,
-    tool_input_text,
-    tool_navigate_to,
-    tool_observe_page,
 )
 from actions import browser_control
 from core.action_loader import get_default_registry

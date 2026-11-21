@@ -6,10 +6,8 @@ import sys
 import unittest
 from unittest.mock import MagicMock
 from PyQt6.QtWidgets import QApplication
-from PyQt6.QtCore import Qt, QPoint
-from PyQt6.QtGui import QColor
+from PyQt6.QtCore import Qt
 
-import ui
 from ui import JarvisUI, MainWindow, HudCanvas, HudConversationWidget, BottomChatDock, LeftSearchDock, C
 
 app = QApplication.instance() or QApplication(sys.argv)
@@ -793,9 +791,7 @@ class TestKeenaHudTransformation(unittest.TestCase):
             COLOR_STATE_SPEAKING,
             COLOR_STATE_THINKING,
             COLOR_STATE_PROCESSING,
-            COLOR_BLUE_PRIMARY,
             COLOR_BLUE_GLOW,
-            COLOR_BLUE_OUTER,
             COLOR_BLUE_HIGHLIGHT,
         )
 

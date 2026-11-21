@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from memory import config_manager
-from core.permissions import log_action_audit, get_audit_trail
+from core.permissions import log_action_audit
 
 
 class TestSecureKeyStorage(unittest.TestCase):

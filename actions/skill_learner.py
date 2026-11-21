@@ -14,11 +14,10 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 from core import outcome
 from core.skill_learning.learning_manager import get_default_learning_manager
-from core.skill_learning.models import SkillStatus
 from core.skill_learning.skill_registry import get_default_skill_registry
 
 

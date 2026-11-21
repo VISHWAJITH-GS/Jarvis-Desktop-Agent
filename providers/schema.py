@@ -338,7 +338,6 @@ def budget(
 
 # The canonical definition lives in core/action_loader.py — see the note there
 # on why main.py must be able to strip these without importing this package.
-from core.action_loader import META_KEYS as _META_ONLY, strip_meta  # noqa: E402
 
 
 def compact(decl: Any) -> Any:

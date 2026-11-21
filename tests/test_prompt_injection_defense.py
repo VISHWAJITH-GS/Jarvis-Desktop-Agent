@@ -1,10 +1,10 @@
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from core import outcome, permissions
 from memory import config_manager
-from actions.notification_reader import NotificationReader, DesktopNotification
+from actions.notification_reader import DesktopNotification
 from actions.screen_observer import ScreenObservation
 
 

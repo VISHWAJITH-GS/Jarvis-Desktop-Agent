@@ -13,9 +13,8 @@ Combines Semantic Windows UI Automation with Gemini Visual Grounding:
 from __future__ import annotations
 
 import logging
-import re
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple
 
 from actions import windows_uia
 from actions.display_manager import get_display_manager

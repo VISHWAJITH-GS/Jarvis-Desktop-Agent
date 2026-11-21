@@ -20,32 +20,24 @@ Tests:
 """
 
 import json
-import os
-import shutil
 import tempfile
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-from core.action_loader import ActionRegistry, get_default_registry
-from core.outcome import ActionResult, STATUS_DONE, STATUS_FAILED, STATUS_NEEDS_CONFIRMATION
+from core.outcome import ActionResult, STATUS_DONE, STATUS_FAILED
 from core.skill_learning import (
-    DemonstrationAnalyzer,
     LearningManager,
-    LearningSession,
     ObservationEngine,
     ParameterDefinition,
     RiskLevel,
     SkillDefinition,
     SkillExecutor,
-    SkillGenerator,
-    SkillRegistry,
     SkillStatus,
     SkillValidator,
     StepDefinition,
     UIEvent,
-    UIState,
     VerificationCondition,
     WorkflowBuilder,
     delete_skill,
@@ -582,7 +574,6 @@ class TestSkillLearnerToolAction(unittest.TestCase):
 
     def test_full_skillrack_lifecycle_mocked(self):
         """End-to-end lifecycle test for the Skillrack demonstration workflow."""
-        from actions import skill_learner
         from core.skill_learning.learning_manager import LearningManager
         from core.skill_learning.models import UIEvent
 

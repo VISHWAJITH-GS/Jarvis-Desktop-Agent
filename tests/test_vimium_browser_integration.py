@@ -2,15 +2,13 @@
 Unit and Integration Tests for Vimium C Browser Navigation & Red UI Theme
 """
 
-import os
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
 from actions.vimium_c import (
     VimiumCController,
     VimiumHint,
-    get_vimium_controller,
     get_vimium_extension_path,
 )
 from actions.browser_control import TOOL as BROWSER_TOOL

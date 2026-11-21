@@ -20,11 +20,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Dict, Literal, Optional, Tuple
 
-from core import outcome
 from actions.browser_session import get_browser_session_manager, BrowserSessionManager, CDPConnectionError
-from actions.dom_distiller import get_dom_distiller, DOMDistiller, DistilledElement
+from actions.dom_distiller import get_dom_distiller, DOMDistiller
 
 logger = logging.getLogger("action_executor")
 

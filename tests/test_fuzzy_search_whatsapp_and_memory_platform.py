@@ -7,7 +7,6 @@ Comprehensive tests verifying:
 3. Interactive Memory & Actions Platform: MemoryActionsDisplayWindow, loading memory entries, adding/editing/forgetting, and discovering action risk levels.
 """
 
-import os
 import sys
 import tempfile
 import unittest
@@ -24,7 +23,7 @@ from actions.file_controller import (
     find_files,
 )
 from memory import memory_manager
-from ui import JarvisUI, MemoryActionsDisplayWindow, MainWindow
+from ui import JarvisUI, MemoryActionsDisplayWindow
 
 
 class TestFuzzySearchAndFallback(unittest.TestCase):

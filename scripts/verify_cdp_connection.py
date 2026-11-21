@@ -10,7 +10,6 @@ Connects to Microsoft Edge over Chrome DevTools Protocol (CDP):
 """
 
 import argparse
-import os
 import sys
 
 from pathlib import Path

@@ -8,8 +8,6 @@ tests/test_safety_logic_comprehensive.py — Comprehensive unit tests for safety
 - Config migrations and keyring fallback (memory/config_manager.py)
 """
 
-import json
-import os
 import shutil
 import sqlite3
 import tempfile
@@ -24,7 +22,6 @@ from core.skill_learning.skill_security import (
     is_sensitive_control,
     sanitize_input_value,
     classify_skill_risk,
-    requires_explicit_confirmation,
     SENSITIVE_INPUT_PLACEHOLDER,
 )
 from core.skill_learning.models import RiskLevel, StepDefinition

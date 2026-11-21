@@ -15,10 +15,10 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
-from actions.display_manager import get_display_manager, CapturedScreenshot, MonitorInfo
+from actions.display_manager import get_display_manager, CapturedScreenshot
 from actions.ui_tree_manager import get_ui_tree_manager
 
 logger = logging.getLogger(__name__)

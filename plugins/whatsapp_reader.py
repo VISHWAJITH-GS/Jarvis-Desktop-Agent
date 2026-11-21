@@ -10,8 +10,6 @@ Capabilities:
 
 from __future__ import annotations
 
-from typing import Optional
-from core import outcome
 from plugins import _whatsapp_core as wa
 
 

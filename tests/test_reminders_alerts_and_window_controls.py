@@ -12,7 +12,6 @@ Verifies:
 """
 
 import unittest
-from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 from PyQt6.QtWidgets import QApplication
@@ -21,7 +20,7 @@ from PyQt6.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
 
 from ui import MainWindow, JarvisUI, SlideDownAlert, RemindersDisplayWindow, LeftSearchDock
-from core import permissions, outcome
+from core import permissions
 from actions.computer_settings import computer_settings, _detect_action
 from actions.windows_control import windows_control
 from actions.reminder import reminder
@@ -211,7 +210,6 @@ class TestRemindersAlertsWindowControls(unittest.TestCase):
     def test_09_frameless_window_resizing_and_scrollbars(self):
         """Frameless windows support edge and corner resizing (shrink & expand) like native Windows apps."""
         from PyQt6.QtCore import QPoint, Qt
-        from PyQt6.QtGui import QMouseEvent
         from ui import (
             _ResizeEdge,
             _detect_resize_edge,

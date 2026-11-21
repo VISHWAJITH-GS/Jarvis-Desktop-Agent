@@ -4,7 +4,6 @@ MARK LVI / JARVIS Audio Routing and Bluetooth Conflict Prevention.
 """
 
 import sys
-import time
 import unittest
 from unittest.mock import MagicMock, patch
 

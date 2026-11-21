@@ -7,7 +7,7 @@ import re
 import string
 import subprocess
 import sys
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Optional
 
 if platform.system() == "Windows":
     _WIN_HIDE: dict = {"creationflags": subprocess.CREATE_NO_WINDOW}
@@ -736,7 +736,6 @@ def _screen_find(description: str) -> tuple[int, int] | None:
         return None
 
     try:
-        from google import genai
         from google.genai import types as gtypes
 
         _require_pyautogui()

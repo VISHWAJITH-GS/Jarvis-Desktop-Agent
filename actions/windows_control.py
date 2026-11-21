@@ -14,14 +14,13 @@ from __future__ import annotations
 import ctypes
 from ctypes import wintypes
 import json
-import os
 import platform
 import re
 import subprocess
 import time
-from typing import Any, Dict, List, Optional
+from typing import Optional
 
-from core import confirm, outcome
+from core import outcome
 from core.undo import push_undo
 
 _IS_WINDOWS = platform.system() == "Windows"

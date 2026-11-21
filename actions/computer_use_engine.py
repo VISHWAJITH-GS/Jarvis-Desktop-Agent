@@ -27,20 +27,17 @@ All methods return standard ActionResult objects satisfying the Result Contract.
 from __future__ import annotations
 
 import logging
-import os
 import platform
-import subprocess
 import time
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import List, Optional
 
 from core import outcome
 from actions.action_verifier import get_action_verifier
 from actions.display_manager import get_display_manager
 from actions.screen_observer import get_screen_observer
-from actions.target_resolver import get_target_resolver, ResolvedTarget
+from actions.target_resolver import get_target_resolver
 from actions.ui_tree_manager import get_ui_tree_manager
 from actions import windows_uia
-from actions import computer_control
 
 logger = logging.getLogger(__name__)
 _IS_WINDOWS = platform.system() == "Windows"

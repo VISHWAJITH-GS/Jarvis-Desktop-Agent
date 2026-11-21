@@ -9,19 +9,15 @@ covering all 15 required system verification scenarios with clean mocks.
 """
 
 import unittest
-from unittest.mock import MagicMock, patch
-from pathlib import Path
+from unittest.mock import patch
 
 from core import outcome
 from core.agent_orchestrator import AgentOrchestrator
 from actions import (
     browser_control,
-    computer_control,
     file_controller,
-    open_app,
     spotify_control,
     windows_control,
-    windows_uia,
 )
 
 

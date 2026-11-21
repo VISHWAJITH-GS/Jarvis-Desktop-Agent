@@ -5,8 +5,6 @@ tests/test_permissions_fail_closed.py — Unit Tests for Fail-Closed Permissions
 import unittest
 
 from core.permissions import (
-    READ_ONLY,
-    NORMAL,
     SENSITIVE,
     DESTRUCTIVE,
     PERMISSION_LEVELS,

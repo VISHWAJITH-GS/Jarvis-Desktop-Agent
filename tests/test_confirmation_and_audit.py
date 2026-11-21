@@ -5,17 +5,12 @@ tests/test_confirmation_and_audit.py — Unit Tests for Sensitive Confirmations 
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from core import confirm
 from core.permissions import (
-    DESTRUCTIVE,
-    NORMAL,
-    READ_ONLY,
-    SENSITIVE,
     approve_sensitive_action_for_session,
     clear_audit_trail,
-    get_action_permission,
     get_audit_trail,
     log_action_audit,
     requires_confirmation,

@@ -29,9 +29,8 @@ from __future__ import annotations
 
 import logging
 import platform
-import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
 from actions import windows_uia
 

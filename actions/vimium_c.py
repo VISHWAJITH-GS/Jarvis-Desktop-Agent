@@ -26,11 +26,10 @@ import logging
 import os
 import platform
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, List, Optional
 
-from core import outcome
 
 logger = logging.getLogger(__name__)
 _OS = platform.system()

@@ -45,6 +45,14 @@ ignore = [
     "F405",  # star import name undefined
 ]
 
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+"ui.py" = ["F401"]
+"main.py" = ["F401"]
+"core/*" = ["F401"]
+"gui/*" = ["F401"]
+"plugins/_template.py" = ["F401"]
+
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"

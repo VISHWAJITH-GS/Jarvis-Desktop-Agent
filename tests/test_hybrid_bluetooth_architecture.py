@@ -18,7 +18,7 @@ import numpy as np
 
 from memory import config_manager
 from core import audio_devices
-from core.audio_manager import AudioManager, STATUS_CONNECTED
+from core.audio_manager import AudioManager
 from core.wake_word import WakeWordDetector
 from tests.test_audio_manager_comprehensive import _FakeAudioEnvironment
 

@@ -4,8 +4,6 @@ scripts/do_split_main.py — Script to extract main.py into core/ modules and a 
 
 from __future__ import annotations
 
-import re
-from pathlib import Path
 
 
 def main():

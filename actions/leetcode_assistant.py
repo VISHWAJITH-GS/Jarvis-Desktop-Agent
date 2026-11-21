@@ -21,7 +21,7 @@ import logging
 import re
 import urllib.request
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 from core import gemini, outcome
 

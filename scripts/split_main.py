@@ -3,8 +3,6 @@ scripts/split_main.py — Modularize main.py into core/ modules.
 """
 
 from __future__ import annotations
-import os
-import sys
 
 
 def main():

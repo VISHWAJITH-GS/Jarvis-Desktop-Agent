@@ -4,8 +4,7 @@ plugins/whatsapp_automation.py
 Auto-discovered JARVIS plugin for sending formal and flexible WhatsApp messages.
 """
 
-from typing import Optional
-from core import outcome, gemini
+from core import gemini
 from plugins import _whatsapp_core as wa
 
 

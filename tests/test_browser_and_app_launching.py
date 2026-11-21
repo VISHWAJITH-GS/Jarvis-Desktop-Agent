@@ -8,9 +8,8 @@ Tests:
 4. VS Code and Notepad resolution.
 """
 
-import os
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from actions.open_app import _launch_windows, _resolve_windows_known_app
 

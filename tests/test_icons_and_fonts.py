@@ -6,9 +6,8 @@ import unittest
 import sys
 from pathlib import Path
 from PyQt6.QtWidgets import QApplication, QPushButton
-from PyQt6.QtGui import QFont, QIcon
+from PyQt6.QtGui import QIcon
 
-from gui import icons_manager
 from gui.icons_manager import get_uicon, _SVG_TEMPLATES
 
 

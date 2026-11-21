@@ -18,7 +18,6 @@ tests/test_wifi_bluetooth_system.py — Tests for Module 1 & Module 2 Wi-Fi & Bl
 import unittest
 from unittest.mock import patch, MagicMock
 import actions.windows_control as wc
-import actions.computer_settings as cs
 import core.confirm as confirm
 
 

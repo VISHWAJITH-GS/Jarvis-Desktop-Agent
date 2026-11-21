@@ -3,14 +3,13 @@ tests/test_global_voice_controls.py — Complete Test Suite for Global Voice Con
 Listening Toggle & Emergency Speech Interruption for MARK LVI / JARVIS.
 """
 
-import asyncio
 import threading
 import time
 import unittest
 from unittest.mock import MagicMock, patch
 
 from core.voice_state import VoiceState, VoiceStateManager
-from core.global_input import GlobalInputController, parse_chord, _VK_MAP
+from core.global_input import GlobalInputController, parse_chord
 from memory import config_manager
 from memory.config_manager import (
     get_listening_shortcut,

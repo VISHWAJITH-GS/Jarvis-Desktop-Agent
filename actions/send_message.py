@@ -1,10 +1,9 @@
 import json
 import subprocess
 import sys
-import threading
 import time
 from pathlib import Path
-from typing import Optional, Any, Dict, List, Tuple
+from typing import Optional
 
 from core import outcome
 from core.lazyimport import LazyModule, installed

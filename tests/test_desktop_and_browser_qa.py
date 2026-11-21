@@ -10,27 +10,22 @@ Autonomous Website QA, Emergency Stop, and Sanitization.
 """
 
 import http.server
-import json
 import os
-import shutil
 import socketserver
-import tempfile
 import threading
-import time
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from core import outcome
-from core.action_loader import get_default_registry
-from actions.display_manager import DisplayManager, MonitorInfo, CapturedScreenshot, get_display_manager
-from actions.ui_tree_manager import UITreeManager, UIElementNode, get_ui_tree_manager
-from actions.target_resolver import TargetResolver, get_target_resolver, ResolvedTarget
-from actions.action_verifier import ActionVerifier, get_action_verifier
-from actions.computer_use_engine import ComputerUseEngine, get_computer_use_engine
-from actions.browser_session_manager import BrowserSessionManager, get_browser_session_manager
-from actions.browser_qa_agent import BrowserQAAgent, get_browser_qa_agent
-from core.agent_orchestrator import AgentOrchestrator, get_orchestrator
+from actions.display_manager import MonitorInfo, CapturedScreenshot, get_display_manager
+from actions.ui_tree_manager import UIElementNode, get_ui_tree_manager
+from actions.target_resolver import get_target_resolver, ResolvedTarget
+from actions.action_verifier import get_action_verifier
+from actions.computer_use_engine import get_computer_use_engine
+from actions.browser_session_manager import get_browser_session_manager
+from actions.browser_qa_agent import get_browser_qa_agent
+from core.agent_orchestrator import get_orchestrator
 from core.skill_learning.skill_storage import save_skill, load_skill, delete_skill
 from core.skill_learning.models import SkillDefinition, StepDefinition, ParameterDefinition, SkillStatus
 from core.skill_learning.skill_security import is_sensitive_control, sanitize_input_value, sanitize_text_and_credentials

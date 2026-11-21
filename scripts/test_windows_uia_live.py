@@ -20,7 +20,6 @@ This script executes real live desktop tests on Windows:
 
 from __future__ import annotations
 
-import os
 import shutil
 import subprocess
 import sys
@@ -33,7 +32,6 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
 from actions import windows_uia
-from actions.computer_control import computer_control
 
 
 def main():

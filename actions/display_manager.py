@@ -14,13 +14,10 @@ Provides:
 from __future__ import annotations
 
 import io
-import os
 import platform
-import sys
 import time
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 _IS_WINDOWS = platform.system() == "Windows"
 
@@ -42,7 +39,6 @@ except ImportError:
 
 if _IS_WINDOWS:
     import ctypes
-    from ctypes import wintypes
 
     try:
         import win32gui

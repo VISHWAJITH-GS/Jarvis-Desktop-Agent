@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 from core import outcome
 from core.agent_orchestrator import AgentOrchestrator
-from core.permissions import ActionExecutionGuard, ActionPermissionManager, ActionRiskLevel
+from core.permissions import ActionExecutionGuard
 from core.plugin_loader import PluginRecord, PluginRegistry
 from plugins import _whatsapp_core as wa
 

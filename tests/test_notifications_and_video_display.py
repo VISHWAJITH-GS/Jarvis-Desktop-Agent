@@ -10,7 +10,7 @@ Tests:
 import unittest
 from unittest.mock import MagicMock, patch
 
-from actions.notification_reader import DesktopNotification, NotificationReader, notification_center
+from actions.notification_reader import NotificationReader, notification_center
 from actions.video_player import video_player
 
 

@@ -22,7 +22,6 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from actions import windows_uia
-from core import outcome
 
 
 class MockBoundingRect:

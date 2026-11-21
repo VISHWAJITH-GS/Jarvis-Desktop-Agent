@@ -23,14 +23,10 @@ Capabilities:
 
 from __future__ import annotations
 
-import io
-import os
 import platform
-import re
 import sys
-import tempfile
 import time
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, List, Optional, Tuple, Union
 
 from core import outcome
 from core.lazyimport import LazyModule, installed
@@ -60,7 +56,6 @@ if _IS_WINDOWS:
         if _orig_frozen is None:
             sys.frozen = "console_exe"
         try:
-            import pywinauto
             from pywinauto import Desktop as _Desktop
             from pywinauto.controls.uiawrapper import UIAWrapper as _UIAWrapper
             from pywinauto.uia_defines import NoPatternInterfaceError as _NPIE

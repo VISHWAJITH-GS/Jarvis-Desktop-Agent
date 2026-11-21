@@ -915,7 +915,7 @@ def is_output_bluetooth(output_name: str) -> bool:
 
 
 # ── Re-export WASAPI / CoreAudio endpoint helpers from core.audio_endpoints ──
-from core.audio_endpoints import (
+from core.audio_endpoints import (  # noqa: F401
     get_current_default_endpoint,
     get_connected_endpoints_snapshot,
     set_default_endpoint,
