@@ -17,6 +17,7 @@ Authoritative permission and confirmation system for all JARVIS voice-controlled
 
 from __future__ import annotations
 
+from contextvars import ContextVar
 from datetime import datetime
 from enum import Enum
 import inspect
@@ -30,6 +31,18 @@ import traceback
 from typing import Any, Callable, Dict, Optional, Tuple
 
 from core import outcome
+
+_current_task_id: ContextVar[Optional[str]] = ContextVar("current_task_id", default=None)
+
+
+def set_current_task_id(task_id: Optional[str]) -> None:
+    """Bind the active background task ID to the current execution context."""
+    _current_task_id.set(task_id)
+
+
+def get_current_task_id() -> Optional[str]:
+    """Retrieve the active background task ID for the current execution context."""
+    return _current_task_id.get()
 
 # ── Risk Level Definitions ───────────────────────────────────────────────────
 
@@ -868,9 +881,14 @@ def _init_audit_db(conn: sqlite3.Connection) -> None:
             status TEXT NOT NULL,
             verified INTEGER NOT NULL,
             parameters TEXT,
-            error TEXT
+            error TEXT,
+            task_id TEXT
         );
     """)
+    try:
+        conn.execute("ALTER TABLE audit_trail ADD COLUMN task_id TEXT;")
+    except Exception:
+        pass
     conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_time ON audit_trail (timestamp);")
     conn.commit()
 
@@ -895,9 +913,13 @@ def log_action_audit(
     status: str,
     verified: bool,
     error: Optional[str] = None,
+    task_id: Optional[str] = None,
 ) -> dict:
     """Record an action execution to persistent SQLite audit log."""
     from memory.config_manager import redact_secret
+
+    if task_id is None:
+        task_id = get_current_task_id()
 
     redacted_params = _sanitize_secrets(parameters)
     now_str = datetime.now().isoformat()
@@ -910,6 +932,7 @@ def log_action_audit(
         "verified": bool(verified),
         "parameters": redacted_params,
         "error": redact_secret(str(error)) if error else None,
+        "task_id": str(task_id) if task_id else None,
     }
 
     with _audit_lock:
@@ -924,11 +947,11 @@ def log_action_audit(
                 _init_audit_db(conn)
                 conn.execute(
                     """
-                    INSERT INTO audit_trail (timestamp, action, permission_level, status, verified, parameters, error)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO audit_trail (timestamp, action, permission_level, status, verified, parameters, error, task_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (now_str, entry["action"], entry["permission_level"], entry["status"],
-                     1 if entry["verified"] else 0, entry["parameters"], entry["error"]),
+                     1 if entry["verified"] else 0, entry["parameters"], entry["error"], entry["task_id"]),
                 )
                 conn.execute(
                     f"DELETE FROM audit_trail WHERE id NOT IN (SELECT id FROM audit_trail ORDER BY id DESC LIMIT {_MAX_AUDIT_ENTRIES})"
@@ -953,7 +976,7 @@ def get_audit_trail(limit: int = 50) -> list[dict]:
                     _init_audit_db(conn)
                     cursor = conn.execute(
                         """
-                        SELECT timestamp, action, permission_level, status, verified, parameters, error
+                        SELECT timestamp, action, permission_level, status, verified, parameters, error, task_id
                         FROM audit_trail ORDER BY id DESC LIMIT ?
                         """,
                         (int(limit),),
@@ -970,6 +993,7 @@ def get_audit_trail(limit: int = 50) -> list[dict]:
                                 "verified": bool(r[4]),
                                 "parameters": r[5],
                                 "error": r[6],
+                                "task_id": r[7] if len(r) > 7 else None,
                             })
                         return results
                 finally:
