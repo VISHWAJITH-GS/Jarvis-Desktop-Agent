@@ -10,13 +10,14 @@ Capabilities:
 
 from __future__ import annotations
 
-from plugins import _whatsapp_core as wa
+from core import outcome
+from plugins import _whatsapp_web
 
 
 PLUGIN = {
     "name": "whatsapp_read",
     "description": (
-        "Reads recent incoming WhatsApp messages or chat history with a specified contact. "
+        "Reads recent incoming WhatsApp messages or chat history with a specified contact on WhatsApp Web. "
         "Capabilities: "
         "1. Read latest message from a contact: action='read_chat', contact='Mom' "
         "2. Read recent incoming messages across chats: action='read_latest', limit=5 "
@@ -46,54 +47,61 @@ PLUGIN = {
 }
 
 
-def run(parameters: dict, player=None, session_memory=None) -> str:
+def run(parameters: dict, player=None, session_memory=None) -> outcome.ActionResult | str:
     params = parameters or {}
     action = (params.get("action") or "read_chat").lower().strip()
     contact = (params.get("contact") or "").strip()
     limit = int(params.get("limit") or 5)
 
-    driver, why = wa.get()
-    if not driver:
-        return f"Could not initialize WhatsApp driver: {why}"
-
-    if player and hasattr(player, "write_log"):
-        player.write_log(f"JARVIS: Reading WhatsApp messages ({action})…")
+    driver = _whatsapp_web.get_driver()
 
     # 1. Summarize conversation
     if action in ("summarize", "summarize_chat", "summary"):
         if not contact:
-            return "Please tell me which contact's conversation you'd like me to summarize."
-        ok, summary = driver.summarize_conversation(contact)
+            return outcome.result_failed("whatsapp_read", "Please specify which contact's conversation to summarize.")
+        ok, summary = driver.summarize_conversation(contact, limit=max(limit, 10))
         if ok:
-            if player and hasattr(player, "write_log"):
-                player.write_log(f"JARVIS: Summary of chat with {contact}: {summary}")
-            return f"Here is the summary of your recent conversation with {contact}: {summary}"
-        return f"Could not summarize chat with {contact}: {summary}"
+            return outcome.result_done(
+                "whatsapp_read",
+                f"Summary of conversation with {contact}: {summary}",
+                verified=True,
+                data={"contact": contact, "summary": summary},
+            )
+        return outcome.result_failed("whatsapp_read", f"Could not summarize chat with {contact}: {summary}")
 
-    # 2. Read specific contact chat
-    if contact or action in ("read_chat", "chat_history"):
-        if not contact:
-            # Fallback to latest incoming if no contact specified
-            ok, msgs, err = driver.read_latest_incoming_messages(limit=limit)
-        else:
-            ok, msgs, err = driver.read_chat_messages(contact_name=contact, limit=limit)
+    # 2. Read specific contact chat or latest
+    res = driver.read_messages(contact_name=contact if contact else None, limit=limit, player=player)
+    if not res.is_success():
+        if res.status == outcome.STATUS_BLOCKED:
+            return outcome.result_blocked("whatsapp_read", res.message or "WhatsApp Web is not signed in; scan QR code in Jarvis Chrome.")
+        return outcome.result_failed("whatsapp_read", res.error or res.message)
 
-        if not ok or not msgs:
-            return f"Could not read messages for {contact or 'the current chat'}: {err}"
+    msgs = res.data.get("messages", [])
+    if not msgs:
+        return outcome.result_done(
+            "whatsapp_read",
+            f"No messages found for {contact or 'the current chat'}.",
+            verified=True,
+            data={"contact": contact, "count": 0, "messages": []},
+        )
 
-        lines = []
-        for m in msgs:
-            lines.append(f"{m['sender']}: {m['text']}")
+    # Format output with untrusted-content markers preserved
+    lines = []
+    for m in msgs:
+        sender = m.get("sender", contact or "Contact")
+        raw_text = m.get("raw_text", m.get("text", ""))
+        safe_wrapped = outcome.untrusted("whatsapp", raw_text)
+        lines.append(f"{sender}: {safe_wrapped}")
 
-        spoken_summary = f"Recent messages with {contact or 'WhatsApp'}:\n" + "\n".join(lines)
-        if player and hasattr(player, "write_log"):
-            player.write_log(f"JARVIS: {spoken_summary}")
-        return spoken_summary
-
-    # 3. Read latest incoming across chats
-    ok, msgs, err = driver.read_latest_incoming_messages(limit=limit)
-    if not ok or not msgs:
-        return f"Could not retrieve recent incoming messages: {err}"
-
-    lines = [f"{m['sender']}: {m['text']}" for m in msgs]
-    return "Your latest WhatsApp messages:\n" + "\n".join(lines)
+    spoken_summary = f"Recent messages with {contact or 'WhatsApp'}:\n" + "\n".join(lines)
+    return outcome.result_done(
+        "whatsapp_read",
+        spoken_summary,
+        verified=True,
+        data={
+            "contact": contact,
+            "count": len(msgs),
+            "messages": msgs,
+            "timestamp_range": res.data.get("timestamp_range", "recent"),
+        },
+    )

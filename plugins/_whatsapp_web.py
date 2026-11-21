@@ -529,6 +529,187 @@ class WhatsAppWebDriver:
             return True, "Message input field cleared on send, but sent tick could not be confirmed."
         return False, res.error or res.message
 
+    async def _read_messages_in_page(
+        self, page, contact_name: Optional[str] = None, limit: int = 5, player=None
+    ) -> outcome.ActionResult:
+        """Extract latest messages with sender, timestamp, and untrusted-wrapped body text."""
+        if contact_name:
+            res_contact = await self._resolve_contact_in_page(page, contact_name)
+            if not res_contact.is_success():
+                return res_contact
+
+        await asyncio.sleep(0.5)
+
+        bubbles = await page.query_selector_all(SELECTORS.message_container)
+        if not bubbles:
+            return outcome.result_done(
+                "whatsapp_read",
+                f"No messages found for {contact_name or 'the current chat'}.",
+                verified=True,
+                data={"contact": contact_name, "count": 0, "messages": []},
+            )
+
+        items = bubbles[-max(limit, 1) :]
+        extracted_messages: List[Dict[str, Any]] = []
+
+        for b in items:
+            try:
+                class_attr = (await b.get_attribute("class")) or ""
+                sender = "You" if "message-out" in class_attr else (contact_name or "Contact")
+
+                pre_plain = (await b.get_attribute("data-pre-plain-text")) or ""
+                time_val = "Recent"
+                if pre_plain:
+                    m_time = re.search(r"\[(.*?)\]", pre_plain)
+                    if m_time:
+                        time_val = m_time.group(1).strip()
+                    m_author = re.search(r"\]\s*(.*?):", pre_plain)
+                    if m_author and "message-out" not in class_attr:
+                        sender = m_author.group(1).strip()
+
+                text_el = await b.query_selector(SELECTORS.message_text)
+                if not text_el:
+                    continue
+                raw_body = (await text_el.inner_text()) or ""
+                raw_body = raw_body.strip()
+                if not raw_body:
+                    continue
+
+                # Security Isolation: wrap all external text in untrusted markers
+                safe_body = outcome.untrusted("whatsapp", raw_body)
+
+                extracted_messages.append(
+                    {
+                        "sender": sender,
+                        "timestamp": time_val,
+                        "text": safe_body,
+                        "raw_text": raw_body,
+                    }
+                )
+            except Exception:
+                continue
+
+        if not extracted_messages:
+            return outcome.result_done(
+                "whatsapp_read",
+                f"No messages found for {contact_name or 'the current chat'}.",
+                verified=True,
+                data={"contact": contact_name, "count": 0, "messages": []},
+            )
+
+        # Audit / Player log: ONLY METADATA, never bodies
+        timestamps = [m["timestamp"] for m in extracted_messages if m.get("timestamp")]
+        ts_range = f"{timestamps[0]} - {timestamps[-1]}" if timestamps else "recent"
+        if player and hasattr(player, "write_log"):
+            try:
+                player.write_log(
+                    f"JARVIS: Read {len(extracted_messages)} messages for {contact_name or 'chat'} ({ts_range})."
+                )
+            except Exception:
+                pass
+
+        logger.info(
+            "[WhatsAppWeb] Read %d messages for '%s' (%s). Bodies withheld from logs.",
+            len(extracted_messages),
+            contact_name or "chat",
+            ts_range,
+        )
+
+        return outcome.result_done(
+            "whatsapp_read",
+            f"Read {len(extracted_messages)} messages for {contact_name or 'the current chat'}.",
+            verified=True,
+            data={
+                "contact": contact_name,
+                "count": len(extracted_messages),
+                "messages": extracted_messages,
+                "timestamp_range": ts_range,
+            },
+        )
+
+    def read_messages(
+        self,
+        contact_name: Optional[str] = None,
+        limit: int = 5,
+        player=None,
+        background: bool = True,
+    ) -> outcome.ActionResult:
+        """Synchronously read latest messages via WhatsApp Web."""
+        state, page, reason = self.ensure_page_ready(background=background)
+        if state != "ready" or page is None:
+            if state == "blocked":
+                return outcome.result_blocked("whatsapp_read", reason)
+            return outcome.result_failed("whatsapp_read", reason)
+
+        bm = self._get_browser_manager()
+        try:
+            return bm.run_coroutine(
+                self._read_messages_in_page(
+                    page, contact_name=contact_name, limit=limit, player=player
+                ),
+                timeout=40.0,
+            )
+        except Exception as e:
+            return outcome.result_failed("whatsapp_read", f"Error reading messages: {e}")
+
+    def read_chat_messages(
+        self, contact_name: Optional[str] = None, limit: int = 5
+    ) -> Tuple[bool, List[Dict[str, str]], str]:
+        """Backward-compatible tuple return: (ok, msgs, error)."""
+        res = self.read_messages(contact_name=contact_name, limit=limit)
+        if res.is_success():
+            raw_msgs = res.data.get("messages", [])
+            return (
+                True,
+                [
+                    {
+                        "sender": m["sender"],
+                        "text": m.get("raw_text", m["text"]),
+                        "time": m["timestamp"],
+                    }
+                    for m in raw_msgs
+                ],
+                "",
+            )
+        return False, [], res.error or res.message
+
+    def read_latest_incoming_messages(
+        self, limit: int = 5
+    ) -> Tuple[bool, List[Dict[str, str]], str]:
+        return self.read_chat_messages(contact_name=None, limit=limit)
+
+    def summarize_conversation(self, contact_name: str, limit: int = 10) -> Tuple[bool, str]:
+        """Summarize conversation with contact using Gemini on the safely read transcript."""
+        res = self.read_messages(contact_name=contact_name, limit=limit)
+        if not res.is_success():
+            return False, res.error or res.message
+
+        msgs = res.data.get("messages", [])
+        if not msgs:
+            return True, f"No messages found for {contact_name} to summarize."
+
+        raw_transcript = "\n".join(
+            [f"{m['sender']}: {m.get('raw_text', m['text'])}" for m in msgs]
+        )
+        prompt = (
+            f"You are JARVIS. Summarize the following recent WhatsApp conversation with {contact_name} "
+            f"in 2 clear, concise sentences. Do not mention message IDs, timestamps or technical details:\n\n{raw_transcript}"
+        )
+        try:
+            from core import gemini
+
+            summary = gemini.text(prompt, tier=gemini.FAST, timeout_ms=5000)
+            if summary and summary.strip():
+                return True, summary.strip()
+        except Exception:
+            pass
+
+        last_msg = msgs[-1].get("raw_text", "")
+        return (
+            True,
+            f"The recent conversation with {contact_name} consists of {len(msgs)} messages. The last message was: '{last_msg}'.",
+        )
+
 
 def find_contact_phone_number(contact_name: str) -> Optional[str]:
     """Resolve contact to an E.164-compatible clean digit string (e.g. 919876543210).
