@@ -1258,7 +1258,7 @@ def log_action_audit(
 
     with _audit_lock:
         _audit_log.append(entry)
-        if len(_audit_log) > 500:
+        if len(_audit_log) > 100:
             _audit_log.pop(0)
 
         try:
