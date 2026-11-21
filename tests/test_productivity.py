@@ -421,5 +421,96 @@ class TestProductivityPart3(unittest.TestCase):
         self.assertIn("suggestion=", rev_res)
 
 
+class TestProductivityPart4(unittest.TestCase):
+    def setUp(self):
+        self.test_dir = tempfile.mkdtemp()
+        self.store_file = Path(self.test_dir) / "productivity.json"
+        self.store = productivity.ProductivityStore(self.store_file)
+        self._orig_store = productivity._global_store
+        productivity._global_store = self.store
+        undo.clear()
+
+    def tearDown(self):
+        productivity._global_store = self._orig_store
+        undo.clear()
+        try:
+            shutil.rmtree(self.test_dir, ignore_errors=True)
+        except Exception:
+            pass
+
+    def test_quiet_hours_blocks_nudges(self):
+        # Config has quiet hours 22:00 to 08:00
+        t_night = datetime(2026, 11, 21, 23, 30, 0)
+        t_early = datetime(2026, 11, 21, 6, 15, 0)
+        t_day = datetime(2026, 11, 21, 14, 0, 0)
+
+        self.assertTrue(productivity.is_in_quiet_hours(t_night, "22:00", "08:00"))
+        self.assertTrue(productivity.is_in_quiet_hours(t_early, "22:00", "08:00"))
+        self.assertFalse(productivity.is_in_quiet_hours(t_day, "22:00", "08:00"))
+
+        # Add habit with active streak
+        productivity.run({"action": "add_habit", "name": "Deep Work"})
+        # Log past 2 days
+        d1 = (t_night - timedelta(days=2)).strftime("%Y-%m-%d")
+        d2 = (t_night - timedelta(days=1)).strftime("%Y-%m-%d")
+        productivity.run({"action": "log_habit", "name": "Deep Work", "date": d1})
+        productivity.run({"action": "log_habit", "name": "Deep Work", "date": d2})
+
+        # Nudge at night must be blocked by quiet hours
+        nudge_night = productivity.generate_coaching_nudge(self.store, now=t_night)
+        self.assertIsNone(nudge_night)
+
+        # Nudge during daytime is allowed
+        nudge_day = productivity.generate_coaching_nudge(self.store, now=t_day)
+        self.assertIsNotNone(nudge_day)
+        self.assertEqual(nudge_day["type"], "streak_protection")
+
+    def test_rate_limiting_nudges(self):
+        # Configure max 2 nudges per day
+        data = self.store.load()
+        data["config"]["max_proactive_nudges_per_day"] = 2
+        self.store.save_and_verify(data)
+
+        # Set up a habit needing attention
+        t_day = datetime(2026, 11, 21, 15, 0, 0)
+        productivity.run({"action": "add_habit", "name": "Yoga"})
+        d1 = (t_day - timedelta(days=2)).strftime("%Y-%m-%d")
+        d2 = (t_day - timedelta(days=1)).strftime("%Y-%m-%d")
+        productivity.run({"action": "log_habit", "name": "Yoga", "date": d1})
+        productivity.run({"action": "log_habit", "name": "Yoga", "date": d2})
+
+        # 1st nudge fires
+        nudge1 = productivity.generate_coaching_nudge(self.store, now=t_day, record=True)
+        self.assertIsNotNone(nudge1)
+
+        # 2nd nudge fires
+        nudge2 = productivity.generate_coaching_nudge(self.store, now=t_day + timedelta(hours=1), record=True)
+        self.assertIsNotNone(nudge2)
+
+        # 3rd nudge must be blocked by rate limit
+        nudge3 = productivity.generate_coaching_nudge(self.store, now=t_day + timedelta(hours=2), record=True)
+        self.assertIsNone(nudge3)
+
+    def test_no_invented_data_when_history_sparse(self):
+        # Clean store with no habits or tasks
+        t_day = datetime(2026, 11, 21, 14, 0, 0)
+        nudge = productivity.generate_coaching_nudge(self.store, now=t_day)
+        # Must not invent data!
+        self.assertIsNone(nudge)
+
+    def test_proactive_engine_prompt_integration(self):
+        from actions.proactive import ProactiveEngine
+
+        engine = ProactiveEngine()
+        # Add habit with streak
+        t_now = datetime.now()
+        productivity.run({"action": "add_habit", "name": "Meditation"})
+        d1 = (t_now - timedelta(days=1)).strftime("%Y-%m-%d")
+        productivity.run({"action": "log_habit", "name": "Meditation", "date": d1})
+
+        prompt = engine.build_prompt(memory={}, monitors=[], recent_turns=[])
+        self.assertIn("[PROACTIVE_CHECK]", prompt)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -70,6 +70,7 @@ PLUGIN = {
                     "list_habits",
                     "habit_stats",
                     "weekly_review",
+                    "coaching_nudge",
                 ],
             },
             "title": {
@@ -1615,6 +1616,153 @@ def weekly_review(store: ProductivityStore, params: dict) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+#  Coaching Nudges & Proactive Integration
+# ─────────────────────────────────────────────────────────────────────────────
+
+def is_in_quiet_hours(
+    now: Optional[datetime] = None,
+    start_str: str = "22:00",
+    end_str: str = "08:00",
+) -> bool:
+    """True if `now` falls inside quiet hours interval [start_str, end_str)."""
+    curr = (now or datetime.now()).time()
+    try:
+        sh, sm = map(int, start_str.strip().split(":"))
+        eh, em = map(int, end_str.strip().split(":"))
+        start_t = dt_time(sh, sm)
+        end_t = dt_time(eh, em)
+    except Exception:
+        start_t = dt_time(22, 0)
+        end_t = dt_time(8, 0)
+
+    if start_t > end_t:
+        return curr >= start_t or curr < end_t
+    else:
+        return start_t <= curr < end_t
+
+
+def generate_coaching_nudge(
+    store: ProductivityStore,
+    now: Optional[datetime] = None,
+    record: bool = True,
+) -> Optional[dict]:
+    """
+    Generate one rate-limited coaching nudge if not in quiet hours and real data warrants it.
+    Never invents data.
+    """
+    curr = now or datetime.now()
+    curr_date_str = curr.strftime("%Y-%m-%d")
+
+    data = store.load()
+    config = data.get("config", {})
+    qh_start = config.get("quiet_hours_start", "22:00")
+    qh_end = config.get("quiet_hours_end", "08:00")
+
+    # 1. Quiet hours check
+    if is_in_quiet_hours(curr, qh_start, qh_end):
+        return None
+
+    # 2. Rate limit check (max N per day)
+    max_per_day = int(config.get("max_proactive_nudges_per_day", 2))
+    nudge_history = data.get("proactive_nudges_log", [])
+    today_nudges = [ts for ts in nudge_history if ts.startswith(curr_date_str)]
+    if len(today_nudges) >= max_per_day:
+        return None
+
+    # 3. Identify real coaching opportunity
+    habits = [h for h in data.get("habits", {}).values() if not h.get("archived", False)]
+    tasks = list(data.get("tasks", {}).values())
+
+    nudge = None
+
+    # 3a. Streak protection: habit with active streak >= 2 not logged today
+    streak_habits = [h for h in habits if h.get("streak", 0) >= 2 and curr_date_str not in h.get("log", [])]
+    if streak_habits:
+        streak_habits.sort(key=lambda h: h.get("streak", 0), reverse=True)
+        top_h = streak_habits[0]
+        nudge = {
+            "type": "streak_protection",
+            "habit": top_h["name"],
+            "streak": top_h["streak"],
+            "message": f"Your {top_h['streak']}-day streak for '{top_h['name']}' is active. Don't forget to log it today!",
+        }
+
+    # 3b. Frequently skipped habit nudge
+    if not nudge and habits:
+        low_habits = []
+        for h in habits:
+            if curr_date_str in h.get("log", []):
+                continue
+            rate = calculate_completion_rate(h.get("log", []), 7, h.get("target", "daily"), today=curr.date())
+            if rate < 50.0:
+                low_habits.append((h, rate))
+
+        if low_habits:
+            low_habits.sort(key=lambda x: x[1])
+            worst_h, worst_rate = low_habits[0]
+            nudge = {
+                "type": "skipped_habit_nudge",
+                "habit": worst_h["name"],
+                "rate": worst_rate,
+                "message": f"'{worst_h['name']}' has been skipped recently. A quick session today will rebuild your habit.",
+            }
+
+    # 3c. Overdue high-priority task nudge
+    if not nudge:
+        overdue_high = [
+            t for t in tasks
+            if t.get("status") == "pending"
+            and t.get("priority") == "high"
+            and t.get("due")
+            and t["due"].split("T")[0] < curr_date_str
+        ]
+        if overdue_high:
+            top_t = overdue_high[0]
+            nudge = {
+                "type": "overdue_task_nudge",
+                "task": top_t["title"],
+                "message": f"High priority task '{top_t['title']}' is overdue. Would you like to tackle it now?",
+            }
+
+    if nudge and record:
+        nudge_history.append(curr.isoformat())
+        data["proactive_nudges_log"] = nudge_history[-20:]
+        store.save_and_verify(data)
+
+    return nudge
+
+
+def get_productivity_prompt_context(store: Optional[ProductivityStore] = None, now: Optional[datetime] = None) -> str:
+    """Return coaching context string for ProactiveEngine prompt builder."""
+    s = store or get_store()
+    nudge = generate_coaching_nudge(s, now=now, record=True)
+    if not nudge:
+        return ""
+    return nudge.get("message", "")
+
+
+def coaching_nudge_action(store: ProductivityStore, params: dict) -> str:
+    """Action entry point for checking or generating a coaching nudge."""
+    nudge = generate_coaching_nudge(store, record=True)
+    if not nudge:
+        data = store.load()
+        config = data.get("config", {})
+        qh_start = config.get("quiet_hours_start", "22:00")
+        qh_end = config.get("quiet_hours_end", "08:00")
+        if is_in_quiet_hours(datetime.now(), qh_start, qh_end):
+            reason = "Currently in quiet hours."
+        else:
+            reason = "No coaching nudge needed or daily rate limit reached."
+        return outcome.done("productivity", nudge="none", reason=reason)
+
+    return outcome.done(
+        "productivity",
+        nudge=nudge["message"],
+        type=nudge["type"],
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 #  Main Dispatcher (run)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1651,6 +1799,8 @@ def run(parameters: dict, player=None, session_memory=None) -> str:
             result = archive_habit(store, parameters)
         elif action == "weekly_review":
             result = weekly_review(store, parameters)
+        elif action == "coaching_nudge":
+            result = coaching_nudge_action(store, parameters)
         elif action == "snooze":
             result = snooze(store, parameters)
         else:
@@ -1660,7 +1810,7 @@ def run(parameters: dict, player=None, session_memory=None) -> str:
                 valid_actions=[
                     "add_task", "list_tasks", "complete_task", "update_task", "delete_task",
                     "daily_summary", "snooze", "add_habit", "log_habit", "list_habits",
-                    "habit_stats", "weekly_review"
+                    "habit_stats", "weekly_review", "coaching_nudge"
                 ],
             )
     except Exception as e:

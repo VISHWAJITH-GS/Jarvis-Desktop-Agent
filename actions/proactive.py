@@ -104,6 +104,16 @@ class ProactiveEngine:
             snippet = "\n".join(recent_turns[-6:])
             recent_ctx = f"\nRecent conversation:\n{snippet}"
 
+        # Optional: productivity & habit coaching context (lazy import, quiet-hours aware)
+        prod_ctx = ""
+        try:
+            from plugins.productivity import get_productivity_prompt_context
+            p_text = get_productivity_prompt_context()
+            if p_text:
+                prod_ctx = f"\nHabits and tasks:\n{p_text}"
+        except Exception:
+            pass
+
         return "\n".join(
             [
                 "[PROACTIVE_CHECK] You are initiating a proactive check-in.",
@@ -113,6 +123,7 @@ class ProactiveEngine:
                 mem_str,
                 monitor_ctx,
                 recent_ctx,
+                prod_ctx,
                 "",
                 "Task:",
                 focus,
