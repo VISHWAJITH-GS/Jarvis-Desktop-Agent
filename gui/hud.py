@@ -164,6 +164,8 @@ class HudConversationWidget(QTextEdit):
                 self._messages.append(("jarvis", clean))
         else:
             self._messages.append(("sys", clean))
+        if len(self._messages) > 100:
+            self._messages = self._messages[-100:]
         self._render_conversation()
 
     def _render_conversation(self):
@@ -291,9 +293,26 @@ class HudCanvas(QWidget):
         self._win_start = None
         self._is_drag = False
 
+        self._fps_interval = 16
         self._tmr = QTimer(self)
         self._tmr.timeout.connect(self._step)
-        self._tmr.start(16)  # 60 FPS animation
+        self._tmr.start(self._fps_interval)
+
+    def _update_timer_interval(self):
+        w = self.window()
+        is_hidden_or_min = not self.isVisible() or (w is not None and w.isMinimized())
+        if is_hidden_or_min:
+            target_ms = 500  # near-zero (2 FPS) when minimized or hidden
+        elif getattr(self, "_active_state", "STANDBY") in ("SPEAKING", "THINKING"):
+            target_ms = 16  # 60 FPS during speaking/thinking
+        elif getattr(self, "_active_state", "STANDBY") in ("LISTENING", "PROCESSING", "EXECUTING"):
+            target_ms = 33  # 30 FPS during listening/executing
+        else:
+            target_ms = 66  # 15 FPS when idle / STANDBY / SLEEPING / MUTED
+
+        if getattr(self, "_fps_interval", 16) != target_ms:
+            self._fps_interval = target_ms
+            self._tmr.setInterval(target_ms)
 
     def on_state_changed(self, new_state: str):
         """Immediately update state, reset phase, and transition colors smoothly."""
@@ -305,6 +324,7 @@ class HudCanvas(QWidget):
             self._state_start_t = time.time()
             self.state = st
             self.speaking = st == "SPEAKING"
+            self._update_timer_interval()
             self.update()
 
     def resizeEvent(self, e):
@@ -314,6 +334,15 @@ class HudCanvas(QWidget):
     def showEvent(self, e):
         super().showEvent(e)
         self._update_conversation_geometry()
+        self._update_timer_interval()
+
+    def hideEvent(self, e):
+        super().hideEvent(e)
+        self._update_timer_interval()
+
+    def changeEvent(self, e):
+        super().changeEvent(e)
+        self._update_timer_interval()
 
     def _update_conversation_geometry(self):
         if not hasattr(self, "conversation") or not self.conversation:
@@ -474,6 +503,11 @@ class HudCanvas(QWidget):
 
     def _step(self):
         try:
+            w = self.window()
+            if not self.isVisible() or (w is not None and w.isMinimized()):
+                self._update_timer_interval()
+                return
+
             now = time.time()
             prev_t = getattr(self, "_step_t", now)
             dt = min(max(0.0, now - prev_t), 0.1)

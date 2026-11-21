@@ -152,6 +152,7 @@ class LogWidget(QTextEdit):
         self._tmr = QTimer(self)
         self._tmr.timeout.connect(self._step)
         self._sig.connect(self._enqueue)
+        self.document().setMaximumBlockCount(300)
 
     def append_log(self, text: str):
         self._sig.emit(text)
