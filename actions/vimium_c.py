@@ -56,9 +56,26 @@ class VimiumHint:
 def get_vimium_extension_path() -> Optional[str]:
     """
     Locates the Vimium C extension directory.
-    Checks bundled repo copy first, then searches user Edge and Chrome AppData extensions.
+    Checks the dedicated Jarvis profile directory first, then bundled repo copy,
+    then fallback candidate paths.
     """
-    # 1. Bundled repo path
+    ext_id = "hfjbmagddngcpeloejdejnfgbamkjaeg"
+
+    # 1. Dedicated Jarvis profile directory (Priority)
+    try:
+        from memory import config_manager
+
+        dedicated_prof = config_manager.get_browser_profile_dir()
+        dedicated_ext = dedicated_prof / "Default" / "Extensions" / ext_id
+        if dedicated_ext.exists():
+            versions = [p for p in dedicated_ext.iterdir() if p.is_dir() and (p / "manifest.json").exists()]
+            if versions:
+                versions.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+                return str(versions[0].resolve())
+    except Exception as e:
+        logger.debug("Dedicated profile extension check: %s", e)
+
+    # 2. Bundled repo path
     repo_base = Path(__file__).resolve().parent.parent
     bundled = repo_base / "third_party" / "vimium_c"
     if not bundled.exists():
@@ -66,8 +83,7 @@ def get_vimium_extension_path() -> Optional[str]:
     if bundled.exists() and (bundled / "manifest.json").exists():
         return str(bundled.resolve())
 
-    # 2. User AppData (Windows / Linux / macOS)
-    ext_id = "hfjbmagddngcpeloejdejnfgbamkjaeg"
+    # 3. User AppData (Windows / Linux / macOS) fallback
     candidates = []
     if _OS == "Windows":
         local = os.environ.get("LOCALAPPDATA", "")

@@ -99,34 +99,36 @@ def _resolve_windows_known_app(app_name: str) -> tuple[list[str] | None, list[st
 
     # 1. Google Chrome (prioritize Chrome when specifically requested)
     if clean in ("chrome", "google chrome", "google-chrome"):
+        from memory import config_manager
+        from actions.browser_session import build_browser_launch_command, get_default_cdp_port
+
         for path in (
             r"C:\Program Files\Google\Chrome\Application\chrome.exe",
             r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
             os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe"),
         ):
             if os.path.exists(path):
-                profile_dir = os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\User Data\JarvisProfile")
+                profile_dir = config_manager.get_browser_profile_dir()
                 os.makedirs(profile_dir, exist_ok=True)
-                return [path], [
-                    "--remote-debugging-port=9222",
-                    f"--user-data-dir={profile_dir}",
-                    "--remote-allow-origins=*",
-                ]
+                port = get_default_cdp_port("chrome")
+                cmd = build_browser_launch_command(path, profile_dir, port, engine="chrome")
+                return [path], cmd[1:]
 
     # 2. Microsoft Edge
     if clean in ("msedge", "edge", "microsoft edge"):
+        from memory import config_manager
+        from actions.browser_session import build_browser_launch_command, get_default_cdp_port
+
         for path in (
             r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
             r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
         ):
             if os.path.exists(path):
-                profile_dir = os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\Edge\User Data\JarvisProfile")
+                profile_dir = config_manager.get_default_browser_profile_dir("edge")
                 os.makedirs(profile_dir, exist_ok=True)
-                return [path], [
-                    "--remote-debugging-port=9222",
-                    f"--user-data-dir={profile_dir}",
-                    "--remote-allow-origins=*",
-                ]
+                port = get_default_cdp_port("edge")
+                cmd = build_browser_launch_command(path, profile_dir, port, engine="edge")
+                return [path], cmd[1:]
 
     # 3. Python IDLE
     if clean in ("idle", "python idle", "idle python", "idle3"):
