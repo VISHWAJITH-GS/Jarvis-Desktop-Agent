@@ -256,7 +256,7 @@ class TestWhatsAppConfirmation(unittest.TestCase):
             True,
             "Sent message snippet 'HI' confirmed visible in chat history with verified sent tick.",
         )
-        with patch("plugins._whatsapp_core.get", return_value=(mock_driver, "")):
+        with patch("plugins._whatsapp_web.get_driver", return_value=mock_driver):
             res_done = whatsapp_automation.run(
                 {"contact": "Mom", "message": "HI", "_execution_authorized": True}
             )
@@ -269,7 +269,7 @@ class TestWhatsAppConfirmation(unittest.TestCase):
             True,
             "Message input field cleared on send, but sent tick could not be confirmed.",
         )
-        with patch("plugins._whatsapp_core.get", return_value=(mock_driver, "")):
+        with patch("plugins._whatsapp_web.get_driver", return_value=mock_driver):
             res_unver = whatsapp_automation.run(
                 {"contact": "Mom", "message": "HI", "_execution_authorized": True}
             )

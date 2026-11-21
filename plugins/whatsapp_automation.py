@@ -4,21 +4,21 @@ plugins/whatsapp_automation.py
 Auto-discovered JARVIS plugin for sending formal and flexible WhatsApp messages.
 """
 
-from core import outcome
-from core import gemini
-from plugins import _whatsapp_core as wa
+from core import gemini, outcome
+from plugins import _whatsapp_web
 
 
 PLUGIN = {
     "name": "whatsapp_send",
     "description": (
-        "Send WhatsApp messages to contacts formally, accurately, and flexibly. "
+        "Send WhatsApp messages to contacts via WhatsApp Web in the dedicated Jarvis browser. "
         "CRITICAL: If the user has NOT provided the actual message content yet (e.g. they only said "
         "'send a message to Mom' or 'text Rahul'), DO NOT call this tool with placeholder text. "
         "Instead, ask the user first: 'What message would you like me to send to <contact>?' "
         "Only call this tool once you know the exact message the user wants to send. "
-        "Ask for confirmation at most once per action. Never demand a stricter confirmation phrase."
+        "Requires user confirmation before execution. Attachments/media are unsupported."
     ),
+    "brief": "Sends a WhatsApp message to a contact after user confirmation.",
     "parameters": {
         "type": "OBJECT",
         "properties": {
@@ -29,7 +29,7 @@ PLUGIN = {
             },
             "contact": {
                 "type": "STRING",
-                "description": "The recipient's contact name (e.g. 'Mom', 'Rahul', 'Boss').",
+                "description": "The recipient's contact name or phone number (e.g. 'Mom', 'Rahul', '+919876543210').",
             },
             "message": {
                 "type": "STRING",
@@ -93,6 +93,17 @@ def run(parameters: dict, player=None, session_memory=None) -> outcome.ActionRes
 
         return whatsapp_reader.run(parameters, player=player, session_memory=session_memory)
 
+    # Attachments guard
+    if any(p.get(k) for k in ("attachment", "attachments", "file", "media", "image", "photo", "audio")):
+        return outcome.ActionResult(
+            status=outcome.STATUS_UNSUPPORTED,
+            action="whatsapp_send",
+            success=False,
+            verified=False,
+            message="WhatsApp Web attachment sending not yet supported; send text only.",
+            error="Attachments unsupported on WhatsApp Web",
+        )
+
     if not contact:
         return outcome.result_failed(
             "whatsapp_send",
@@ -144,71 +155,32 @@ def run(parameters: dict, player=None, session_memory=None) -> outcome.ActionRes
 
 
 def _execute_send(contact: str, message: str, player=None) -> outcome.ActionResult:
-    """Execute WhatsApp message sending and return honest ActionResult contract."""
+    """Execute WhatsApp message sending via the unified WhatsApp Web CDP driver."""
     if player and hasattr(player, "write_log"):
         try:
-            player.write_log(f"JARVIS: Opening WhatsApp for {contact}…")
+            player.write_log(f"JARVIS: Sending WhatsApp message to {contact}…")
         except Exception:
             pass
 
-    driver, why = wa.get()
-    if not driver:
-        return outcome.result_failed(
-            "whatsapp_send",
-            error=why,
-            message=f"Could not initialize WhatsApp driver: {why}",
-            data={"contact": contact},
-        )
-
-    sent, info = driver.send_message_to(contact, message)
-    if not sent:
-        return outcome.result_failed(
-            "whatsapp_send",
-            error=info,
-            message=f"Failed to send the message to {contact}: {info}",
-            data={"contact": contact},
-        )
-
-    msg_preview = f'"{message}"'
-    info_str = str(info or "").lower()
-
-    # Honest status: "done" ONLY after sent tick is verified, otherwise "unverified"
-    has_negative = any(neg in info_str for neg in ("could not", "not confirmed", "unconfirmed", "not verified", "failed", "unverified"))
-    is_tick_verified = (
-        not has_negative
-        and (
-            "sent tick" in info_str
-            or "tick verified" in info_str
-            or "tick confirmed" in info_str
-            or "verified sent tick" in info_str
-            or "delivered" in info_str
-            or "read" in info_str
-            or "confirmed visible" in info_str
-        )
-    )
-
-    if is_tick_verified:
-        if player and hasattr(player, "write_log"):
-            try:
-                player.write_log(f"JARVIS: Message sent to {contact}: {msg_preview}")
-            except Exception:
-                pass
-        return outcome.result_done(
-            "whatsapp_send",
-            message=f"I have sent the message to {contact}: {msg_preview}",
-            verified=True,
-            data={"contact": contact, "text": message, "to": contact, "verified": True},
-        )
-    else:
-        # Keystrokes went out but sent tick was NOT verified
-        unverified_msg = f"The message was typed for {contact}, but delivery could not be confirmed."
-        if player and hasattr(player, "write_log"):
-            try:
-                player.write_log(f"JARVIS: {unverified_msg}")
-            except Exception:
-                pass
+    driver = _whatsapp_web.get_driver()
+    if hasattr(driver, "send_message"):
+        res = driver.send_message(contact, message, player=player)
+        if isinstance(res, outcome.ActionResult):
+            return res
+    if hasattr(driver, "send_message_to"):
+        sent, info = driver.send_message_to(contact, message)
+        info_str = str(info or "").lower()
+        has_negative = any(neg in info_str for neg in ("could not", "not confirmed", "unconfirmed", "not verified", "failed", "unverified"))
+        if sent and not has_negative and any(term in info_str for term in ("tick", "delivered", "read", "sent")):
+            return outcome.result_done(
+                "whatsapp_send",
+                f"I have sent the message to {contact}: \"{message}\"",
+                verified=True,
+                data={"contact": contact, "text": message, "to": contact, "verified": True},
+            )
         return outcome.result_unverified(
             "whatsapp_send",
-            message=unverified_msg,
+            message=f"The message was typed for {contact}, but delivery could not be confirmed.",
             data={"contact": contact, "text": message, "to": contact, "verified": False},
         )
+    return outcome.result_failed("whatsapp_send", "WhatsApp Web driver is unavailable.")

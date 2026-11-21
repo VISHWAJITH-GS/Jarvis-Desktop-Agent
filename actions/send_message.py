@@ -202,97 +202,8 @@ def _desktop_send(app_name: str, receiver: str, message: str) -> str:
     )
 
 
-def _send_whatsapp_web_cdp(receiver: str, message: str) -> Optional[str]:
-    """
-    Attempt to send WhatsApp message via Edge CDP on web.whatsapp.com.
-    Returns serialized outcome string if web.whatsapp.com is active and handled, or None if not attached.
-    """
-    try:
-        from actions.browser_session import get_browser_session_manager
-
-        bm = get_browser_session_manager()
-        ok, _ = bm.check_connection(timeout=0.5)
-        if not ok:
-            return None
-
-        tabs = bm.list_tabs()
-        wa_tab_idx = None
-        for t in tabs:
-            if "web.whatsapp.com" in t.url.lower():
-                wa_tab_idx = t.index
-                break
-
-        if wa_tab_idx is None:
-            return None
-
-        bm.switch_tab(wa_tab_idx)
-
-        async def _do_send():
-            await bm._ensure_attached()
-            page = bm._active_page
-            if not page:
-                return False, "No active WhatsApp Web page found."
-
-            # Search contact
-            search_sel = 'div[contenteditable="true"][data-tab="3"], div[title="Search input textbox"]'
-            search_el = await page.wait_for_selector(search_sel, timeout=5000)
-            if not search_el:
-                return False, "WhatsApp Web search box not found."
-
-            await search_el.click()
-            await page.keyboard.press("Control+A")
-            await page.keyboard.press("Backspace")
-            await page.keyboard.type(receiver)
-            await asyncio.sleep(1.0)
-
-            # Chat item matching recipient
-            chat_sel = f'//span[@title="{receiver}"] | //span[contains(translate(@title, "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"), "{receiver.lower()}")]'
-            contact_el = await page.wait_for_selector(chat_sel, timeout=5000)
-            if not contact_el:
-                return False, f"Contact '{receiver}' not found on WhatsApp Web."
-
-            await contact_el.click()
-            await asyncio.sleep(1.0)
-
-            # Verify active chat header title
-            header_sel = 'header span[dir="auto"], header span[title]'
-            header_el = await page.wait_for_selector(header_sel, timeout=3000)
-            header_title = (await header_el.inner_text()) if header_el else ""
-            if receiver.lower() not in header_title.lower():
-                return False, f"Active chat header '{header_title}' did not match '{receiver}'."
-
-            # Locate input box
-            msg_input_sel = 'footer div[contenteditable="true"], div[contenteditable="true"][data-tab="10"]'
-            msg_input = await page.wait_for_selector(msg_input_sel, timeout=5000)
-            if not msg_input:
-                return False, "Message input box not found on WhatsApp Web."
-
-            await msg_input.click()
-            await page.keyboard.type(message)
-            await asyncio.sleep(0.3)
-            await page.keyboard.press("Enter")
-            await asyncio.sleep(1.0)
-
-            # Verify input field cleared
-            val = (await msg_input.inner_text()) or ""
-            if val.strip():
-                return False, "Message input box was not cleared after send."
-
-            return True, f"Message verified sent to '{receiver}' on WhatsApp Web (header: '{header_title}')."
-
-        import asyncio
-
-        ok, msg = bm.run_coroutine(_do_send(), timeout=25.0)
-        if ok:
-            return outcome.done("send_message", platform="WhatsApp Web", to=receiver, message=message, verified=True)
-        return outcome.failed("send_message", msg, platform="WhatsApp Web", to=receiver)
-    except Exception as e:
-        print(f"[SendMessage] WhatsApp Web CDP error: {e}")
-        return None
-
-
 def _send_whatsapp(receiver: str, message: str) -> str:
-    """WhatsApp goes through CDP, verified UIA driver, or blind desktop fallback."""
+    """Route WhatsApp send through the unified WhatsApp Web CDP driver."""
     # Polish message into a formal/polite format if not already styled
     formatted_msg = message
     try:
@@ -302,58 +213,48 @@ def _send_whatsapp(receiver: str, message: str) -> str:
     except Exception:
         pass
 
-    # 1. Edge CDP path for web.whatsapp.com
-    cdp_res = _send_whatsapp_web_cdp(receiver, formatted_msg)
-    if cdp_res is not None:
-        return cdp_res
-
-    # 2. Windows UIA WhatsApp Desktop driver
     try:
-        from plugins import _whatsapp_core as wa
+        from plugins import _whatsapp_web
 
-        transport, why = wa.get()
-        if transport is not None:
-            sent, failure = transport.send_message_to(receiver, formatted_msg)
-            if sent:
-                info_str = str(failure or "").lower()
-                has_negative = any(neg in info_str for neg in ("could not", "not confirmed", "unconfirmed", "not verified", "failed", "unverified"))
-                is_tick_verified = (
-                    not has_negative
-                    and (
-                        "sent tick" in info_str
-                        or "tick verified" in info_str
-                        or "tick confirmed" in info_str
-                        or "verified sent tick" in info_str
-                        or "delivered" in info_str
-                        or "read" in info_str
-                        or "confirmed visible" in info_str
-                    )
-                )
-                if is_tick_verified:
-                    return outcome.done(
-                        "send_message", platform="WhatsApp", to=receiver, message=formatted_msg, verified=True
-                    )
-                else:
-                    return outcome.unverified(
-                        "send_message",
-                        f"the message was typed into WhatsApp for {receiver}, but delivery could not be confirmed",
-                        platform="WhatsApp",
-                        to=receiver,
-                    )
-            return outcome.failed("send_message", failure, platform="WhatsApp", to=receiver)
+        driver = _whatsapp_web.get_driver()
+        res = driver.send_message(receiver, formatted_msg)
+        if res.is_success():
+            return outcome.done(
+                "send_message",
+                platform="WhatsApp Web",
+                to=receiver,
+                message=formatted_msg,
+                verified=True,
+            )
+        elif res.status == outcome.STATUS_UNVERIFIED:
+            return outcome.unverified(
+                "send_message",
+                res.message or "the message was typed into WhatsApp Web, but delivery could not be confirmed",
+                platform="WhatsApp Web",
+                to=receiver,
+            )
+        elif res.status == outcome.STATUS_BLOCKED:
+            return outcome.blocked(
+                "send_message",
+                res.message or "WhatsApp Web is not signed in; scan QR code in Jarvis Chrome window",
+                platform="WhatsApp Web",
+                to=receiver,
+            )
+        elif res.status == outcome.STATUS_UNSUPPORTED:
+            return outcome.failed(
+                "send_message",
+                res.message or "Unsupported action on WhatsApp Web",
+                platform="WhatsApp Web",
+                to=receiver,
+            )
+        return outcome.failed(
+            "send_message",
+            res.error or res.message or "Failed to send WhatsApp Web message",
+            platform="WhatsApp Web",
+            to=receiver,
+        )
     except Exception as e:
-        print(f"[SendMessage] WhatsApp driver error ({e})")
-
-    # 3. Fallback to desktop send if PyAutoGUI is available
-    if _PYAUTOGUI:
-        return _desktop_send("WhatsApp", receiver, formatted_msg)
-
-    return outcome.failed(
-        "send_message",
-        "Could not send WhatsApp message: neither WhatsApp Web, WhatsApp Desktop UIA, nor PyAutoGUI is available.",
-        platform="WhatsApp",
-        to=receiver,
-    )
+        return outcome.failed("send_message", str(e), platform="WhatsApp Web", to=receiver)
 
 
 def _send_telegram(receiver: str, message: str) -> str:

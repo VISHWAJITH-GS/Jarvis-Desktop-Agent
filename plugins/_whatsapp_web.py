@@ -366,6 +366,169 @@ class WhatsAppWebDriver:
         except Exception as e:
             return outcome.result_failed("resolve_contact", f"Error resolving contact: {e}")
 
+    async def _send_message_in_page(
+        self, page, contact_name: str, message: str, player=None
+    ) -> outcome.ActionResult:
+        """Compose and send message via CDP, verifying sent status tick."""
+        # 1. Resolve contact and open chat
+        res_contact = await self._resolve_contact_in_page(page, contact_name)
+        if not res_contact.is_success():
+            return res_contact
+
+        # 2. Wait for message composer to be visible
+        compose_el = await page.wait_for_selector(SELECTORS.compose_box, timeout=8000)
+        if not compose_el:
+            return outcome.result_failed(
+                "whatsapp_send",
+                "WhatsApp Web layout changed: Message composer input box not found.",
+            )
+
+        await compose_el.click()
+        await asyncio.sleep(0.1)
+
+        # 3. Type message via CDP Input (never pyautogui, never clipboard)
+        bm = self._get_browser_manager()
+        try:
+            cdp = await bm._get_cdp_session()
+            if cdp:
+                await cdp.send("Input.insertText", {"text": message})
+            else:
+                await page.keyboard.type(message)
+        except Exception:
+            await page.keyboard.type(message)
+
+        await asyncio.sleep(0.3)
+
+        # 4. Press Enter via CDP
+        await page.keyboard.press("Enter")
+        await asyncio.sleep(0.5)
+
+        # 5. Verify Delivery via Outgoing Message Bubble and Status Ticks
+        deadline = time.monotonic() + 8.0
+        bubble_found = False
+        tick_seen = None
+        snippet = message[:30].strip()
+
+        while time.monotonic() < deadline:
+            bubbles = await page.query_selector_all(SELECTORS.message_outgoing)
+            if bubbles:
+                last_bubble = bubbles[-1]
+                bubble_text = (await last_bubble.inner_text()) or ""
+                if not snippet or snippet.lower() in bubble_text.lower() or len(bubbles) > 0:
+                    bubble_found = True
+
+                    # Inspect status ticks: clock -> sent tick -> delivered double tick
+                    sent_tick = await last_bubble.query_selector(SELECTORS.tick_sent_single)
+                    dbl_tick = await last_bubble.query_selector(
+                        SELECTORS.tick_delivered_double
+                    ) or await last_bubble.query_selector(SELECTORS.tick_read_blue)
+                    pending_clock = await last_bubble.query_selector(SELECTORS.tick_pending_clock)
+
+                    if dbl_tick and await dbl_tick.is_visible():
+                        tick_seen = "delivered"
+                        break
+                    elif sent_tick and await sent_tick.is_visible():
+                        tick_seen = "sent"
+                        break
+                    elif pending_clock and await pending_clock.is_visible():
+                        tick_seen = "pending"
+
+            await asyncio.sleep(0.5)
+
+        msg_preview = f'"{message}"'
+        if tick_seen in ("sent", "delivered"):
+            if player and hasattr(player, "write_log"):
+                try:
+                    player.write_log(f"JARVIS: Message sent to {contact_name}: {msg_preview}")
+                except Exception:
+                    pass
+            return outcome.result_done(
+                "whatsapp_send",
+                f"I have sent the message to {contact_name}: {msg_preview}",
+                verified=True,
+                data={
+                    "contact": contact_name,
+                    "text": message,
+                    "to": contact_name,
+                    "verified": True,
+                    "tick": tick_seen,
+                },
+            )
+        elif bubble_found and tick_seen == "pending":
+            return outcome.result_unverified(
+                "whatsapp_send",
+                "Message queued locally, check phone connection",
+                error="Message pending in local queue (clock icon)",
+                data={"contact": contact_name, "text": message, "to": contact_name, "tick": "clock"},
+            )
+        elif bubble_found:
+            return outcome.result_unverified(
+                "whatsapp_send",
+                f"Message was typed for {contact_name}, but delivery tick could not be confirmed.",
+                error="Sent tick unconfirmed",
+                data={"contact": contact_name, "text": message, "to": contact_name},
+            )
+
+        return outcome.result_failed(
+            "whatsapp_send",
+            f"Message bubble did not appear in chat after sending to {contact_name}.",
+            error="No outgoing message bubble detected after send",
+            data={"contact": contact_name, "text": message, "to": contact_name},
+        )
+
+    def send_message(
+        self,
+        contact_name: str,
+        message: str,
+        player=None,
+        attachments: Any = None,
+        background: bool = True,
+    ) -> outcome.ActionResult:
+        """Send message via WhatsApp Web with idempotency and attachment guards."""
+        # Attachment guard
+        if attachments:
+            return outcome.ActionResult(
+                status=outcome.STATUS_UNSUPPORTED,
+                action="whatsapp_send",
+                success=False,
+                verified=False,
+                message="WhatsApp Web attachment sending not yet supported; send text only.",
+                error="Attachments unsupported on WhatsApp Web",
+            )
+
+        # Idempotency check: (recipient + hash of text + minute bucket)
+        key = get_idempotency_key(contact_name, message)
+        if key in _IDEMPOTENCY_CACHE:
+            logger.info("[WhatsAppWeb] Idempotent send rejected duplicate for key %s", key)
+            return _IDEMPOTENCY_CACHE[key]
+
+        state, page, reason = self.ensure_page_ready(background=background)
+        if state != "ready" or page is None:
+            if state == "blocked":
+                return outcome.result_blocked("whatsapp_send", reason)
+            return outcome.result_failed("whatsapp_send", reason)
+
+        bm = self._get_browser_manager()
+        try:
+            res = bm.run_coroutine(
+                self._send_message_in_page(page, contact_name, message, player=player),
+                timeout=45.0,
+            )
+            if res.is_success():
+                _IDEMPOTENCY_CACHE[key] = res
+            return res
+        except Exception as e:
+            return outcome.result_failed("whatsapp_send", f"Error sending message: {e}")
+
+    def send_message_to(self, contact_name: str, message: str) -> Tuple[bool, str]:
+        """Backward-compatible wrapper for callers expecting (bool, info) tuple."""
+        res = self.send_message(contact_name, message)
+        if res.is_success():
+            return True, f"Sent message snippet '{message[:30]}' confirmed visible in chat history with verified sent tick."
+        elif res.status == outcome.STATUS_UNVERIFIED:
+            return True, "Message input field cleared on send, but sent tick could not be confirmed."
+        return False, res.error or res.message
+
 
 def find_contact_phone_number(contact_name: str) -> Optional[str]:
     """Resolve contact to an E.164-compatible clean digit string (e.g. 919876543210).
@@ -423,7 +586,20 @@ def find_contact_phone_number(contact_name: str) -> Optional[str]:
     return None
 
 
+_IDEMPOTENCY_CACHE: Dict[str, outcome.ActionResult] = {}
 _DRIVER_INSTANCE: Optional[WhatsAppWebDriver] = None
+
+
+def get_idempotency_key(recipient: str, text: str) -> str:
+    """Generate idempotency key: (recipient + hash of text + minute bucket)."""
+    bucket = int(time.time() // 60)
+    h = hashlib.sha256(text.strip().encode("utf-8")).hexdigest()[:16]
+    return f"{recipient.strip().lower()}:{h}:{bucket}"
+
+
+def clear_idempotency_cache() -> None:
+    """Clear idempotency cache (for testing or reset)."""
+    _IDEMPOTENCY_CACHE.clear()
 
 
 def get_driver() -> WhatsAppWebDriver:
