@@ -209,6 +209,87 @@ def verify_browser_identity(
     return True, f"Verified browser connection on port {port}."
 
 
+class ForegroundWindowPreserver:
+    """Saves the currently focused/active desktop window and restores it when exiting."""
+
+    def __enter__(self):
+        self._prev_wrapper = None
+        try:
+            from actions import windows_uia
+
+            if windows_uia.is_available():
+                act = windows_uia.get_active_window()
+                if act.get("status") == "success":
+                    self._prev_wrapper = act.get("wrapper")
+        except Exception:
+            pass
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self._prev_wrapper:
+            try:
+                self._prev_wrapper.set_focus()
+            except Exception:
+                pass
+
+
+def classify_browser_failure(error: Exception | str) -> dict[str, str]:
+    """
+    Classifies browser launch or attachment failures into specific categories:
+    - chrome_not_installed
+    - port_in_use
+    - profile_locked
+    - cdp_timeout
+    - crashed_browser
+    - daily_profile_blocked
+    - unknown
+    """
+    msg = str(error or "").lower()
+
+    if "could not locate executable" in msg or ("not found" in msg and ("chrome" in msg or "msedge" in msg)):
+        return {
+            "category": "chrome_not_installed",
+            "root_cause": "The configured browser executable is not installed or not in PATH.",
+            "user_action": "Install Google Chrome or update 'browser_engine' in config to an installed browser.",
+        }
+    if "refusing to launch against user's default" in msg or "default personal" in msg:
+        return {
+            "category": "daily_profile_blocked",
+            "root_cause": "Launch refused: The configured path resolves to the user's daily default browser data directory.",
+            "user_action": "Use the default dedicated JarvisProfile directory. Never point Jarvis to your daily browsing directory.",
+        }
+    if "lock" in msg or "singletonlock" in msg or "profile in use" in msg:
+        return {
+            "category": "profile_locked",
+            "root_cause": "The dedicated browser profile directory is locked by another running browser process.",
+            "user_action": "Close any existing browser processes running the Jarvis profile, or remove stale SingletonLock file.",
+        }
+    if "econnrefused" in msg or "cannot connect to browser" in msg or "timed out" in msg:
+        return {
+            "category": "cdp_timeout",
+            "root_cause": "The browser CDP debugging port did not respond in time.",
+            "user_action": "Check if a firewall is blocking port binding, or wait for the browser process to finish initializing.",
+        }
+    if "crash" in msg or "terminated" in msg or "closed" in msg:
+        return {
+            "category": "crashed_browser",
+            "root_cause": "The browser process exited or crashed unexpectedly.",
+            "user_action": "Jarvis will auto-restart a clean dedicated browser session.",
+        }
+    if "address already in use" in msg or ("port" in msg and "occupied" in msg):
+        return {
+            "category": "port_in_use",
+            "root_cause": "The configured CDP port is already in use by another application.",
+            "user_action": "Free the port or specify a custom port in BROWSER_CDP_URL.",
+        }
+
+    return {
+        "category": "unknown",
+        "root_cause": str(error),
+        "user_action": "Review logs and check browser configuration in Settings.",
+    }
+
+
 class CDPConnectionError(RuntimeError):
     """Raised when Microsoft Edge or Chrome CDP endpoint is unreachable or identity unverified."""
 
@@ -538,7 +619,11 @@ class BrowserSessionManager:
         if tab_index < 0 or tab_index >= len(pages):
             raise IndexError(f"Tab index {tab_index} out of range (0..{len(pages) - 1})")
         target_page = pages[tab_index]
-        await target_page.bring_to_front()
+        from core.permissions import get_current_task_id
+
+        is_bg = bool(get_current_task_id() or getattr(self, "background_mode", False))
+        if not is_bg:
+            await target_page.bring_to_front()
         self._active_page = target_page
         self._cdp_session = None  # refresh CDP session for new tab
         title = await target_page.title()
