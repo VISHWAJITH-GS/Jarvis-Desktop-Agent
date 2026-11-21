@@ -24,6 +24,7 @@ def detect_profile_chooser(browser: str = "") -> Optional[Any]:
     """
     try:
         from actions import windows_uia
+        from memory import config_manager
 
         if not windows_uia.is_available():
             return None
@@ -31,7 +32,7 @@ def detect_profile_chooser(browser: str = "") -> Optional[Any]:
         if not desktop:
             return None
 
-        b_filter = (browser or "").lower().strip()
+        b_filter = (browser or config_manager.get_browser_engine() or "").lower().strip()
 
         # Check foreground / active window first
         active = windows_uia.get_active_window()
@@ -77,17 +78,19 @@ def select_browser_profile(
         return outcome.failed("browser_profile", "A profile_name is required (e.g. 'Student', 'Default').")
 
     from actions import windows_uia
+    from memory import config_manager
 
+    active_browser = (browser or config_manager.get_browser_engine() or "").lower().strip()
     clean_target = profile_name.strip()
     clean_lower = clean_target.lower()
 
     # 1. Check if a dedicated profile chooser dialog is open
-    chooser_window = detect_profile_chooser(browser)
+    chooser_window = detect_profile_chooser(active_browser)
     target_window = chooser_window
 
     if target_window is None:
         # Fall back to Chrome or Edge window
-        if "chrome" in (browser or "").lower():
+        if "chrome" in active_browser:
             target_window = windows_uia._get_chrome_window()
         else:
             target_window = windows_uia._get_edge_window() or windows_uia._get_chrome_window()

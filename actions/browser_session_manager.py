@@ -14,10 +14,17 @@ from actions.browser_session import (
     BrowserSessionManager,
     BrowserSessionState,
     CDPConnectionError,
+    DEFAULT_CDP_URL,
+    DEFAULT_CHROME_PORT,
+    DEFAULT_EDGE_PORT,
     FrameInfo,
     TabInfo,
+    build_browser_launch_command,
     get_browser_session_manager,
-    DEFAULT_CDP_URL,
+    get_default_cdp_port,
+    get_default_cdp_url,
+    locate_browser_executable,
+    verify_browser_identity,
 )
 
 
@@ -46,6 +53,13 @@ __all__ = [
     "TabInfo",
     "get_browser_session_manager",
     "DEFAULT_CDP_URL",
+    "DEFAULT_CHROME_PORT",
+    "DEFAULT_EDGE_PORT",
+    "get_default_cdp_port",
+    "get_default_cdp_url",
+    "locate_browser_executable",
+    "build_browser_launch_command",
+    "verify_browser_identity",
     "BrowserNetworkError",
     "BrowserConsoleMessage",
 ]

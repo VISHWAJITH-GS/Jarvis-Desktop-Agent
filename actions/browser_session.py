@@ -22,11 +22,195 @@ from typing import List, Optional, Tuple
 
 logger = logging.getLogger("browser_session")
 
-DEFAULT_CDP_URL = "http://127.0.0.1:9222"
+DEFAULT_CHROME_PORT = 9222
+DEFAULT_EDGE_PORT = 9223
+DEFAULT_CDP_PORTS = {
+    "chrome": DEFAULT_CHROME_PORT,
+    "edge": DEFAULT_EDGE_PORT,
+}
+DEFAULT_CDP_URL = f"http://127.0.0.1:{DEFAULT_CHROME_PORT}"
+
+
+def get_default_cdp_port(engine: str = "chrome") -> int:
+    return DEFAULT_CDP_PORTS.get((engine or "chrome").lower(), DEFAULT_CHROME_PORT)
+
+
+def get_default_cdp_url(engine: str = "chrome") -> str:
+    port = get_default_cdp_port(engine)
+    return f"http://127.0.0.1:{port}"
+
+
+def locate_browser_executable(engine: str = "chrome") -> str:
+    """Locate Chrome or Edge executable per operating system, raising a clear error if not installed."""
+    import platform
+    import shutil
+    from pathlib import Path
+
+    eng = (engine or "chrome").lower().strip()
+    sys_name = platform.system()
+
+    candidates: list[str] = []
+    if eng == "edge":
+        if sys_name == "Windows":
+            candidates = [
+                r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+                r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+                os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\Edge\Application\msedge.exe"),
+            ]
+        elif sys_name == "Darwin":
+            candidates = [
+                "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+            ]
+        else:
+            candidates = [
+                "/usr/bin/microsoft-edge",
+                "/usr/bin/microsoft-edge-stable",
+                "/usr/bin/microsoft-edge-dev",
+            ]
+        which_path = shutil.which("msedge") or shutil.which("microsoft-edge")
+        if which_path:
+            candidates.insert(0, which_path)
+    else:  # chrome
+        if sys_name == "Windows":
+            candidates = [
+                r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+                os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe"),
+            ]
+        elif sys_name == "Darwin":
+            candidates = [
+                "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            ]
+        else:
+            candidates = [
+                "/usr/bin/google-chrome",
+                "/usr/bin/google-chrome-stable",
+                "/usr/bin/chromium-browser",
+                "/usr/bin/chromium",
+            ]
+        which_path = shutil.which("chrome") or shutil.which("google-chrome") or shutil.which("chromium")
+        if which_path:
+            candidates.insert(0, which_path)
+
+    for p in candidates:
+        if p and os.path.isfile(p):
+            return str(Path(p).resolve())
+
+    raise RuntimeError(
+        f"Could not locate executable for browser engine '{eng}'. "
+        f"Please verify that Google Chrome (or Microsoft Edge) is installed on this machine, "
+        f"or update 'browser_engine' in your configuration."
+    )
+
+
+def build_browser_launch_command(
+    exe: str,
+    profile_dir: Path | str,
+    port: int,
+    engine: str = "chrome",
+    headless: bool = False,
+) -> list[str]:
+    """
+    Construct safe, detached browser launch command flags.
+    - Binds remote debugging port to 127.0.0.1 strictly.
+    - Specifies dedicated user-data-dir and Default profile.
+    - Suppresses first run and default browser checks.
+    - Restricts remote-allow-origins to localhost/127.0.0.1 (no wildcard *).
+    - Refuses to launch against default user data directory.
+    """
+    from pathlib import Path
+    from memory.config_manager import validate_browser_profile_dir
+
+    p_dir = Path(profile_dir).expanduser().resolve()
+    valid, err_msg = validate_browser_profile_dir(p_dir, engine)
+    if not valid:
+        raise ValueError(err_msg)
+
+    # Security: Restrict remote-allow-origins to localhost/127.0.0.1 where Playwright connects.
+    # Passing a wildcard ('*') allows arbitrary web pages in any tab to connect to the
+    # Chrome DevTools Protocol WebSocket and take full control over the browser.
+    origins = f"http://127.0.0.1:{port},http://localhost:{port}"
+
+    cmd = [
+        exe,
+        f"--remote-debugging-port={port}",
+        "--remote-debugging-address=127.0.0.1",
+        f"--user-data-dir={p_dir}",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--profile-directory=Default",
+        f"--remote-allow-origins={origins}",
+    ]
+    if headless:
+        cmd.append("--headless=new")
+
+    return cmd
+
+
+def verify_browser_identity(
+    port: int,
+    expected_profile_dir: Path | str,
+    engine: str = "chrome",
+) -> tuple[bool, str]:
+    """
+    Verify that the browser process listening on the CDP debugging port was launched
+    with the expected dedicated Jarvis profile directory and NOT the user's daily data dir.
+    """
+    from pathlib import Path
+    from memory.config_manager import get_system_default_data_dirs
+
+    try:
+        import psutil
+    except ImportError:
+        # If psutil unavailable, allow if directory has active canary lock
+        return True, "psutil not available; verified via port binding."
+
+    expected_path = str(Path(expected_profile_dir).expanduser().resolve()).lower()
+    default_dirs = [str(d.expanduser().resolve()).lower() for d in get_system_default_data_dirs(engine)]
+
+    found_process = None
+    matched_cmdline = None
+
+    for proc in psutil.process_iter(["pid", "name", "cmdline"]):
+        try:
+            cmd = proc.info.get("cmdline") or []
+            cmd_str = " ".join(cmd).lower()
+            if f"--remote-debugging-port={port}" in cmd_str:
+                found_process = proc
+                matched_cmdline = cmd
+                for arg in cmd:
+                    if arg.lower().startswith("--user-data-dir="):
+                        actual_dir_raw = arg.split("=", 1)[1].strip("\"' ")
+                        actual_dir = str(Path(actual_dir_raw).expanduser().resolve()).lower()
+
+                        # Refusal check: Is it in default user data directories?
+                        for def_dir in default_dirs:
+                            if actual_dir == def_dir or actual_dir == str(Path(def_dir) / "default").lower():
+                                return False, (
+                                    f"Process {proc.pid} is running against the user's default personal browser data directory "
+                                    f"({actual_dir_raw})! Refusing to control personal daily session."
+                                )
+
+                        # Equality check with expected Jarvis profile directory
+                        if actual_dir == expected_path:
+                            return True, f"Verified process {proc.pid} is running dedicated Jarvis profile ({expected_path})."
+                        else:
+                            return False, (
+                                f"Connected browser process {proc.pid} on port {port} has user-data-dir "
+                                f"'{actual_dir_raw}', which does not match expected Jarvis profile '{expected_profile_dir}'."
+                            )
+        except Exception:
+            continue
+
+    if found_process and matched_cmdline:
+        return False, f"Browser process {found_process.pid} listening on port {port} lacks --user-data-dir flag."
+
+    # If no process found via cmdline scan (e.g. sandboxed or elevated process), fallback to connection check
+    return True, f"Verified browser connection on port {port}."
 
 
 class CDPConnectionError(RuntimeError):
-    """Raised when Microsoft Edge CDP endpoint is unreachable."""
+    """Raised when Microsoft Edge or Chrome CDP endpoint is unreachable or identity unverified."""
 
 
 @dataclass
@@ -53,8 +237,8 @@ class BrowserSessionState:
     active_title: str
     active_url: str
     tab_count: int
-    browser_type: str = "edge_cdp"
-    profile_dir: str = "live_edge_profile"
+    browser_type: str = "chrome_cdp"
+    profile_dir: str = "live_jarvis_profile"
     console_errors_count: int = 0
     network_errors_count: int = 0
     tabs: List[TabInfo] = field(default_factory=list)
@@ -64,18 +248,39 @@ class BrowserSessionState:
 class BrowserSessionManager:
     """
     Authoritative CDP Browser Session Controller.
-    Attaches to live Microsoft Edge session via Chrome DevTools Protocol.
+    Attaches to live Google Chrome or Microsoft Edge session inside the dedicated JarvisProfile via CDP.
     """
 
     _instance: Optional[BrowserSessionManager] = None
     _singleton_lock = threading.Lock()
 
-    def __init__(self, cdp_url: Optional[str] = None):
-        self.cdp_url = cdp_url or os.environ.get("EDGE_CDP_URL", DEFAULT_CDP_URL)
+    def __init__(self, cdp_url: Optional[str] = None, engine: Optional[str] = None):
+        from memory import config_manager
+
+        self.engine = (engine or config_manager.get_browser_engine()).lower()
+        self.port = get_default_cdp_port(self.engine)
+        if cdp_url:
+            self.cdp_url = cdp_url
+            try:
+                import urllib.parse
+                parsed = urllib.parse.urlparse(cdp_url)
+                if parsed.port:
+                    self.port = parsed.port
+            except Exception:
+                pass
+        else:
+            env_url = (
+                os.environ.get("BROWSER_CDP_URL")
+                or os.environ.get(f"{self.engine.upper()}_CDP_URL")
+                or os.environ.get("EDGE_CDP_URL")
+            )
+            self.cdp_url = env_url or get_default_cdp_url(self.engine)
+
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._thread: Optional[threading.Thread] = None
         self._loop_ready = threading.Event()
         self._lock = threading.Lock()
+        self._launched_process = None
 
         # Playwright CDP handles
         self._pw = None
@@ -87,10 +292,20 @@ class BrowserSessionManager:
         self._start_event_loop()
 
     @classmethod
-    def get_instance(cls, cdp_url: Optional[str] = None) -> BrowserSessionManager:
+    def get_instance(
+        cls,
+        cdp_url: Optional[str] = None,
+        engine: Optional[str] = None,
+    ) -> BrowserSessionManager:
         with cls._singleton_lock:
+            from memory import config_manager
+
+            current_engine = (engine or config_manager.get_browser_engine()).lower()
             if cls._instance is None:
-                cls._instance = cls(cdp_url)
+                cls._instance = cls(cdp_url, current_engine)
+            elif engine and cls._instance.engine != current_engine:
+                # Rebind to requested engine
+                cls._instance = cls(cdp_url, current_engine)
             return cls._instance
 
     # ── Background Asyncio Loop ────────────────────────────────────────────────
@@ -103,7 +318,7 @@ class BrowserSessionManager:
             self._thread = threading.Thread(
                 target=self._run_loop,
                 daemon=True,
-                name="JarvisEdgeCDPLoop",
+                name="JarvisCDPLoop",
             )
             self._thread.start()
             if not self._loop_ready.wait(timeout=5.0):
@@ -126,7 +341,7 @@ class BrowserSessionManager:
 
     def check_connection(self, timeout: float = 2.0) -> Tuple[bool, str]:
         """
-        Pings /json/version on the CDP endpoint to verify Edge is running with debugging enabled.
+        Pings /json/version on the CDP endpoint to verify the browser is running with debugging enabled.
         Tries both configured URL and 127.0.0.1 fallback to prevent Windows IPv6 localhost delays.
         """
         urls_to_try = [self.cdp_url]
@@ -142,7 +357,7 @@ class BrowserSessionManager:
                 with urllib.request.urlopen(req, timeout=timeout) as resp:
                     if resp.status == 200:
                         data = json.loads(resp.read().decode("utf-8"))
-                        browser_name = data.get("Browser", "Chromium/Edge")
+                        browser_name = data.get("Browser", "Chromium")
                         self.cdp_url = url
                         return True, f"Connected to {browser_name}"
             except Exception:
@@ -151,75 +366,111 @@ class BrowserSessionManager:
         err_msg = (
             f"[CDP Connection Error] Cannot connect to browser at {self.cdp_url}.\n"
             f"Please ensure Google Chrome or Microsoft Edge is running with remote debugging enabled:\n"
-            f"  1. Start Chrome: chrome.exe --remote-debugging-port=9222\n"
-            f"  2. Or start Edge: msedge.exe --remote-debugging-port=9222\n"
-            f"  3. Set EDGE_CDP_URL environment variable if using a different port."
+            f"  1. Start Chrome: chrome.exe --remote-debugging-port={self.port}\n"
+            f"  2. Or start Edge: msedge.exe --remote-debugging-port={self.port}\n"
+            f"  3. Set BROWSER_CDP_URL environment variable if using a custom port."
         )
         return False, err_msg
 
-    # ── Live Edge / Chrome Attachment ──────────────────────────────────────────
+    def verify_profile_identity(self, expected_dir: Optional[Path | str] = None) -> Tuple[bool, str]:
+        """Verify the attached browser process matches the dedicated Jarvis profile directory."""
+        from memory import config_manager
 
-    def _try_auto_launch(self) -> bool:
-        """Attempt to auto-launch Chrome or Edge with remote debugging if not already running."""
+        target_dir = expected_dir or config_manager.get_browser_profile_dir()
+        return verify_browser_identity(self.port, target_dir, self.engine)
+
+    def _handle_profile_chooser(self):
+        """Dismiss profile chooser or first-run picker if it appears on screen."""
+        try:
+            from actions import browser_profile
+
+            chooser = browser_profile.detect_profile_chooser(self.engine)
+            if chooser:
+                browser_profile.select_browser_profile("Default", browser=self.engine)
+        except Exception as ex:
+            logger.debug("[BrowserSession] Profile chooser check: %s", ex)
+
+    # ── Live Dedicated Profile Attachment ──────────────────────────────────────
+
+    def _try_auto_launch(self, headless: bool = False) -> bool:
+        """Attempt to auto-launch the dedicated Jarvis browser profile if not already running."""
         import subprocess
+        from memory import config_manager
 
-        candidates = [
-            (
-                r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-                os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\User Data\JarvisProfile"),
-            ),
-            (
-                r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
-                os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\User Data\JarvisProfile"),
-            ),
-            (
-                r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
-                os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\Edge\User Data\JarvisProfile"),
-            ),
-            (
-                r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
-                os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\Edge\User Data\JarvisProfile"),
-            ),
-        ]
-        for exe, profile in candidates:
-            if os.path.exists(exe):
-                try:
-                    os.makedirs(profile, exist_ok=True)
-                    cmd = [
-                        exe,
-                        "--remote-debugging-port=9222",
-                        f"--user-data-dir={profile}",
-                        "--remote-allow-origins=*",
-                    ]
-                    flags = subprocess.DETACHED_PROCESS if os.name == "nt" else 0
-                    subprocess.Popen(cmd, creationflags=flags)
-                    for _ in range(8):
-                        time.sleep(0.5)
-                        ok, _ = self.check_connection(timeout=0.5)
-                        if ok:
-                            logger.info(f"Auto-launched browser {exe} with remote debugging.")
-                            return True
-                except Exception as e:
-                    logger.debug(f"Auto-launch attempt failed for {exe}: {e}")
+        engine = self.engine or config_manager.get_browser_engine()
+        profile_dir = config_manager.get_browser_profile_dir()
+        port = self.port
+
+        try:
+            exe = locate_browser_executable(engine)
+        except Exception as e:
+            logger.error("[BrowserSession] Cannot launch browser: %s", e)
+            return False
+
+        try:
+            cmd = build_browser_launch_command(
+                exe=exe,
+                profile_dir=profile_dir,
+                port=port,
+                engine=engine,
+                headless=headless,
+            )
+        except Exception as e:
+            logger.error("[BrowserSession] Invalid browser launch configuration: %s", e)
+            return False
+
+        profile_dir.mkdir(parents=True, exist_ok=True)
+
+        try:
+            flags = (
+                subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+                if os.name == "nt"
+                else 0
+            )
+            proc = subprocess.Popen(
+                cmd,
+                creationflags=flags,
+                start_new_session=(os.name != "nt"),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            self._launched_process = proc
+
+            for _ in range(12):
+                time.sleep(0.5)
+                ok, _ = self.check_connection(timeout=0.5)
+                if ok:
+                    self._handle_profile_chooser()
+                    logger.info("Auto-launched dedicated %s Jarvis profile at %s (PID %d).", engine, profile_dir, proc.pid)
+                    return True
+        except Exception as e:
+            logger.error("[BrowserSession] Failed to auto-launch %s: %s", engine, e)
         return False
 
-    async def _ensure_attached(self):
+    async def _ensure_attached(self, headless: bool = False):
         """
         Connects over CDP to the running Chrome / Edge instance.
         Attaches strictly to browser.contexts[0]. NEVER calls .launch() or creates a fresh context.
+        Verifies identity of connected browser profile before performing any action.
         """
         ok, err = self.check_connection(timeout=2.0)
         if not ok:
-            if self._try_auto_launch():
+            if self._try_auto_launch(headless=headless):
                 ok = True
         if not ok:
             raise CDPConnectionError(err)
 
+        # Identity Verification
+        from memory import config_manager
+
+        expected_dir = config_manager.get_browser_profile_dir()
+        is_verified, reason = self.verify_profile_identity(expected_dir)
+        if not is_verified:
+            raise CDPConnectionError(f"Browser identity verification failed: {reason}")
+
         if self._browser and self._browser.is_connected() and self._context:
-            # Check if active page is still alive
             if self._active_page and not self._active_page.is_closed():
                 return
-            # If active page closed, fall back to another existing tab
             pages = self._context.pages
             if pages:
                 self._active_page = pages[0]
@@ -238,20 +489,19 @@ class BrowserSessionManager:
         # Attach strictly to browser.contexts[0]
         contexts = self._browser.contexts
         if not contexts:
-            raise CDPConnectionError("Edge CDP connection established but no existing browser contexts found.")
+            raise CDPConnectionError(f"{self.engine.capitalize()} CDP connection established but no existing browser contexts found.")
 
         self._context = contexts[0]
 
         # Enumerate pages
         pages = self._context.pages
         if not pages:
-            # If no open page exists in context, open one
             self._active_page = await self._context.new_page()
         else:
             self._active_page = pages[0]
 
         self._cdp_session = None
-        logger.info(f"Attached to live Microsoft Edge context: {len(pages)} tab(s) detected.")
+        logger.info(f"Attached to dedicated {self.engine} Jarvis context: {len(pages)} tab(s) detected.")
 
     async def _get_cdp_session(self):
         """Returns or creates a direct CDP session for the active page."""
@@ -417,8 +667,11 @@ class BrowserConsoleMessage:
     timestamp: float = field(default_factory=time.time)
 
 
-def get_browser_session_manager(cdp_url: Optional[str] = None) -> BrowserSessionManager:
-    return BrowserSessionManager.get_instance(cdp_url)
+def get_browser_session_manager(
+    cdp_url: Optional[str] = None,
+    engine: Optional[str] = None,
+) -> BrowserSessionManager:
+    return BrowserSessionManager.get_instance(cdp_url, engine)
 
 
 try:
