@@ -20,6 +20,7 @@ from gui.theme import _RESIZE_MARGIN, _NO_SCROLLBAR_STYLE, _HUE_LINKED, _PALETTE
 
 from gui.hud import *
 from gui.widgets import *
+from gui.widgets import _FILE_ICONS, _file_category, _fmt_size
 from gui.overlays import *
 from gui.providers_panel import *
 from gui.settings_overlays import *
@@ -146,7 +147,7 @@ class WindowControlsMixin:
     def _toggle_autostart(self):
         currently_on = self._check_autostart()
         try:
-            script = str(Path(__file__).resolve().parent / "main.py")
+            script = str(BASE_DIR / "main.py")
             if _OS == "Windows":
                 import winreg
                 reg = winreg.OpenKey(winreg.HKEY_CURRENT_USER,

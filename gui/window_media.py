@@ -399,12 +399,12 @@ class WindowMediaMixin:
         Never opens a terminal, console, or PowerShell window on any platform.
         """
         import stat as _stat
-        script  = Path(__file__).resolve().parent / "main.py"
+        script  = BASE_DIR / "main.py"
         python  = Path(sys.executable)
         desktop = self._get_desktop_dir()
 
         # Arc-reactor icon (.ico — also exported as .png for Linux/macOS)
-        ico_path = Path(__file__).resolve().parent / "config" / "jarvis.ico"
+        ico_path = CONFIG_DIR / "jarvis.ico"
         if not ico_path.exists():
             self._build_jarvis_icon(ico_path)
 

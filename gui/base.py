@@ -73,7 +73,7 @@ except Exception:
 def _base_dir() -> Path:
     if getattr(sys, "frozen", False):
         return Path(sys.executable).parent
-    return Path(__file__).resolve().parent
+    return Path(__file__).resolve().parent.parent
 
 BASE_DIR   = _base_dir()
 CONFIG_DIR = BASE_DIR / "config"
@@ -522,9 +522,7 @@ def _load_app_fonts():
     if app is None:
         return
     try:
-        from pathlib import Path
-        base_dir = Path(__file__).resolve().parent
-        fonts_dir = base_dir / "fonts"
+        fonts_dir = BASE_DIR / "fonts"
         if fonts_dir.is_dir():
             for font_file in sorted(fonts_dir.glob("*.ttf")):
                 QFontDatabase.addApplicationFont(str(font_file))
