@@ -332,6 +332,90 @@ def parse_datetime(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+def notify_user(message: str, title: str = "JARVIS Reminder") -> bool:
+    """Send native desktop notification across platforms (Windows, macOS, Linux)."""
+    notified = False
+    sys_plat = platform.system()
+
+    # 1. macOS (Darwin) notification via osascript
+    if sys_plat == "Darwin":
+        try:
+            clean_msg = message.replace('"', '\\"').replace("'", "\\'")
+            clean_title = title.replace('"', '\\"').replace("'", "\\'")
+            script = f'display notification "{clean_msg}" with title "{clean_title}"'
+            res = subprocess.run(["osascript", "-e", script], capture_output=True, check=False)
+            if res.returncode == 0:
+                notified = True
+        except Exception:
+            pass
+    # 2. Linux notification via notify-send
+    elif sys_plat == "Linux":
+        try:
+            res = subprocess.run(["notify-send", title, message], capture_output=True, check=False)
+            if res.returncode == 0:
+                notified = True
+        except Exception:
+            pass
+
+    # 3. Windows Notification via plyer
+    if not notified:
+        try:
+            from plyer import notification
+            notification.notify(title=title, message=message, timeout=20)
+            notified = True
+        except Exception:
+            pass
+
+    # 4. Windows Notification via win10toast
+    if not notified:
+        try:
+            from win10toast import ToastNotifier
+            ToastNotifier().show_toast(title, message, duration=15, threaded=False)
+            notified = True
+        except Exception:
+            pass
+
+    # 5. PowerShell toast notification
+    if not notified:
+        try:
+            clean_title = title.replace('"', '`"').replace("'", "''")
+            clean_msg = message.replace('"', '`"').replace("'", "''")
+            ps_script = (
+                "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null`n"
+                "$template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02)`n"
+                "$textNodes = $template.GetElementsByTagName('text')`n"
+                f"$textNodes.Item(0).AppendChild($template.CreateTextNode('{clean_title}')) | Out-Null`n"
+                f"$textNodes.Item(1).AppendChild($template.CreateTextNode('{clean_msg}')) | Out-Null`n"
+                "$toast = [Windows.UI.Notifications.ToastNotification]::new($template)`n"
+                "[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('JARVIS').Show($toast)"
+            )
+            res = subprocess.run(["powershell", "-NoProfile", "-Command", ps_script], check=False, capture_output=True)
+            if res.returncode == 0:
+                notified = True
+        except Exception:
+            pass
+
+    # 6. Fallback Windows msg command
+    if not notified:
+        try:
+            res = subprocess.run(["msg", "*", "/TIME:30", f"{title}: {message}"], check=False, capture_output=True)
+            if res.returncode == 0:
+                notified = True
+        except Exception:
+            pass
+
+    # Audio cue (Windows only)
+    try:
+        import winsound
+        for freq in [800, 1000, 1200]:
+            winsound.Beep(freq, 160)
+            time.sleep(0.06)
+    except Exception:
+        pass
+
+    return notified
+
+
 def _ensure_notifier_script() -> Path:
     """Ensure the single authoritative reminder notifier script exists."""
     script_path = _reminders_dir() / "reminder_notifier.py"
@@ -346,53 +430,78 @@ import sqlite3
 import time
 from datetime import datetime
 
-def notify_user(message: str) -> None:
+def notify_user(message: str, title: str = "JARVIS Reminder") -> bool:
     notified = False
-    # 1. Windows Notification via plyer
-    try:
-        from plyer import notification
-        notification.notify(title="JARVIS Reminder", message=message, timeout=20)
-        notified = True
-    except Exception:
-        pass
+    sys_plat = platform.system()
 
-    # 2. Windows Notification via win10toast
+    # 1. macOS (Darwin) notification via osascript
+    if sys_plat == "Darwin":
+        try:
+            clean_msg = message.replace('"', '\\"').replace("'", "\\'")
+            clean_title = title.replace('"', '\\"').replace("'", "\\'")
+            script = f'display notification "{clean_msg}" with title "{clean_title}"'
+            res = subprocess.run(["osascript", "-e", script], capture_output=True, check=False)
+            if res.returncode == 0:
+                notified = True
+        except Exception:
+            pass
+    # 2. Linux notification via notify-send
+    elif sys_plat == "Linux":
+        try:
+            res = subprocess.run(["notify-send", title, message], capture_output=True, check=False)
+            if res.returncode == 0:
+                notified = True
+        except Exception:
+            pass
+
+    # 3. Windows Notification via plyer
     if not notified:
         try:
-            from win10toast import ToastNotifier
-            ToastNotifier().show_toast("JARVIS Reminder", message, duration=15, threaded=False)
+            from plyer import notification
+            notification.notify(title=title, message=message, timeout=20)
             notified = True
         except Exception:
             pass
 
-    # 3. PowerShell toast notification
+    # 4. Windows Notification via win10toast
     if not notified:
         try:
-            import subprocess
+            from win10toast import ToastNotifier
+            ToastNotifier().show_toast(title, message, duration=15, threaded=False)
+            notified = True
+        except Exception:
+            pass
+
+    # 5. PowerShell toast notification
+    if not notified:
+        try:
+            clean_title = title.replace('"', '`"').replace("'", "''")
             clean_msg = message.replace('"', '`"').replace("'", "''")
             ps_script = (
                 "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null`n"
                 "$template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02)`n"
                 "$textNodes = $template.GetElementsByTagName('text')`n"
-                "$textNodes.Item(0).AppendChild($template.CreateTextNode('JARVIS Reminder')) | Out-Null`n"
+                f"$textNodes.Item(0).AppendChild($template.CreateTextNode('{clean_title}')) | Out-Null`n"
                 f"$textNodes.Item(1).AppendChild($template.CreateTextNode('{clean_msg}')) | Out-Null`n"
                 "$toast = [Windows.UI.Notifications.ToastNotification]::new($template)`n"
                 "[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('JARVIS').Show($toast)"
             )
-            subprocess.run(["powershell", "-NoProfile", "-Command", ps_script], check=False)
-            notified = True
+            res = subprocess.run(["powershell", "-NoProfile", "-Command", ps_script], check=False, capture_output=True)
+            if res.returncode == 0:
+                notified = True
         except Exception:
             pass
 
-    # 4. Fallback Windows msg command
+    # 6. Fallback Windows msg command
     if not notified:
         try:
-            import subprocess
-            subprocess.run(["msg", "*", "/TIME:30", f"JARVIS Reminder: {message}"], check=False)
+            res = subprocess.run(["msg", "*", "/TIME:30", f"{title}: {message}"], check=False, capture_output=True)
+            if res.returncode == 0:
+                notified = True
         except Exception:
             pass
 
-    # Audio cue
+    # Audio cue (Windows only)
     try:
         import winsound
         for freq in [800, 1000, 1200]:
@@ -400,6 +509,8 @@ def notify_user(message: str) -> None:
             time.sleep(0.06)
     except Exception:
         pass
+
+    return notified
 
 def main():
     parser = argparse.ArgumentParser(description="JARVIS Authoritative Reminder Notifier")

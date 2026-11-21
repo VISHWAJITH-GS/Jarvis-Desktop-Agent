@@ -543,6 +543,244 @@ def resolve_task_by_title_or_id(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+#  Notifications & Scheduler
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _dispatch_desktop_notification(title: str, message: str) -> bool:
+    """Send native desktop notification reusing actions/reminder.py mechanism."""
+    try:
+        from actions.reminder import notify_user
+        return bool(notify_user(message, title=title))
+    except Exception as e:
+        logger.warning(f"[Productivity] Desktop notification dispatch failed: {e}")
+        return False
+
+
+def check_due_reminders(
+    store: ProductivityStore,
+    now: Optional[datetime] = None,
+    player=None,
+    boot_check: bool = False,
+) -> List[dict]:
+    """
+    Check for pending task reminders that are due.
+    - If boot_check is True or first run, fires reminders missed while JARVIS was closed once, marked as [MISSED].
+    - Normal due reminders fire once when due.
+    - Persists already-notified IDs so restarts never dupe.
+    Returns list of dispatched reminder records.
+    """
+    curr = now or datetime.now()
+    curr_iso = curr.isoformat()
+
+    data = store.load()
+    tasks = data.get("tasks", {})
+    notified_ids = set(data.get("notified_reminder_ids", []))
+    last_missed_check = data.get("last_missed_check")
+    dispatched = []
+
+    is_first_startup_check = boot_check or (last_missed_check is None)
+
+    for task_id, task in tasks.items():
+        if task.get("status") != "pending":
+            continue
+        due = task.get("due")
+        if not due:
+            continue
+
+        try:
+            due_dt = datetime.fromisoformat(due)
+        except Exception:
+            continue
+
+        # Check all reminder times or due
+        reminder_times = task.get("reminder_times") or [due]
+        for rem_str in reminder_times:
+            rem_key = f"{task_id}:{rem_str}"
+            if rem_key in notified_ids:
+                continue
+
+            try:
+                rem_dt = datetime.fromisoformat(rem_str)
+            except Exception:
+                rem_dt = due_dt
+
+            if rem_dt <= curr:
+                # This reminder is due!
+                is_missed = bool(boot_check)
+                prio_str = task.get("priority", "normal").upper()
+                due_display = rem_dt.strftime("%Y-%m-%d %I:%M %p")
+
+                if is_missed:
+                    notif_title = f"[MISSED] {task.get('title')} [{prio_str}]"
+                    notif_msg = f"Was due {due_display} (missed while closed)."
+                    spk_text = f"Sir, you have a missed reminder for {task.get('title')}, which was due earlier at {due_display}."
+                else:
+                    notif_title = f"Reminder: {task.get('title')} [{prio_str}]"
+                    notif_msg = f"Due: {due_display} | Priority: {task.get('priority', 'normal')}"
+                    spk_text = f"Sir, reminder for your task: {task.get('title')}."
+
+                success = _dispatch_desktop_notification(notif_title, notif_msg)
+
+                if player:
+                    try:
+                        player.write_log(f"🔔 {notif_title}: {notif_msg}")
+                    except Exception:
+                        pass
+                    if hasattr(player, "request_say") and callable(player.request_say):
+                        try:
+                            player.request_say(spk_text)
+                        except Exception as se:
+                            logger.debug(f"[Productivity] Speak reminder error: {se}")
+
+                notified_ids.add(rem_key)
+                data["last_reminded_task_id"] = task_id
+                dispatched.append({
+                    "task_id": task_id,
+                    "title": task.get("title"),
+                    "key": rem_key,
+                    "missed": is_missed,
+                    "verified": success,
+                })
+
+    if dispatched or is_first_startup_check:
+        data["notified_reminder_ids"] = list(notified_ids)
+        data["last_missed_check"] = curr_iso
+        store.save_and_verify(data)
+
+    return dispatched
+
+
+def snooze(store: ProductivityStore, params: dict) -> str:
+    """Snooze the last reminded task or a specified task."""
+    data = store.load()
+    tasks = data.get("tasks", {})
+    duration = int(params.get("duration_minutes") or 10)
+    if duration <= 0:
+        duration = 10
+
+    target_query = params.get("task_id") or params.get("title")
+    task = None
+    if target_query:
+        task, candidates, err = resolve_task_by_title_or_id(target_query, tasks)
+        if err and not task:
+            if candidates:
+                return outcome.ask("productivity", err)
+            return outcome.failed("productivity", err)
+    else:
+        last_id = data.get("last_reminded_task_id")
+        if last_id and last_id in tasks and tasks[last_id].get("status") == "pending":
+            task = tasks[last_id]
+        else:
+            # Fall back to most urgently due pending task
+            pending_with_due = [t for t in tasks.values() if t.get("status") == "pending" and t.get("due")]
+            if pending_with_due:
+                pending_with_due.sort(key=lambda t: t.get("due", ""))
+                task = pending_with_due[0]
+
+    if not task:
+        return outcome.failed("productivity", "No recently reminded task found to snooze.")
+
+    task_id = task["id"]
+    old_task_snapshot = dict(task)
+
+    now = datetime.now()
+    new_due = now + timedelta(minutes=duration)
+    new_due_iso = new_due.isoformat()
+
+    task["due"] = new_due_iso
+    reminder_times = task.get("reminder_times", [])
+    if new_due_iso not in reminder_times:
+        reminder_times.append(new_due_iso)
+    task["reminder_times"] = reminder_times
+
+    # Remove any notified entry matching this new due time so it fires cleanly
+    notified_ids = set(data.get("notified_reminder_ids", []))
+    new_key = f"{task_id}:{new_due_iso}"
+    notified_ids.discard(new_key)
+    data["notified_reminder_ids"] = list(notified_ids)
+
+    data["tasks"][task_id] = task
+    data["last_reminded_task_id"] = task_id
+    verified = store.save_and_verify(data)
+
+    if not verified:
+        return outcome.unverified("productivity", "Failed to verify snooze save.", id=task_id)
+
+    def _undo_snooze():
+        d = store.load()
+        if task_id in d.get("tasks", {}):
+            d["tasks"][task_id] = old_task_snapshot
+            store.save_and_verify(d)
+        return f"Snooze on '{old_task_snapshot.get('title')}' reverted."
+
+    push_undo(f"snooze task '{task['title']}' for {duration}m", _undo_snooze)
+
+    return outcome.done(
+        "productivity",
+        id=task_id,
+        title=task["title"],
+        snoozed_minutes=duration,
+        new_due=new_due_iso,
+    )
+
+
+class ProductivityScheduler:
+    """Daemon scheduler checking due reminders every 30 seconds."""
+
+    def __init__(
+        self,
+        store: Optional[ProductivityStore] = None,
+        player=None,
+        interval_seconds: float = 30.0,
+    ):
+        self.store = store or get_store()
+        self.player = player
+        self.interval_seconds = interval_seconds
+        self._stop_event = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+
+    def start(self) -> None:
+        if self._thread and self._thread.is_alive():
+            return
+        self._stop_event.clear()
+        # Initial boot check: fire missed reminders once
+        try:
+            check_due_reminders(self.store, player=self.player, boot_check=True)
+        except Exception as e:
+            logger.error(f"[ProductivityScheduler] Initial boot check failed: {e}")
+
+        def _loop():
+            while not self._stop_event.is_set():
+                try:
+                    check_due_reminders(self.store, player=self.player, boot_check=False)
+                except Exception as ex:
+                    logger.error(f"[ProductivityScheduler] Periodic reminder check error: {ex}")
+                self._stop_event.wait(self.interval_seconds)
+
+        self._thread = threading.Thread(target=_loop, daemon=True, name="productivity-scheduler")
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop_event.set()
+        if self._thread:
+            self._thread.join(timeout=2.0)
+            self._thread = None
+
+
+_global_scheduler: Optional[ProductivityScheduler] = None
+
+
+def ensure_scheduler_started(player=None) -> ProductivityScheduler:
+    global _global_scheduler
+    if _global_scheduler is None:
+        _global_scheduler = ProductivityScheduler(player=player)
+        _global_scheduler.start()
+    elif player and not _global_scheduler.player:
+        _global_scheduler.player = player
+    return _global_scheduler
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 #  Task Actions
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -944,8 +1182,7 @@ def run(parameters: dict, player=None, session_memory=None) -> str:
             # Will be fully fleshed out in Part 3
             result = outcome.failed("productivity", f"Habit action '{action}' is being initialized.")
         elif action == "snooze":
-            # Will be fully fleshed out in Part 2
-            result = outcome.failed("productivity", "Snooze action is being initialized.")
+            result = snooze(store, parameters)
         else:
             result = outcome.failed(
                 "productivity",

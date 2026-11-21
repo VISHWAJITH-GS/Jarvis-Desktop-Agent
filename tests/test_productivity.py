@@ -177,5 +177,123 @@ class TestProductivityPart1(unittest.TestCase):
         self.assertTrue(chore["due"].startswith(now.strftime("%Y-%m-%d")))
 
 
+class TestProductivityPart2(unittest.TestCase):
+    def setUp(self):
+        self.test_dir = tempfile.mkdtemp()
+        self.store_file = Path(self.test_dir) / "productivity.json"
+        self.store = productivity.ProductivityStore(self.store_file)
+        self._orig_store = productivity._global_store
+        productivity._global_store = self.store
+        undo.clear()
+
+    def tearDown(self):
+        productivity._global_store = self._orig_store
+        undo.clear()
+        try:
+            shutil.rmtree(self.test_dir, ignore_errors=True)
+        except Exception:
+            pass
+
+    def test_reminder_fires_exactly_once(self):
+        from unittest.mock import patch
+
+        t0 = datetime(2026, 11, 21, 10, 0, 0)
+        productivity.run({
+            "action": "add_task",
+            "title": "Meeting with team",
+            "due": t0.isoformat(),
+        })
+
+        with patch("plugins.productivity._dispatch_desktop_notification", return_value=True) as mock_notify:
+            # Check at t0
+            dispatched1 = productivity.check_due_reminders(self.store, now=t0)
+            self.assertEqual(len(dispatched1), 1)
+            self.assertEqual(dispatched1[0]["title"], "Meeting with team")
+            self.assertEqual(mock_notify.call_count, 1)
+
+            # Check 1 minute later
+            t1 = t0 + timedelta(minutes=1)
+            dispatched2 = productivity.check_due_reminders(self.store, now=t1)
+            # Must NOT fire duplicate
+            self.assertEqual(len(dispatched2), 0)
+            self.assertEqual(mock_notify.call_count, 1)
+
+    def test_reminder_survives_restart_no_dupes(self):
+        from unittest.mock import patch
+
+        t0 = datetime(2026, 11, 21, 10, 0, 0)
+        productivity.run({
+            "action": "add_task",
+            "title": "Doctor appointment",
+            "due": t0.isoformat(),
+        })
+
+        with patch("plugins.productivity._dispatch_desktop_notification", return_value=True) as mock_notify:
+            dispatched = productivity.check_due_reminders(self.store, now=t0)
+            self.assertEqual(len(dispatched), 1)
+
+            # Simulate restart: new ProductivityStore instance reading the same JSON file
+            restarted_store = productivity.ProductivityStore(self.store_file)
+            dispatched_after_restart = productivity.check_due_reminders(restarted_store, now=t0 + timedelta(minutes=5))
+            self.assertEqual(len(dispatched_after_restart), 0)
+            self.assertEqual(mock_notify.call_count, 1)
+
+    def test_missed_while_closed_fires_once(self):
+        from unittest.mock import patch
+
+        t_close = datetime(2026, 11, 21, 8, 0, 0)
+        # Store records last check before closing
+        data = self.store.load()
+        data["last_missed_check"] = t_close.isoformat()
+        self.store.save_and_verify(data)
+
+        # A task that was due while JARVIS was closed (e.g. at 08:30)
+        t_due = datetime(2026, 11, 21, 8, 30, 0)
+        productivity.run({
+            "action": "add_task",
+            "title": "Offline Chore",
+            "due": t_due.isoformat(),
+        })
+
+        # JARVIS launches at 09:00 and performs boot check
+        t_launch = datetime(2026, 11, 21, 9, 0, 0)
+        with patch("plugins.productivity._dispatch_desktop_notification", return_value=True) as mock_notify:
+            dispatched = productivity.check_due_reminders(self.store, now=t_launch, boot_check=True)
+            self.assertEqual(len(dispatched), 1)
+            self.assertTrue(dispatched[0]["missed"])
+            self.assertEqual(mock_notify.call_count, 1)
+
+            # Subsequent check does not fire it again
+            dispatched2 = productivity.check_due_reminders(self.store, now=t_launch + timedelta(minutes=1))
+            self.assertEqual(len(dispatched2), 0)
+            self.assertEqual(mock_notify.call_count, 1)
+
+    def test_snooze_reschedules_and_undoable(self):
+        t0 = datetime(2026, 11, 21, 10, 0, 0)
+        productivity.run({
+            "action": "add_task",
+            "title": "Drink Water",
+            "due": t0.isoformat(),
+        })
+        # Trigger reminder so last_reminded_task_id is set
+        productivity.check_due_reminders(self.store, now=t0)
+
+        # Snooze 15 minutes
+        snooze_res = productivity.run({"action": "snooze", "duration_minutes": 15})
+        self.assertIn("status=done", snooze_res)
+        self.assertIn("snoozed_minutes=15", snooze_res)
+
+        data = self.store.load()
+        task = list(data["tasks"].values())[0]
+        self.assertNotEqual(task["due"], t0.isoformat())
+
+        # Undo snooze
+        undo_res = undo.undo_last()
+        self.assertIn("Undone: snooze task 'Drink Water' for 15m", undo_res)
+        data = self.store.load()
+        task = list(data["tasks"].values())[0]
+        self.assertEqual(task["due"], t0.isoformat())
+
+
 if __name__ == "__main__":
     unittest.main()
