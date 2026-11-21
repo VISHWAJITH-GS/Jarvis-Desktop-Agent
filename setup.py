@@ -1,5 +1,5 @@
 """
-MARK LIV — one-time setup.
+Jarvis-Desktop-Agent — one-time setup (based on Mark LVI by FatihMakes).
 
 Installs the Python dependencies for THIS operating system only: the OS-specific
 packages in requirements.txt carry `sys_platform` markers, so a macOS or Linux
@@ -16,6 +16,8 @@ import platform
 import subprocess
 import sys
 from pathlib import Path
+
+from core.version import PROJECT_NAME, __version__
 
 OS = platform.system()  # "Windows" | "Darwin" | "Linux"
 HERE = Path(__file__).resolve().parent
@@ -67,7 +69,7 @@ def _check_assets() -> None:
 
 
 def main() -> None:
-    print(f"⚙  MARK LIV setup — detected OS: {OS or 'unknown'}, "
+    print(f"⚙  {PROJECT_NAME} v{__version__} setup (based on Mark LVI by FatihMakes) — detected OS: {OS or 'unknown'}, "
           f"Python {sys.version_info[0]}.{sys.version_info[1]}")
     _check_python()
 

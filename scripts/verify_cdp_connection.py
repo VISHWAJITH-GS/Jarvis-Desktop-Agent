@@ -12,8 +12,10 @@ import argparse
 import os
 import sys
 
+from pathlib import Path
+
 # Ensure project root is in sys.path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from actions.browser_session import get_browser_session_manager, DEFAULT_CDP_URL
 from actions.dom_distiller import get_dom_distiller

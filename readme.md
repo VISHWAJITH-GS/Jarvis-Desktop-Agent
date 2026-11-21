@@ -1,5 +1,5 @@
 # ⚙️ Jarvis-Desktop-Agent
-### The Ultimate Cross-Platform Personal AI Assistant — By FatihMakes
+### The Ultimate Cross-Platform Personal AI Assistant — Based on Mark LVI by FatihMakes
 
 > 📺 **[Watch the full setup video on YouTube](https://www.youtube.com/@FatihMakes)**
 
@@ -9,9 +9,9 @@ A real-time voice AI that can hear, see, speak, and control your computer — on
 
 ## ✨ Overview
 
-**Mark LVI** transforms JARVIS into a verified, intelligent Windows desktop AI assistant.
+**Jarvis-Desktop-Agent** (based on Mark LVI) transforms JARVIS into a verified, intelligent desktop AI assistant.
 
-Built with **Google Gemini API as the sole reasoning engine**, Mark LVI delivers native low-latency voice interaction via Gemini Live, robust multimodal vision reasoning, and a unified desktop execution architecture.
+Built with **Google Gemini API as the primary reasoning engine**, Jarvis-Desktop-Agent delivers native low-latency voice interaction via Gemini Live, robust multimodal vision reasoning, and a unified desktop execution architecture.
 
 ### Key Architectural Pillars
 

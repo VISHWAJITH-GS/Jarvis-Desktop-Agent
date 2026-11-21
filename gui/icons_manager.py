@@ -10,7 +10,7 @@ from PyQt6.QtGui import QIcon, QPixmap, QPainter
 from PyQt6.QtCore import QByteArray, QSize, Qt
 from PyQt6.QtSvg import QSvgRenderer
 
-_ICONS_DIR = Path(__file__).resolve().parent / "icons"
+_ICONS_DIR = Path(__file__).resolve().parent.parent / "icons"
 _ICONS_DIR.mkdir(exist_ok=True)
 
 _SVG_TEMPLATES = {

@@ -17,6 +17,7 @@ from gui.window_panels import *
 from gui.window_controls import *
 from gui.window import *
 from gui.facade import *
+from gui.icons_manager import get_uicon
 
 __all__ = [
     "C",
@@ -69,4 +70,5 @@ __all__ = [
     "PluginSettingsOverlay",
     "RemoteKeyOverlay",
     "format_visual_content_html",
+    "get_uicon",
 ]

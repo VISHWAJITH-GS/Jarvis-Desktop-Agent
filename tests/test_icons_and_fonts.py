@@ -8,8 +8,8 @@ from pathlib import Path
 from PyQt6.QtWidgets import QApplication, QPushButton
 from PyQt6.QtGui import QFont, QIcon
 
-import icons_manager
-from icons_manager import get_uicon, _SVG_TEMPLATES
+from gui import icons_manager
+from gui.icons_manager import get_uicon, _SVG_TEMPLATES
 
 
 class TestFlaticonUIconsAndFonts(unittest.TestCase):

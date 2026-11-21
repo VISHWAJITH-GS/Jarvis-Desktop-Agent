@@ -60,7 +60,9 @@ def get_vimium_extension_path() -> Optional[str]:
     """
     # 1. Bundled repo path
     repo_base = Path(__file__).resolve().parent.parent
-    bundled = repo_base / "extensions" / "vimium_c"
+    bundled = repo_base / "third_party" / "vimium_c"
+    if not bundled.exists():
+        bundled = repo_base / "extensions" / "vimium_c"
     if bundled.exists() and (bundled / "manifest.json").exists():
         return str(bundled.resolve())
 

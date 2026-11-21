@@ -63,7 +63,7 @@ except Exception:      # pragma: no cover — HUD must never die over cosmetics
     HoloAvatar = None
 
 try:
-    from icons_manager import get_uicon
+    from gui.icons_manager import get_uicon
 except Exception:
     def get_uicon(*args, **kwargs):
         from PyQt6.QtGui import QIcon
