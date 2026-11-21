@@ -1394,9 +1394,9 @@ class MainWindow(
         def work():
             try:
                 self._wake_state()
+                self._wake_btns_sig.emit()
             except Exception:
                 pass
-            self._wake_btns_sig.emit()
 
         threading.Thread(target=work, daemon=True, name="wake-state-warm").start()
 
