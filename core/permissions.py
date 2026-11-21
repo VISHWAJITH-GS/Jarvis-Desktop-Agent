@@ -587,8 +587,9 @@ class ActionPermissionManager:
                 target_url = (params.get("url") or "").lower()
                 if not target_url:
                     try:
-                        from actions.browser_control import _get_active_url
-                        target_url = (_get_active_url() or "").lower()
+                        import importlib
+                        bc = importlib.import_module("actions.browser_control")
+                        target_url = (getattr(bc, "_get_active_url", lambda: "")() or "").lower()
                     except Exception:
                         pass
                 financial_keywords = (

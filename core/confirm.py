@@ -514,9 +514,10 @@ class ConfirmationManager:
             auth_params = {**p.params, "_execution_authorized": True, "confirmed": True}
             return whatsapp_automation.run(auth_params, player=player)
         elif p.tool == "send_message":
-            from actions import send_message
+            import importlib
+            sm = importlib.import_module("actions.send_message")
             auth_params = {**p.params, "_execution_authorized": True, "confirmed": True}
-            return send_message.send_message(auth_params, player=player)
+            return sm.send_message(auth_params, player=player)
         else:
             from core.action_loader import get_registry
             reg = get_registry()

@@ -26,6 +26,8 @@ of discover_actions() and never abort the scan of the remaining files.
 
 from __future__ import annotations
 
+import ast
+import importlib
 import importlib.util
 import inspect
 import re
@@ -50,6 +52,46 @@ from core.schema_utils import (
 _NAME_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]{0,63}$")
 _DEFAULT_PARAMS = {"type": "OBJECT", "properties": {}}
 _CTX_KEYS = ("player", "speak", "response", "session_memory")
+
+
+class LazyActionHandler:
+    """Lazy callable proxy for an action handler.
+    Defers importing the handler's module until the action is first invoked."""
+
+    def __init__(self, action_name: str, module_name: str, func_name: str, file_name: str):
+        self.action_name = action_name
+        self.module_name = module_name
+        self.func_name = func_name
+        self.file_name = file_name
+        self._target_fn: Optional[Callable] = None
+        self._load_error: Optional[str] = None
+
+    def resolve(self) -> Callable:
+        if self._target_fn is not None:
+            return self._target_fn
+        if self._load_error is not None:
+            raise ImportError(self._load_error)
+        try:
+            mod = importlib.import_module(self.module_name)
+            fn = getattr(mod, self.func_name)
+            self._target_fn = fn
+            return fn
+        except Exception as e:
+            self._load_error = f"Failed to load action '{self.action_name}' from {self.file_name}: {e}"
+            raise ImportError(self._load_error) from e
+
+    def __call__(self, *args, **kwargs):
+        fn = self.resolve()
+        return fn(*args, **kwargs)
+
+    def __getattr__(self, name):
+        if name in ("action_name", "module_name", "func_name", "file_name", "_target_fn", "_load_error", "resolve"):
+            return super().__getattribute__(name)
+        fn = self.resolve()
+        return getattr(fn, name)
+
+    def __repr__(self) -> str:
+        return f"<LazyActionHandler for {self.action_name} ({self.module_name}.{self.func_name})>"
 
 
 @dataclass
@@ -153,11 +195,33 @@ class ActionRegistry:
             )
 
         if rec.handler is None:
-            return outcome.failed(
-                name,
-                "Action has no handler",
+            return outcome.ActionResult(
+                status=outcome.STATUS_FAILED,
+                action=name,
+                success=False,
+                verified=False,
+                message=f"Action '{name}' has no handler",
+                error="No handler defined",
                 duration_ms=(time.monotonic() - t0) * 1000.0,
             )
+
+        # Resolve lazy handler on first execution and cache on the record
+        if isinstance(rec.handler, LazyActionHandler):
+            try:
+                rec.handler = rec.handler.resolve()
+            except Exception as e:
+                dur = (time.monotonic() - t0) * 1000.0
+                self._logger(f"Failed to load handler for '{name}': {e}")
+                return outcome.ActionResult(
+                    status=outcome.STATUS_FAILED,
+                    action=name,
+                    success=False,
+                    verified=False,
+                    message=f"Failed to load action '{name}': {e}",
+                    error=str(e),
+                    duration_ms=dur,
+                )
+
         from core.permissions import ActionExecutionGuard
 
         return ActionExecutionGuard.guard_and_execute(
@@ -178,6 +242,13 @@ class ActionRegistry:
 def _call_handler(fn: Callable, parameters: dict, ctx: dict) -> str:
     """Invoke the handler passing only the context kwargs it actually declares
     (or all of them if it has **kwargs), and validate arguments against callable parameters."""
+    if isinstance(fn, LazyActionHandler):
+        try:
+            fn = fn.resolve()
+        except Exception as e:
+            from core import outcome
+            return outcome.failed(getattr(fn, "action_name", "action"), str(e)).message or str(e)
+
     sig = inspect.signature(fn)
     has_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
 
@@ -259,6 +330,74 @@ def _validate(module, filename: str) -> ActionRecord:
     return _validate_tool(tool, filename)
 
 
+def _eval_ast_node(node):
+    if isinstance(node, ast.Constant):
+        return node.value
+    elif isinstance(node, ast.Dict):
+        return {_eval_ast_node(k): _eval_ast_node(v) for k, v in zip(node.keys, node.values)}
+    elif isinstance(node, ast.List):
+        return [_eval_ast_node(x) for x in node.elts]
+    elif isinstance(node, ast.Tuple):
+        return tuple(_eval_ast_node(x) for x in node.elts)
+    elif isinstance(node, ast.Name):
+        return {"__ref__": node.id}
+    elif isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
+        return -_eval_ast_node(node.operand)
+    elif isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left = _eval_ast_node(node.left)
+        right = _eval_ast_node(node.right)
+        if isinstance(left, str) and isinstance(right, str):
+            return left + right
+        elif isinstance(left, list) and isinstance(right, list):
+            return left + right
+    raise ValueError(f"Unsupported AST node: {ast.dump(node)}")
+
+
+def _extract_tools_ast(path: Path) -> list[dict] | None:
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            src = f.read()
+        tree = ast.parse(src, filename=str(path))
+    except Exception:
+        return None
+
+    raw_tools = []
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id in ("TOOL", "TOOLS"):
+                    raw_tools.append((target.id, node.value))
+
+    if not raw_tools:
+        return []
+
+    results = []
+    module_name = f"actions.{path.stem}"
+    for target_id, val_node in raw_tools:
+        try:
+            evaluated = _eval_ast_node(val_node)
+            items = evaluated if isinstance(evaluated, list) else [evaluated]
+            for it in items:
+                if not isinstance(it, dict):
+                    continue
+                h_val = it.get("handler")
+                func_name = ""
+                if isinstance(h_val, dict) and "__ref__" in h_val:
+                    func_name = h_val["__ref__"]
+                elif isinstance(h_val, str):
+                    func_name = h_val
+
+                tool_copy = dict(it)
+                act_name = tool_copy.get("name") or path.stem
+                if func_name:
+                    tool_copy["handler"] = LazyActionHandler(act_name, module_name, func_name, path.name)
+                results.append(tool_copy)
+        except Exception:
+            return None  # Fall back to eager import if AST evaluation fails
+
+    return results
+
+
 def discover_actions(
     actions_dir: Path, reserved_names: set[str] | None = None, logger: Callable[[str], None] = print
 ) -> ActionRegistry:
@@ -280,28 +419,43 @@ def discover_actions(
             continue
         try:
             module_name = f"actions.{path.stem}"
-            # Reuse the already-imported module when present so handlers are the
-            # same objects the rest of the app holds.
-            module = sys.modules.get(module_name)
-            if module is None:
-                spec = importlib.util.spec_from_file_location(module_name, path)
-                if spec is None or spec.loader is None:
-                    raise ImportError("could not build import spec")
-                module = importlib.util.module_from_spec(spec)
-                sys.modules[module_name] = module
-                try:
-                    spec.loader.exec_module(module)
-                except Exception:
-                    sys.modules.pop(module_name, None)
-                    raise
-
             tools_list: list[dict] = []
-            if hasattr(module, "TOOLS") and isinstance(module.TOOLS, list):
-                tools_list = [t for t in module.TOOLS if isinstance(t, dict)]
-            elif hasattr(module, "TOOL") and isinstance(module.TOOL, dict):
-                tools_list = [module.TOOL]
+
+            # 1. If module already imported, reuse it directly
+            if module_name in sys.modules:
+                module = sys.modules[module_name]
+                if hasattr(module, "TOOLS") and isinstance(module.TOOLS, list):
+                    tools_list = [t for t in module.TOOLS if isinstance(t, dict)]
+                elif hasattr(module, "TOOL") and isinstance(module.TOOL, dict):
+                    tools_list = [module.TOOL]
+                else:
+                    continue
             else:
-                continue  # not an action file — a helper/capture-only module
+                # 2. Try zero-import static AST extraction first
+                ast_tools = _extract_tools_ast(path)
+                if ast_tools is not None:
+                    if not ast_tools:
+                        continue  # Helper / shared module without TOOL, skip without importing
+                    tools_list = ast_tools
+                else:
+                    # 3. Fall back to loading module if static extraction failed
+                    spec = importlib.util.spec_from_file_location(module_name, path)
+                    if spec is None or spec.loader is None:
+                        raise ImportError("could not build import spec")
+                    module = importlib.util.module_from_spec(spec)
+                    sys.modules[module_name] = module
+                    try:
+                        spec.loader.exec_module(module)
+                    except Exception:
+                        sys.modules.pop(module_name, None)
+                        raise
+
+                    if hasattr(module, "TOOLS") and isinstance(module.TOOLS, list):
+                        tools_list = [t for t in module.TOOLS if isinstance(t, dict)]
+                    elif hasattr(module, "TOOL") and isinstance(module.TOOL, dict):
+                        tools_list = [module.TOOL]
+                    else:
+                        continue
 
             for tool_dict in tools_list:
                 rec = _validate_tool(tool_dict, path.name)
