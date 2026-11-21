@@ -31,6 +31,10 @@ def start_task(parameters: dict, player=None) -> str:
     time_budget = float(parameters.get("time_budget_sec", 300.0))
     round_budget = int(parameters.get("round_budget", 10))
     allow_tools = parameters.get("allow_tools")
+    priority = int(parameters.get("priority", 0))  # User-initiated tasks default to high priority (0)
+    idempotency_key = parameters.get("idempotency_key")
+    due_time = parameters.get("due_time")
+    isolate = bool(parameters.get("isolate", False))
 
     task_id = f"task_{uuid.uuid4().hex[:8]}"
     engine = get_task_engine()
@@ -42,6 +46,10 @@ def start_task(parameters: dict, player=None) -> str:
         time_budget_sec=time_budget,
         round_budget=round_budget,
         allowlist=allow_tools,
+        priority=priority,
+        idempotency_key=idempotency_key,
+        due_time=due_time,
+        isolate=isolate,
     )
 
     if player and hasattr(player, "write_log"):

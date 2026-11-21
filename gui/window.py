@@ -609,6 +609,13 @@ class MainWindow(
                 self._reminders_dock.restore_from_dock()
             return
 
+        if d_id == "tasks":
+            self._tasks_dock_minimized_to_bar = False
+            self._update_dots_overlay()
+            if hasattr(self, "_tasks_dock") and self._tasks_dock:
+                self._tasks_dock.restore_from_dock()
+            return
+
         if d_id == "memory_actions":
             self._memory_actions_dock_minimized_to_bar = False
             self._update_dots_overlay()
@@ -648,6 +655,9 @@ class MainWindow(
 
         if getattr(self, "_reminders_dock_minimized_to_bar", False):
             items.append(("reminders", "Reminders Matrix", "reminders"))
+
+        if getattr(self, "_tasks_dock_minimized_to_bar", False):
+            items.append(("tasks", "To-Do Matrix", "tasks"))
 
         if getattr(self, "_memory_actions_dock_minimized_to_bar", False):
             items.append(("memory_actions", "Memory & Actions Matrix", "memory_actions"))

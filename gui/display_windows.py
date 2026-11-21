@@ -1469,10 +1469,10 @@ class TasksDisplayWindow(_FramelessWindowResizeMixin, QWidget):
     def __init__(self, main_win: "MainWindow" = None, parent=None):
         super().__init__(parent)
         self._main_win = main_win
-        self.setWindowTitle("JARVIS Google Tasks Matrix")
+        self.setWindowTitle("JARVIS Google Tasks To-Do Matrix")
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-        self.setMinimumSize(420, 420)
+        self.setMinimumSize(480, 480)
         self._init_frameless_resize()
 
         self._active_scope = "all"
@@ -1483,8 +1483,8 @@ class TasksDisplayWindow(_FramelessWindowResizeMixin, QWidget):
         self._cached_completed_count = 0
 
         screen = QApplication.primaryScreen().availableGeometry()
-        w = min(540, max(460, screen.width() // 3))
-        h = min(680, screen.height() - 100)
+        w = min(640, max(540, screen.width() // 3))
+        h = min(740, screen.height() - 80)
         self._normal_h = h
         x = max(screen.left() + 30, screen.center().x() - w // 2)
         y = screen.top() + (screen.height() - h) // 2
@@ -1498,8 +1498,8 @@ class TasksDisplayWindow(_FramelessWindowResizeMixin, QWidget):
         self._outer.setObjectName("TasksOuter")
         self._outer.setStyleSheet(f"""
             QFrame#TasksOuter {{
-                background: rgba(14, 18, 26, 250);
-                border: 1px solid rgba(0, 229, 255, 0.45);
+                background: rgba(14, 15, 20, 252);
+                border: 1px solid rgba(255, 23, 68, 0.65);
                 border-radius: 8px;
             }}
         """)
@@ -1510,74 +1510,74 @@ class TasksDisplayWindow(_FramelessWindowResizeMixin, QWidget):
         v_outer.addWidget(self._outer)
 
         self._main_lay = QVBoxLayout(self._outer)
-        self._main_lay.setContentsMargins(12, 10, 12, 10)
-        self._main_lay.setSpacing(8)
+        self._main_lay.setContentsMargins(18, 16, 18, 16)
+        self._main_lay.setSpacing(12)
 
         # ── Header bar ──────────────────────────────────────────────────────
         hdr = QHBoxLayout()
-        hdr.setSpacing(6)
+        hdr.setSpacing(10)
 
         dot = QLabel("☑")
-        dot.setFont(QFont("Montserrat", 10, QFont.Weight.Bold))
-        dot.setStyleSheet(f"color: {C.PRI}; background: transparent;")
+        dot.setFont(QFont("Montserrat", 11, QFont.Weight.Bold))
+        dot.setStyleSheet("color: #ff1744; background: transparent;")
         hdr.addWidget(dot)
 
-        title_lbl = QLabel("GOOGLE TASKS — ACTIVE TO-DO MATRIX")
-        title_lbl.setFont(QFont("Montserrat", 8, QFont.Weight.Bold))
-        title_lbl.setStyleSheet(f"color: {C.PRI}; background: transparent; letter-spacing: 1px;")
+        title_lbl = QLabel("JARVIS TO-DO MATRIX")
+        title_lbl.setFont(QFont("Montserrat", 9, QFont.Weight.Bold))
+        title_lbl.setStyleSheet("color: #ff1744; background: transparent; letter-spacing: 1.5px;")
         hdr.addWidget(title_lbl)
 
         hdr.addStretch()
 
         self._count_lbl = QLabel("[ 0 PENDING | 0 DONE ]")
         self._count_lbl.setFont(QFont("Montserrat", 7, QFont.Weight.Bold))
-        self._count_lbl.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
+        self._count_lbl.setStyleSheet("color: #ff8a80; background: transparent;")
         hdr.addWidget(self._count_lbl)
 
         self._ref_btn = QPushButton("")
-        self._ref_btn.setIcon(get_uicon("refresh", color=C.PRI, size=13))
-        self._ref_btn.setFixedSize(22, 18)
+        self._ref_btn.setIcon(get_uicon("refresh", color="#ff1744", size=13))
+        self._ref_btn.setFixedSize(26, 22)
         self._ref_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._ref_btn.setToolTip("Refresh tasks")
-        self._ref_btn.setStyleSheet(f"""
+        self._ref_btn.setStyleSheet("""
             QPushButton {{
-                background: rgba(0, 229, 255, 0.12); color: {C.TEXT_DIM};
-                border: 1px solid rgba(0, 229, 255, 0.35); border-radius: 2px;
+                background: rgba(255, 23, 68, 0.14); color: #ff8a80;
+                border: 1px solid rgba(255, 23, 68, 0.45); border-radius: 3px;
             }}
-            QPushButton:hover {{ color: #ffffff; background: rgba(0, 229, 255, 0.35); border-color: {C.PRI}; }}
+            QPushButton:hover {{ color: #ffffff; background: rgba(255, 23, 68, 0.4); border-color: #ff1744; }}
         """)
         self._ref_btn.clicked.connect(self.load_tasks)
         hdr.addWidget(self._ref_btn)
 
         self._min_btn = QPushButton(" MIN")
-        self._min_btn.setIcon(get_uicon("minus", color=C.PRI, size=11))
-        self._min_btn.setFont(QFont("Montserrat", 7))
-        self._min_btn.setFixedHeight(18)
+        self._min_btn.setIcon(get_uicon("minus", color="#ff1744", size=11))
+        self._min_btn.setFont(QFont("Montserrat", 7, QFont.Weight.Bold))
+        self._min_btn.setFixedHeight(22)
         self._min_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._min_btn.setToolTip("Minimize to-do list")
-        self._min_btn.setStyleSheet(f"""
+        self._min_btn.setStyleSheet("""
             QPushButton {{
-                background: rgba(0, 229, 255, 0.12); color: {C.TEXT_DIM};
-                border: 1px solid rgba(0, 229, 255, 0.35); border-radius: 2px; padding: 0 5px;
+                background: rgba(255, 23, 68, 0.14); color: #ff8a80;
+                border: 1px solid rgba(255, 23, 68, 0.45); border-radius: 3px; padding: 0 7px;
             }}
-            QPushButton:hover {{ color: #ffffff; background: rgba(0, 229, 255, 0.35); border-color: {C.PRI}; }}
+            QPushButton:hover {{ color: #ffffff; background: rgba(255, 23, 68, 0.4); border-color: #ff1744; }}
         """)
         self._min_btn.clicked.connect(self.toggle_collapse)
         hdr.addWidget(self._min_btn)
 
         close_btn = QPushButton(" DISMISS")
-        close_btn.setIcon(get_uicon("cross", color=C.TEXT_DIM, size=11))
-        close_btn.setFont(QFont("Montserrat", 7))
-        close_btn.setFixedHeight(18)
+        close_btn.setIcon(get_uicon("cross", color="#ff8a80", size=11))
+        close_btn.setFont(QFont("Montserrat", 7, QFont.Weight.Bold))
+        close_btn.setFixedHeight(22)
         close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        close_btn.setStyleSheet(f"""
+        close_btn.setStyleSheet("""
             QPushButton {{
-                background: rgba(0, 229, 255, 0.12); color: {C.TEXT_DIM};
-                border: 1px solid rgba(0, 229, 255, 0.35); border-radius: 2px; padding: 0 5px;
+                background: rgba(255, 23, 68, 0.14); color: #ff8a80;
+                border: 1px solid rgba(255, 23, 68, 0.45); border-radius: 3px; padding: 0 7px;
             }}
-            QPushButton:hover {{ color: #ffffff; background: rgba(255, 23, 68, 0.45); border-color: {C.PRI}; }}
+            QPushButton:hover {{ color: #ffffff; background: rgba(255, 23, 68, 0.65); border-color: #ff1744; }}
         """)
-        close_btn.clicked.connect(self.hide)
+        close_btn.clicked.connect(self.dismiss)
         hdr.addWidget(close_btn)
 
         self._main_lay.addLayout(hdr)
@@ -1587,38 +1587,39 @@ class TasksDisplayWindow(_FramelessWindowResizeMixin, QWidget):
         self._body_widget.setStyleSheet("background: transparent;")
         b_lay = QVBoxLayout(self._body_widget)
         b_lay.setContentsMargins(0, 0, 0, 0)
-        b_lay.setSpacing(8)
+        b_lay.setSpacing(12)
 
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setStyleSheet(f"color: {C.BORDER};")
+        sep.setStyleSheet("color: rgba(255, 23, 68, 0.35);")
         b_lay.addWidget(sep)
 
         # ── Quick-Add Bar ────────────────────────────────────────────────────
         add_frame = QFrame()
-        add_frame.setStyleSheet(f"""
+        add_frame.setStyleSheet("""
             QFrame {{
-                background: rgba(20, 25, 36, 230);
-                border: 1px solid rgba(0, 229, 255, 0.3);
-                border-radius: 5px;
+                background: rgba(24, 18, 24, 235);
+                border: 1px solid rgba(255, 23, 68, 0.35);
+                border-radius: 6px;
                 padding: 4px;
             }}
         """)
         add_lay = QVBoxLayout(add_frame)
-        add_lay.setContentsMargins(6, 6, 6, 6)
-        add_lay.setSpacing(6)
+        add_lay.setContentsMargins(12, 12, 12, 12)
+        add_lay.setSpacing(10)
 
         # Row 1: Task Title
         self._in_title = QLineEdit()
         self._in_title.setPlaceholderText("+ Add a task (e.g. Finish report, Buy groceries)...")
-        self._in_title.setFont(QFont("Montserrat", 8))
+        self._in_title.setFont(QFont("Montserrat", 9))
+        self._in_title.setFixedHeight(36)
         self._in_title.setStyleSheet(f"""
             QLineEdit {{
                 background: {C.DARK}; color: {C.TEXT};
-                border: 1px solid {C.BORDER}; border-radius: 3px; padding: 5px 8px;
+                border: 1px solid rgba(255, 23, 68, 0.35); border-radius: 4px; padding: 6px 12px;
             }}
             QLineEdit:focus {{
-                border: 1px solid {C.PRI}; color: #ffffff;
+                border: 1px solid #ff1744; color: #ffffff;
             }}
         """)
         self._in_title.returnPressed.connect(self._on_quick_add)
@@ -1626,17 +1627,18 @@ class TasksDisplayWindow(_FramelessWindowResizeMixin, QWidget):
 
         # Row 2: Due Date + Priority + Add Button
         row2 = QHBoxLayout()
-        row2.setSpacing(6)
+        row2.setSpacing(8)
 
         self._in_due = QLineEdit()
         self._in_due.setPlaceholderText("Due date (e.g. today 5pm, tomorrow, Friday)...")
         self._in_due.setFont(QFont("Montserrat", 8))
+        self._in_due.setFixedHeight(34)
         self._in_due.setStyleSheet(f"""
             QLineEdit {{
                 background: {C.DARK}; color: {C.TEXT};
-                border: 1px solid {C.BORDER}; border-radius: 3px; padding: 4px 6px;
+                border: 1px solid rgba(255, 23, 68, 0.35); border-radius: 4px; padding: 6px 10px;
             }}
-            QLineEdit:focus {{ border: 1px solid {C.PRI}; color: #ffffff; }}
+            QLineEdit:focus {{ border: 1px solid #ff1744; color: #ffffff; }}
         """)
         self._in_due.returnPressed.connect(self._on_quick_add)
         row2.addWidget(self._in_due, stretch=3)
@@ -1644,28 +1646,28 @@ class TasksDisplayWindow(_FramelessWindowResizeMixin, QWidget):
         self._priority_combo = QComboBox()
         self._priority_combo.addItems(["Normal", "High", "Low"])
         self._priority_combo.setFont(QFont("Montserrat", 8))
-        self._priority_combo.setFixedHeight(26)
+        self._priority_combo.setFixedHeight(34)
         self._priority_combo.setStyleSheet(f"""
             QComboBox {{
                 background: {C.DARK}; color: {C.TEXT};
-                border: 1px solid {C.BORDER}; border-radius: 3px; padding: 2px 6px;
+                border: 1px solid rgba(255, 23, 68, 0.35); border-radius: 4px; padding: 4px 8px;
             }}
             QComboBox QAbstractItemView {{
-                background: {C.DARK}; color: #ffffff; selection-background-color: {C.PRI};
+                background: {C.DARK}; color: #ffffff; selection-background-color: #ff1744;
             }}
         """)
         row2.addWidget(self._priority_combo, stretch=1)
 
         self._add_btn = QPushButton("+ ADD TASK")
         self._add_btn.setFont(QFont("Montserrat", 8, QFont.Weight.Bold))
-        self._add_btn.setFixedHeight(26)
+        self._add_btn.setFixedHeight(34)
         self._add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._add_btn.setStyleSheet(f"""
+        self._add_btn.setStyleSheet("""
             QPushButton {{
-                background: rgba(0, 229, 255, 0.22); color: #ffffff;
-                border: 1px solid {C.PRI}; border-radius: 3px; padding: 0 10px;
+                background: rgba(255, 23, 68, 0.35); color: #ffffff;
+                border: 1px solid #ff1744; border-radius: 4px; padding: 0 16px;
             }}
-            QPushButton:hover {{ background: rgba(0, 229, 255, 0.55); }}
+            QPushButton:hover {{ background: rgba(255, 23, 68, 0.65); }}
         """)
         self._add_btn.clicked.connect(self._on_quick_add)
         row2.addWidget(self._add_btn)
@@ -1675,17 +1677,18 @@ class TasksDisplayWindow(_FramelessWindowResizeMixin, QWidget):
 
         # ── Filter Tabs & Search Bar ─────────────────────────────────────────
         filter_bar = QHBoxLayout()
-        filter_bar.setSpacing(6)
+        filter_bar.setSpacing(8)
 
         self._search_in = QLineEdit()
         self._search_in.setPlaceholderText("Filter tasks...")
         self._search_in.setFont(QFont("Montserrat", 8))
-        self._search_in.setFixedHeight(22)
-        self._search_in.setStyleSheet(f"""
+        self._search_in.setFixedHeight(30)
+        self._search_in.setStyleSheet("""
             QLineEdit {{
-                background: rgba(18, 22, 32, 200); color: {C.TEXT};
-                border: 1px solid {C.BORDER}; border-radius: 3px; padding: 2px 6px;
+                background: rgba(22, 18, 24, 200); color: #ffffff;
+                border: 1px solid rgba(255, 23, 68, 0.3); border-radius: 4px; padding: 4px 10px;
             }}
+            QLineEdit:focus {{ border: 1px solid #ff1744; }}
         """)
         self._search_in.textChanged.connect(self._on_search_changed)
         filter_bar.addWidget(self._search_in, stretch=2)
@@ -1694,7 +1697,7 @@ class TasksDisplayWindow(_FramelessWindowResizeMixin, QWidget):
         for scope_name in ("ALL", "TODAY", "UPCOMING", "HIGH"):
             btn = QPushButton(scope_name)
             btn.setFont(QFont("Montserrat", 7, QFont.Weight.Bold))
-            btn.setFixedHeight(22)
+            btn.setFixedHeight(30)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.clicked.connect(lambda _, s=scope_name.lower(): self._set_scope(s))
             filter_bar.addWidget(btn)
@@ -1711,7 +1714,7 @@ class TasksDisplayWindow(_FramelessWindowResizeMixin, QWidget):
         self._scroll.setStyleSheet(f"""
             QScrollArea {{
                 background: transparent;
-                border: 1px solid {C.BORDER};
+                border: 1px solid rgba(255, 23, 68, 0.25);
                 border-radius: 4px;
             }}
             QScrollBar:vertical, QScrollBar:horizontal {{
@@ -1728,38 +1731,38 @@ class TasksDisplayWindow(_FramelessWindowResizeMixin, QWidget):
         self._cards_widget = QWidget()
         self._cards_widget.setStyleSheet("background: transparent;")
         self._cards_lay = QVBoxLayout(self._cards_widget)
-        self._cards_lay.setContentsMargins(6, 6, 6, 6)
-        self._cards_lay.setSpacing(6)
+        self._cards_lay.setContentsMargins(8, 8, 8, 8)
+        self._cards_lay.setSpacing(8)
         self._cards_lay.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         # Section 1: Pending Tasks Header & Layout
         self._pending_hdr = QLabel("PENDING (0)")
         self._pending_hdr.setFont(QFont("Montserrat", 8, QFont.Weight.Bold))
-        self._pending_hdr.setStyleSheet(f"color: {C.PRI}; letter-spacing: 1px; padding: 4px 2px 2px 2px;")
+        self._pending_hdr.setStyleSheet("color: #ff1744; letter-spacing: 1.5px; padding: 6px 2px 4px 2px;")
         self._cards_lay.addWidget(self._pending_hdr)
 
         self._pending_container = QWidget()
         self._pending_container.setStyleSheet("background: transparent;")
         self._pending_lay = QVBoxLayout(self._pending_container)
         self._pending_lay.setContentsMargins(0, 0, 0, 0)
-        self._pending_lay.setSpacing(5)
+        self._pending_lay.setSpacing(8)
         self._cards_lay.addWidget(self._pending_container)
 
         # Section 2: Completed Tasks Header (Collapsible) & Layout
         self._completed_sep = QFrame()
         self._completed_sep.setFrameShape(QFrame.Shape.HLine)
-        self._completed_sep.setStyleSheet(f"color: {C.BORDER}; margin: 8px 0;")
+        self._completed_sep.setStyleSheet("color: rgba(255, 23, 68, 0.25); margin: 10px 0;")
         self._cards_lay.addWidget(self._completed_sep)
 
         self._completed_toggle_btn = QPushButton("▼  COMPLETED (0)")
         self._completed_toggle_btn.setFont(QFont("Montserrat", 8, QFont.Weight.Bold))
         self._completed_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._completed_toggle_btn.setStyleSheet(f"""
+        self._completed_toggle_btn.setStyleSheet("""
             QPushButton {{
-                background: transparent; color: {C.TEXT_DIM}; border: none;
-                text-align: left; padding: 4px 2px;
+                background: transparent; color: #8892b0; border: none;
+                text-align: left; padding: 6px 2px;
             }}
-            QPushButton:hover {{ color: #ffffff; }}
+            QPushButton:hover {{ color: #ff1744; }}
         """)
         self._completed_toggle_btn.clicked.connect(self._toggle_completed)
         self._cards_lay.addWidget(self._completed_toggle_btn)
@@ -1768,7 +1771,7 @@ class TasksDisplayWindow(_FramelessWindowResizeMixin, QWidget):
         self._completed_container.setStyleSheet("background: transparent;")
         self._completed_lay = QVBoxLayout(self._completed_container)
         self._completed_lay.setContentsMargins(0, 0, 0, 0)
-        self._completed_lay.setSpacing(5)
+        self._completed_lay.setSpacing(8)
         self._cards_lay.addWidget(self._completed_container)
 
         self._scroll.setWidget(self._cards_widget)
@@ -1793,21 +1796,21 @@ class TasksDisplayWindow(_FramelessWindowResizeMixin, QWidget):
     def _update_tab_styles(self):
         for s_name, btn in self._tab_btns.items():
             if s_name == self._active_scope:
-                btn.setStyleSheet(f"""
-                    QPushButton {{
-                        background: rgba(0, 229, 255, 0.35); color: #ffffff;
-                        border: 1px solid {C.PRI}; border-radius: 3px;
-                    }}
+                btn.setStyleSheet("""
+                    QPushButton {
+                        background: rgba(255, 23, 68, 0.45); color: #ffffff;
+                        border: 1px solid #ff1744; border-radius: 4px;
+                    }
                 """)
             else:
-                btn.setStyleSheet(f"""
-                    QPushButton {{
-                        background: rgba(20, 24, 34, 200); color: {C.TEXT_DIM};
-                        border: 1px solid {C.BORDER}; border-radius: 3px;
-                    }}
-                    QPushButton:hover {{
-                        color: #ffffff; border-color: {C.PRI};
-                    }}
+                btn.setStyleSheet("""
+                    QPushButton {
+                        background: rgba(24, 18, 24, 180); color: #8892b0;
+                        border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 4px;
+                    }
+                    QPushButton:hover {
+                        color: #ffffff; border-color: #ff1744;
+                    }
                 """)
 
     def load_tasks(self):
@@ -1936,33 +1939,33 @@ class TasksDisplayWindow(_FramelessWindowResizeMixin, QWidget):
         recurrence = task.get("recurrence")
         completed_at = task.get("completed_at")
 
-        border_accent = "#00e676" if not is_pending else ("#ff1744" if priority == "high" else "#00e5ff")
+        border_accent = "#00e676" if not is_pending else ("#ff1744" if priority == "high" else "rgba(255, 23, 68, 0.65)")
 
         card.setStyleSheet(f"""
             QFrame {{
-                background: {'rgba(22, 28, 40, 220)' if is_pending else 'rgba(16, 20, 28, 160)'};
-                border: 1px solid {'rgba(0, 229, 255, 0.22)' if is_pending else 'rgba(255, 255, 255, 0.07)'};
-                border-left: 3px solid {border_accent};
-                border-radius: 5px;
+                background: {'rgba(26, 18, 26, 210)' if is_pending else 'rgba(18, 16, 22, 160)'};
+                border: 1px solid {'rgba(255, 23, 68, 0.35)' if is_pending else 'rgba(255, 255, 255, 0.08)'};
+                border-left: 4px solid {border_accent};
+                border-radius: 6px;
             }}
         """)
 
         c_lay = QHBoxLayout(card)
-        c_lay.setContentsMargins(8, 7, 8, 7)
-        c_lay.setSpacing(8)
+        c_lay.setContentsMargins(14, 12, 14, 12)
+        c_lay.setSpacing(14)
 
         # ── Checkbox Element ─────────────────────────────────────────────────
         chk_btn = QPushButton()
-        chk_btn.setFixedSize(22, 22)
+        chk_btn.setFixedSize(26, 26)
         chk_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         if is_pending:
             chk_btn.setText("○")
-            chk_btn.setFont(QFont("Montserrat", 11, QFont.Weight.Bold))
+            chk_btn.setFont(QFont("Montserrat", 12, QFont.Weight.Bold))
             chk_btn.setToolTip("Mark as completed")
             chk_btn.setStyleSheet("""
                 QPushButton {
-                    background: transparent; color: #80cbc4;
-                    border: 1px solid rgba(0, 229, 255, 0.5); border-radius: 11px;
+                    background: transparent; color: #ff5252;
+                    border: 2px solid rgba(255, 23, 68, 0.65); border-radius: 13px;
                 }
                 QPushButton:hover {
                     background: rgba(0, 230, 118, 0.3); color: #00e676; border-color: #00e676;
@@ -1971,12 +1974,12 @@ class TasksDisplayWindow(_FramelessWindowResizeMixin, QWidget):
             chk_btn.clicked.connect(lambda _, tid=task_id, ttitle=title: self._on_complete(tid, ttitle))
         else:
             chk_btn.setText("✓")
-            chk_btn.setFont(QFont("Montserrat", 10, QFont.Weight.Bold))
+            chk_btn.setFont(QFont("Montserrat", 11, QFont.Weight.Bold))
             chk_btn.setToolTip("Reopen task (mark pending)")
             chk_btn.setStyleSheet("""
                 QPushButton {
-                    background: rgba(0, 230, 118, 0.25); color: #00e676;
-                    border: 1px solid #00e676; border-radius: 11px;
+                    background: rgba(0, 230, 118, 0.2); color: #00e676;
+                    border: 2px solid #00e676; border-radius: 13px;
                 }
                 QPushButton:hover {
                     background: rgba(255, 23, 68, 0.25); color: #ff5252; border-color: #ff5252;
@@ -1989,14 +1992,14 @@ class TasksDisplayWindow(_FramelessWindowResizeMixin, QWidget):
         # ── Content Column ───────────────────────────────────────────────────
         content_col = QVBoxLayout()
         content_col.setContentsMargins(0, 0, 0, 0)
-        content_col.setSpacing(3)
+        content_col.setSpacing(4)
 
         # Title / Description
         t_lbl = QLabel(title)
         t_font = QFont("Montserrat", 9)
         if not is_pending:
             t_font.setStrikeOut(True)
-            t_lbl.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent; border: none;")
+            t_lbl.setStyleSheet("color: #8892b0; background: transparent; border: none;")
         else:
             t_font.setWeight(QFont.Weight.Medium)
             t_lbl.setStyleSheet("color: #ffffff; background: transparent; border: none;")
@@ -2006,27 +2009,27 @@ class TasksDisplayWindow(_FramelessWindowResizeMixin, QWidget):
 
         # Badges Row (Due date, Priority, Recurrence)
         badge_row = QHBoxLayout()
-        badge_row.setSpacing(6)
+        badge_row.setSpacing(8)
 
         # Due Date Badge
         due_text = ""
-        due_col = C.TEXT_DIM
+        due_col = "#8892b0"
         now = datetime.now()
         if due_iso:
             try:
                 dt = datetime.fromisoformat(due_iso)
                 if not is_pending:
                     due_text = f"Due: {dt.strftime('%b %d')}"
-                    due_col = C.TEXT_DIM
+                    due_col = "#8892b0"
                 elif dt < now:
                     due_text = f"⚠ Overdue ({dt.strftime('%b %d, %I:%M %p')})"
                     due_col = "#ff1744"
                 elif dt.date() == now.date():
                     due_text = f"Today at {dt.strftime('%I:%M %p')}"
-                    due_col = "#00e5ff"
+                    due_col = "#ff8a80"
                 elif dt.date() == now.date() + timedelta(days=1):
                     due_text = f"Tomorrow at {dt.strftime('%I:%M %p')}"
-                    due_col = "#ff9100"
+                    due_col = "#ffb74d"
                 else:
                     due_text = dt.strftime("%b %d, %I:%M %p")
                     due_col = "#90caf9"
@@ -2040,14 +2043,14 @@ class TasksDisplayWindow(_FramelessWindowResizeMixin, QWidget):
         if due_text:
             due_lbl = QLabel(due_text)
             due_lbl.setFont(QFont("Montserrat", 7))
-            due_lbl.setStyleSheet(f"color: {due_col}; background: transparent; border: none;")
+            due_lbl.setStyleSheet(f"color: {due_col}; background: transparent; border: none; font-weight: {'bold' if 'Overdue' in due_text else 'normal'};")
             badge_row.addWidget(due_lbl)
 
         # Priority Badge
         if priority == "high":
             p_lbl = QLabel("[HIGH]")
             p_lbl.setFont(QFont("Montserrat", 7, QFont.Weight.Bold))
-            p_lbl.setStyleSheet("color: #ff5252; background: transparent; border: none;")
+            p_lbl.setStyleSheet("color: #ff1744; background: transparent; border: none;")
             badge_row.addWidget(p_lbl)
         elif priority == "low":
             p_lbl = QLabel("[LOW]")
@@ -2088,18 +2091,18 @@ class TasksDisplayWindow(_FramelessWindowResizeMixin, QWidget):
 
         # ── Delete Button ────────────────────────────────────────────────────
         del_btn = QPushButton("")
-        del_btn.setIcon(get_uicon("cross", color=C.TEXT_DIM, size=11))
-        del_btn.setFixedSize(18, 18)
+        del_btn.setIcon(get_uicon("cross", color="#ff8a80", size=11))
+        del_btn.setFixedSize(24, 24)
         del_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         del_btn.setToolTip("Delete task")
-        del_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: rgba(255, 23, 68, 0.1); color: {C.TEXT_DIM};
-                border: 1px solid rgba(255, 23, 68, 0.25); border-radius: 2px;
-            }}
-            QPushButton:hover {{
-                color: #ffffff; background: rgba(255, 23, 68, 0.45); border-color: {C.PRI};
-            }}
+        del_btn.setStyleSheet("""
+            QPushButton {
+                background: rgba(255, 23, 68, 0.12); color: #ff8a80;
+                border: 1px solid rgba(255, 23, 68, 0.3); border-radius: 3px;
+            }
+            QPushButton:hover {
+                color: #ffffff; background: rgba(255, 23, 68, 0.55); border-color: #ff1744;
+            }
         """)
         del_btn.clicked.connect(lambda _, tid=task_id, ttitle=title: self._on_delete(tid, ttitle))
         c_lay.addWidget(del_btn)
@@ -2167,11 +2170,15 @@ class TasksDisplayWindow(_FramelessWindowResizeMixin, QWidget):
         self._collapsed = False
         self._body_widget.show()
         screen = QApplication.primaryScreen().availableGeometry()
-        h = getattr(self, "_normal_h", min(680, screen.height() - 100))
+        h = getattr(self, "_normal_h", min(740, screen.height() - 80))
         self.setFixedHeight(h)
         self._min_btn.setText(" MIN")
         self._min_btn.setIcon(get_uicon("minus", color=C.PRI, size=11))
         self.load_tasks()
+        if self._main_win:
+            self._main_win._tasks_dock_minimized_to_bar = False
+            if hasattr(self._main_win, "_update_dots_overlay"):
+                self._main_win._update_dots_overlay()
         self.show()
         self.raise_()
         self.activateWindow()
@@ -2184,22 +2191,39 @@ class TasksDisplayWindow(_FramelessWindowResizeMixin, QWidget):
         self._min_btn.setIcon(get_uicon("restore", color=C.PRI, size=11))
         self._min_btn.setToolTip("Restore to-do display")
         self.hide()
-        if self._main_win and hasattr(self._main_win, "write_log"):
-            self._main_win.write_log("SYS: To-do matrix minimized.")
+        if self._main_win:
+            self._main_win._tasks_dock_minimized_to_bar = True
+            if hasattr(self._main_win, "_update_dots_overlay"):
+                self._main_win._update_dots_overlay()
+            if hasattr(self._main_win, "write_log"):
+                self._main_win.write_log("SYS: To-do matrix minimized to left dock.")
 
     def restore_from_dock(self):
         self._collapsed = False
         self._body_widget.show()
         screen = QApplication.primaryScreen().availableGeometry()
-        h = getattr(self, "_normal_h", min(680, screen.height() - 100))
+        h = getattr(self, "_normal_h", min(740, screen.height() - 80))
         self.setFixedHeight(h)
         self._min_btn.setText(" MIN")
         self._min_btn.setIcon(get_uicon("minus", color=C.PRI, size=11))
+        if self._main_win:
+            self._main_win._tasks_dock_minimized_to_bar = False
+            if hasattr(self._main_win, "_update_dots_overlay"):
+                self._main_win._update_dots_overlay()
+            if hasattr(self._main_win, "write_log"):
+                self._main_win.write_log("SYS: To-do matrix restored.")
         self.show()
         self.raise_()
         self.activateWindow()
-        if self._main_win and hasattr(self._main_win, "write_log"):
-            self._main_win.write_log("SYS: To-do matrix restored.")
+
+    def dismiss(self):
+        self.hide()
+        if self._main_win:
+            self._main_win._tasks_dock_minimized_to_bar = False
+            if hasattr(self._main_win, "_update_dots_overlay"):
+                self._main_win._update_dots_overlay()
+            if hasattr(self._main_win, "write_log"):
+                self._main_win.write_log("SYS: To-do matrix dismissed.")
 
     def toggle_collapse(self):
         if self.isVisible():

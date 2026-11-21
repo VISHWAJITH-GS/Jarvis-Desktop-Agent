@@ -282,6 +282,8 @@ class MinimizedDisplayPill(QPushButton):
             self.setToolTip("Search & Intel Display (Click to restore)")
         elif self.display_id == "reminders":
             self.setToolTip("Reminders Matrix (Click to restore)")
+        elif self.display_id == "tasks":
+            self.setToolTip("To-Do Tasks Matrix (Click to restore)")
         elif self.display_id == "memory_actions":
             self.setToolTip("Memory & Actions Platform (Click to restore)")
         else:
@@ -302,6 +304,8 @@ class MinimizedDisplayPill(QPushButton):
         if self.display_id == "search":
             uicon_name = "search"
         elif self.display_id == "reminders":
+            uicon_name = "calendar"
+        elif self.display_id == "tasks":
             uicon_name = "calendar"
         elif self.display_id == "memory_actions":
             uicon_name = "database"
@@ -419,8 +423,10 @@ class MinimizedDisplaysDock(QWidget):
                 return (1, 0)
             if did == "reminders":
                 return (1, 1)
-            if did == "memory_actions":
+            if did == "tasks":
                 return (1, 2)
+            if did == "memory_actions":
+                return (1, 3)
             return (2, str(did))
 
         for disp_id, disp_title, c_type in sorted(display_items, key=_sort_key):
