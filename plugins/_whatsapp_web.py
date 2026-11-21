@@ -208,6 +208,220 @@ class WhatsAppWebDriver:
             return outcome.result_done("whatsapp_state", reason, verified=True, data={"state": state})
         return outcome.result_failed("whatsapp_state", reason, data={"state": state})
 
+    async def _resolve_contact_in_page(self, page, contact_name: str) -> outcome.ActionResult:
+        """Resolve and open a chat for contact_name in WhatsApp Web.
+
+        1. If stored phone number found: direct navigate to web.whatsapp.com/send?phone=...
+        2. Fallback: Search box typing, wait to filter, candidate disambiguation,
+           and active chat header verification before typing.
+        """
+        clean_name = (contact_name or "").strip()
+        if not clean_name:
+            return outcome.result_failed("resolve_contact", "No contact name or phone number specified.")
+
+        # 1. Prefer stored phone number for known contacts
+        phone = find_contact_phone_number(clean_name)
+        if phone:
+            logger.info("[WhatsAppWeb] Resolved phone for '%s': %s (direct URL)", clean_name, phone)
+            target_url = f"https://web.whatsapp.com/send?phone={phone}"
+            await page.goto(target_url, wait_until="domcontentloaded", timeout=30000)
+
+            # Wait for either composer, chat header, or invalid phone dialog
+            deadline = time.monotonic() + 15.0
+            while time.monotonic() < deadline:
+                # Check for invalid phone number dialog/popup
+                popup = await page.query_selector('div[data-testid="popup-contents"], div[role="dialog"]')
+                if popup and await popup.is_visible():
+                    text = (await popup.inner_text()) or ""
+                    if any(term in text.lower() for term in ("invalid", "not exist", "phone number", "url")):
+                        ok_btn = await popup.query_selector('button, [role="button"]')
+                        if ok_btn:
+                            try:
+                                await ok_btn.click()
+                            except Exception:
+                                pass
+                        return outcome.result_failed(
+                            "resolve_contact",
+                            f"Phone number '{phone}' for '{clean_name}' is not registered on WhatsApp.",
+                            data={"contact": clean_name, "phone": phone},
+                        )
+
+                # Check if chat composer or active header is visible
+                compose = await page.query_selector(SELECTORS.compose_box)
+                if compose and await compose.is_visible():
+                    return outcome.result_done(
+                        "resolve_contact",
+                        f"Opened chat directly for '{clean_name}' via phone {phone}.",
+                        verified=True,
+                        data={"contact": clean_name, "phone": phone, "method": "direct_phone"},
+                    )
+                await asyncio.sleep(0.4)
+
+            # If compose box didn't appear in 15s, check if header is present
+            compose = await page.query_selector(SELECTORS.compose_box)
+            if compose and await compose.is_visible():
+                return outcome.result_done(
+                    "resolve_contact",
+                    f"Opened chat for '{clean_name}'.",
+                    verified=True,
+                    data={"contact": clean_name, "phone": phone},
+                )
+            logger.info("[WhatsAppWeb] Direct phone URL timed out; falling back to search box.")
+
+        # 2. Fall back to search box
+        search_el = await page.wait_for_selector(SELECTORS.search_input, timeout=6000)
+        if not search_el:
+            return outcome.result_failed("resolve_contact", "WhatsApp Web layout changed: Search input box not found.")
+
+        # Focus and clear search box via CDP
+        await search_el.click()
+        await page.keyboard.press("Control+A")
+        await page.keyboard.press("Backspace")
+        await asyncio.sleep(0.1)
+
+        # Type contact query via CDP keyboard
+        await page.keyboard.type(clean_name)
+        await asyncio.sleep(1.2)  # Wait for list to filter
+
+        # Inspect search results for ambiguity / candidates
+        items = await page.query_selector_all(SELECTORS.search_result_item)
+        matched_elements: List[Tuple[str, Any]] = []
+        candidate_names: List[str] = []
+
+        for it in items:
+            try:
+                if not await it.is_visible():
+                    continue
+                title_span = await it.query_selector('span[dir="auto"], span[title]')
+                if title_span:
+                    title = (await title_span.inner_text() or await title_span.get_attribute("title") or "").strip()
+                    if title and clean_name.lower() in title.lower() and title not in candidate_names:
+                        candidate_names.append(title)
+                        matched_elements.append((title, it))
+            except Exception:
+                continue
+
+        # Multiple matches -> Disambiguation STOP and return "ask"
+        if len(candidate_names) > 1:
+            return outcome.result_ask(
+                "resolve_contact",
+                f"Found multiple contacts matching '{clean_name}': {', '.join(candidate_names[:4])}. Which one would you like to message?",
+                data={"candidates": candidate_names, "expected": clean_name},
+            )
+
+        if not matched_elements:
+            # Check XPath / title exact match fallback
+            chat_item = await page.query_selector(
+                f'//span[@title="{clean_name}"] | //span[contains(translate(@title, "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"), "{clean_name.lower()}")]'
+            )
+            if chat_item and await chat_item.is_visible():
+                matched_elements.append((clean_name, chat_item))
+            else:
+                return outcome.result_failed(
+                    "resolve_contact",
+                    f"Contact '{clean_name}' not found on WhatsApp Web.",
+                    data={"contact": clean_name},
+                )
+
+        # Click the single identified contact item
+        chosen_title, chosen_el = matched_elements[0]
+        await chosen_el.click()
+        await asyncio.sleep(1.0)
+
+        # Strict Header Verification: verify opened chat header title matches intended contact
+        header_el = await page.wait_for_selector(SELECTORS.chat_header_title, timeout=5000)
+        if not header_el:
+            return outcome.result_failed(
+                "resolve_contact",
+                "WhatsApp Web layout changed: Active chat header not found after selecting contact.",
+            )
+
+        header_text = (await header_el.inner_text() or await header_el.get_attribute("title") or "").strip()
+        if clean_name.lower() not in header_text.lower():
+            # Header does not match -> STOP immediately!
+            return outcome.result_failed(
+                "resolve_contact",
+                f"Opened chat header '{header_text}' does not match intended contact '{clean_name}'. Refusing to proceed.",
+                data={"opened_header": header_text, "expected_contact": clean_name},
+            )
+
+        return outcome.result_done(
+            "resolve_contact",
+            f"Verified active chat for '{header_text}'.",
+            verified=True,
+            data={"contact": header_text, "expected": clean_name, "method": "search_verified"},
+        )
+
+    def resolve_contact(self, contact_name: str, background: bool = True) -> outcome.ActionResult:
+        """Synchronously resolve contact and open chat on WhatsApp Web."""
+        state, page, reason = self.ensure_page_ready(background=background)
+        if state != "ready" or page is None:
+            if state == "blocked":
+                return outcome.result_blocked("resolve_contact", reason)
+            return outcome.result_failed("resolve_contact", reason)
+
+        bm = self._get_browser_manager()
+        try:
+            return bm.run_coroutine(self._resolve_contact_in_page(page, contact_name), timeout=35.0)
+        except Exception as e:
+            return outcome.result_failed("resolve_contact", f"Error resolving contact: {e}")
+
+
+def find_contact_phone_number(contact_name: str) -> Optional[str]:
+    """Resolve contact to an E.164-compatible clean digit string (e.g. 919876543210).
+
+    1. If contact_name is already a phone number, clean and return.
+    2. Search long-term memory categories (relationships, identity, preferences, notes)
+       for contact matches containing phone numbers.
+    """
+    clean_target = (contact_name or "").strip()
+    if not clean_target:
+        return None
+
+    # Check if contact_name itself is already a phone number
+    digits_only = re.sub(r"[^\d]", "", clean_target)
+    if len(digits_only) >= 10:
+        if len(digits_only) == 10 and digits_only[0] in "6789":
+            return f"91{digits_only}"
+        return digits_only
+
+    # Search long-term memory
+    try:
+        data = memory_manager.load_memory()
+        target_lower = clean_target.lower()
+        candidates: List[str] = []
+
+        for category, items in data.items():
+            if not isinstance(items, dict):
+                continue
+            for key, val_entry in items.items():
+                k_lower = key.lower()
+                val_text = ""
+                if isinstance(val_entry, dict):
+                    val_text = str(val_entry.get("value", ""))
+                elif isinstance(val_entry, str):
+                    val_text = val_entry
+
+                if target_lower in k_lower or target_lower in val_text.lower():
+                    # Scan for phone patterns
+                    matches = re.findall(
+                        r"(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}|\b\d{10,14}\b",
+                        f"{key} {val_text}",
+                    )
+                    for m in matches:
+                        d = re.sub(r"[^\d]", "", m)
+                        if len(d) >= 10:
+                            if len(d) == 10 and d[0] in "6789":
+                                d = f"91{d}"
+                            candidates.append(d)
+
+        if candidates:
+            return candidates[0]
+    except Exception as e:
+        logger.debug("[WhatsAppWeb] Memory phone search error: %s", e)
+
+    return None
+
 
 _DRIVER_INSTANCE: Optional[WhatsAppWebDriver] = None
 
