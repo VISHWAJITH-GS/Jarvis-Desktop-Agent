@@ -44,9 +44,14 @@ class WhatsAppSelectors:
     main_chat_panel: str = '#main, [data-testid="conversation-panel-wrapper"]'
 
     # Search Box
-    search_input: str = 'div[contenteditable="true"][data-tab="3"], div[title="Search input textbox"], [data-testid="chat-list-search"]'
-    search_results_container: str = 'div[data-testid="search-results"], div[aria-label="Search results."]'
-    search_result_item: str = 'div[data-testid="cell-frame-container"], div[role="listitem"]'
+    search_input: str = (
+        '#side [aria-label*="Search"], #side [placeholder*="Search"], '
+        '#side [role="textbox"][data-tab="3"], #side input[type="text"], '
+        '[data-testid="chat-list-search"], div[contenteditable="true"][data-tab="3"], '
+        'div[title="Search input textbox"]'
+    )
+    search_results_container: str = 'div[data-testid="search-results"], div[aria-label="Search results."], #side'
+    search_result_item: str = 'div[data-testid="cell-frame-container"], div[role="listitem"], div[role="row"]'
     search_cancel_btn: str = 'button[aria-label="Cancel search"], [data-testid="search-cancel"], button[aria-label="Close search"]'
 
     # Active Conversation Header
@@ -54,7 +59,10 @@ class WhatsAppSelectors:
     chat_header_title: str = 'header span[dir="auto"], header span[title], [data-testid="conversation-info-header-chat-title"]'
 
     # Message Composer
-    compose_box: str = 'footer div[contenteditable="true"], div[contenteditable="true"][data-tab="10"], [data-testid="conversation-compose-box-input"]'
+    compose_box: str = (
+        'footer div[contenteditable="true"], [data-testid="conversation-compose-box-input"], '
+        'footer [role="textbox"][contenteditable="true"], footer div[role="textbox"]'
+    )
     send_button: str = 'button[aria-label="Send"], span[data-icon="send"], [data-testid="send"]'
 
     # Outgoing Message Delivery Ticks
@@ -134,7 +142,9 @@ class WhatsAppWebDriver:
           - ("ready", reason): chat list loaded and ready for interaction
           - ("failed", reason): layout changed or unexpected failure
         """
-        deadline = time.monotonic() + max(timeout, 2.0)
+        start_time = time.monotonic()
+        deadline = start_time + max(timeout, 2.0)
+        saw_syncing = False
 
         while time.monotonic() < deadline:
             # 1. Check for QR Code (Not signed in)
@@ -147,9 +157,21 @@ class WhatsAppWebDriver:
 
             # 2. Check for Startup Syncing / Progress
             try:
-                progress_el = await page.query_selector(SELECTORS.startup_progress) or await page.query_selector(SELECTORS.syncing_spinner)
-                if progress_el and await progress_el.is_visible():
-                    # Still syncing; wait a moment for next check
+                progress_el = (
+                    await page.query_selector(SELECTORS.startup_progress)
+                    or await page.query_selector(SELECTORS.syncing_spinner)
+                    or await page.query_selector("progress")
+                )
+                body_text = (await page.evaluate("() => document.body ? document.body.innerText : ''")) or ""
+                is_syncing = (
+                    (progress_el and await progress_el.is_visible())
+                    or any(term in body_text.lower() for term in ("downloading", "loading your chats", "connecting"))
+                )
+                if is_syncing:
+                    saw_syncing = True
+                    # If actively downloading/syncing, gracefully extend deadline up to 30s
+                    if (deadline - time.monotonic() < 3.0) and (time.monotonic() - start_time < 30.0):
+                        deadline = time.monotonic() + 5.0
                     await asyncio.sleep(0.5)
                     continue
             except Exception:
@@ -173,6 +195,9 @@ class WhatsAppWebDriver:
                 return "blocked", "Scan the QR code in the Jarvis Chrome window to log into WhatsApp Web."
         except Exception:
             pass
+
+        if saw_syncing:
+            return "loading", "WhatsApp Web is still downloading and syncing your messages. Please keep WhatsApp open on your phone."
 
         return "failed", "WhatsApp Web layout changed: failed to detect chat list or QR code within timeout."
 
@@ -269,7 +294,7 @@ class WhatsAppWebDriver:
             logger.info("[WhatsAppWeb] Direct phone URL timed out; falling back to search box.")
 
         # 2. Fall back to search box
-        search_el = await page.wait_for_selector(SELECTORS.search_input, timeout=6000)
+        search_el = await page.wait_for_selector(SELECTORS.search_input, timeout=12000)
         if not search_el:
             return outcome.result_failed("resolve_contact", "WhatsApp Web layout changed: Search input box not found.")
 
@@ -287,6 +312,7 @@ class WhatsAppWebDriver:
         items = await page.query_selector_all(SELECTORS.search_result_item)
         matched_elements: List[Tuple[str, Any]] = []
         candidate_names: List[str] = []
+        exact_matches: List[Tuple[str, Any]] = []
 
         for it in items:
             try:
@@ -295,27 +321,42 @@ class WhatsAppWebDriver:
                 title_span = await it.query_selector('span[dir="auto"], span[title]')
                 if title_span:
                     title = (await title_span.inner_text() or await title_span.get_attribute("title") or "").strip()
-                    if title and clean_name.lower() in title.lower() and title not in candidate_names:
-                        candidate_names.append(title)
-                        matched_elements.append((title, it))
+                    if title:
+                        if title.lower() == clean_name.lower():
+                            exact_matches.append((title, it))
+                        if clean_name.lower() in title.lower() and title not in candidate_names:
+                            candidate_names.append(title)
+                            matched_elements.append((title, it))
             except Exception:
                 continue
 
-        # Multiple matches -> Disambiguation STOP and return "ask"
-        if len(candidate_names) > 1:
+        # If an exact match is found, prioritize it directly over loose partial matches (e.g. 'Mom' vs 'Savemom')
+        if len(exact_matches) == 1:
+            chosen_title, chosen_el = exact_matches[0]
+        elif len(exact_matches) > 1:
+            exact_names = [t for t, _ in exact_matches]
+            return outcome.result_ask(
+                "resolve_contact",
+                f"Found multiple contacts matching '{clean_name}': {', '.join(exact_names[:4])}. Which one would you like to message?",
+                data={"candidates": exact_names, "expected": clean_name},
+            )
+        elif len(candidate_names) > 1:
+            # Ambiguity without an exact match -> Ask user
             return outcome.result_ask(
                 "resolve_contact",
                 f"Found multiple contacts matching '{clean_name}': {', '.join(candidate_names[:4])}. Which one would you like to message?",
                 data={"candidates": candidate_names, "expected": clean_name},
             )
-
-        if not matched_elements:
+        elif matched_elements:
+            chosen_title, chosen_el = matched_elements[0]
+        else:
             # Check XPath / title exact match fallback
             chat_item = await page.query_selector(
                 f'//span[@title="{clean_name}"] | //span[contains(translate(@title, "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"), "{clean_name.lower()}")]'
             )
             if chat_item and await chat_item.is_visible():
-                matched_elements.append((clean_name, chat_item))
+                chosen_title = clean_name
+                chosen_el = chat_item
             else:
                 return outcome.result_failed(
                     "resolve_contact",
@@ -323,13 +364,18 @@ class WhatsAppWebDriver:
                     data={"contact": clean_name},
                 )
 
-        # Click the single identified contact item
-        chosen_title, chosen_el = matched_elements[0]
-        await chosen_el.click()
-        await asyncio.sleep(1.0)
+        # Click the identified contact item (click closest cell container if available)
+        try:
+            cell = await chosen_el.evaluate_handle(
+                "el => el.closest('[data-testid=\"cell-frame-container\"], div[role=\"row\"], div[role=\"listitem\"]') || el"
+            )
+            await cell.click()
+        except Exception:
+            await chosen_el.click()
+        await asyncio.sleep(1.2)
 
         # Strict Header Verification: verify opened chat header title matches intended contact
-        header_el = await page.wait_for_selector(SELECTORS.chat_header_title, timeout=5000)
+        header_el = await page.wait_for_selector(SELECTORS.chat_header_title, timeout=8000)
         if not header_el:
             return outcome.result_failed(
                 "resolve_contact",
@@ -376,7 +422,7 @@ class WhatsAppWebDriver:
             return res_contact
 
         # 2. Wait for message composer to be visible
-        compose_el = await page.wait_for_selector(SELECTORS.compose_box, timeout=8000)
+        compose_el = await page.wait_for_selector(SELECTORS.compose_box, timeout=10000)
         if not compose_el:
             return outcome.result_failed(
                 "whatsapp_send",
@@ -399,8 +445,15 @@ class WhatsAppWebDriver:
 
         await asyncio.sleep(0.3)
 
-        # 4. Press Enter via CDP
-        await page.keyboard.press("Enter")
+        # 4. Press Enter or click send button via CDP
+        try:
+            send_btn = await page.query_selector(SELECTORS.send_button)
+            if send_btn and await send_btn.is_visible():
+                await send_btn.click()
+            else:
+                await page.keyboard.press("Enter")
+        except Exception:
+            await page.keyboard.press("Enter")
         await asyncio.sleep(0.5)
 
         # 5. Verify Delivery via Outgoing Message Bubble and Status Ticks
