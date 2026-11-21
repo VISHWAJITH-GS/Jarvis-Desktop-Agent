@@ -24,6 +24,7 @@ from typing import Any, Dict, Literal, Optional, Tuple
 
 from actions.browser_session import get_browser_session_manager, BrowserSessionManager, CDPConnectionError
 from actions.dom_distiller import get_dom_distiller, DOMDistiller
+from core import outcome
 
 logger = logging.getLogger("action_executor")
 
@@ -89,7 +90,8 @@ class ActionExecutor:
         url = page.url if (page and not page.is_closed()) else ""
         header = f"Page: '{title}' ({url})"
         obs_text, _ = await self.distiller.distill_page(page, cdp_session)
-        return header, obs_text
+        wrapped_obs = outcome.untrusted(url or "browser_page", obs_text)
+        return header, wrapped_obs
 
     # ── Core Action Implementations ───────────────────────────────────────────
 
@@ -101,8 +103,14 @@ class ActionExecutor:
         if not elem:
             return f"[Error] Element index [{index}] not found in latest observation. Call observe_page to refresh."
 
-        cdp = await self.session_mgr._get_cdp_session()
         page = self.session_mgr.active_page
+        if page and "mail.google.com" in (page.url or "").lower():
+            label = (elem.aria_label or elem.text or elem.name or elem.placeholder or "").lower()
+            blocked_words = ("send", "reply", "forward", "delete", "archive", "move", "discard")
+            if any(w in label for w in blocked_words):
+                return f"[Security Block] Action blocked by safety guard: Gmail read-only mode is active. Modifying emails ({label}) is prohibited in automated browser mode."
+
+        cdp = await self.session_mgr._get_cdp_session()
         await self.distiller.remove_som_overlay(page)
 
         # Resolve coordinates: try CDP BoxModel first, fallback to bounding box center
@@ -138,6 +146,12 @@ class ActionExecutor:
         elem = self.distiller.get_element_by_index(index)
         if not elem:
             return f"[Error] Element index [{index}] not found in latest observation. Call observe_page to refresh."
+
+        page = self.session_mgr.active_page
+        if page and "mail.google.com" in (page.url or "").lower():
+            label = (elem.aria_label or elem.text or elem.name or elem.placeholder or "").lower()
+            if any(w in label for w in ("body", "message body", "subject", "to", "recipients", "compose", "reply")):
+                return "[Security Block] Action blocked by safety guard: Gmail read-only mode is active. Modifying compose fields is prohibited in automated browser mode."
 
         cdp = await self.session_mgr._get_cdp_session()
         page = self.session_mgr.active_page

@@ -172,6 +172,114 @@ class TestBrowserProfileLaunch(unittest.TestCase):
             mock_launch.assert_not_called()
             self.assertEqual(mgr.active_page, mock_page)
 
+    def test_08_no_focus_stealing_in_background_mode(self):
+        """Verify switch_tab does not call bring_to_front when background_mode is active."""
+        mgr = BrowserSessionManager(cdp_url="http://127.0.0.1:9222", engine="chrome")
+        mgr.background_mode = True
+
+        mock_page_0 = MagicMock()
+        mock_page_0.title = MagicMock(return_value="Tab 0")
+        mock_page_1 = MagicMock()
+        mock_page_1.title = MagicMock(return_value="Tab 1")
+        mock_page_1.url = "https://example.com/tab1"
+
+        async def fake_bring_to_front():
+            pass
+
+        async def fake_title():
+            return "Tab 1"
+
+        mock_page_1.bring_to_front = MagicMock(side_effect=fake_bring_to_front)
+        mock_page_1.title = fake_title
+
+        mock_context = MagicMock()
+        mock_context.pages = [mock_page_0, mock_page_1]
+        mock_browser = MagicMock()
+        mock_browser.is_connected.return_value = True
+
+        mgr._browser = mock_browser
+        mgr._context = mock_context
+        mgr._active_page = mock_page_0
+
+        with patch.object(mgr, "_ensure_attached", return_value=None):
+            tab = mgr.switch_tab(1)
+            self.assertEqual(tab.index, 1)
+            # bring_to_front MUST NOT have been called in background mode!
+            mock_page_1.bring_to_front.assert_not_called()
+
+    def test_09_signed_out_detection(self):
+        """Verify accurate signed-out state detection across web services."""
+        from actions.signed_out_detector import check_signed_out_status
+
+        # Gmail
+        gmail_out = check_signed_out_status("https://accounts.google.com/signin/v2/identifier", "Sign in - Google Accounts")
+        self.assertIsNotNone(gmail_out)
+        self.assertIn("Gmail login expired", gmail_out)
+
+        # WhatsApp Web
+        wa_out = check_signed_out_status("https://web.whatsapp.com", html_text="To use WhatsApp on your computer, open WhatsApp")
+        self.assertIsNotNone(wa_out)
+        self.assertIn("WhatsApp Web session expired or unlinked", wa_out)
+
+        # Spotify
+        spotify_out = check_signed_out_status("https://open.spotify.com/login", "Log in to Spotify")
+        self.assertIsNotNone(spotify_out)
+        self.assertIn("Spotify Web login expired", spotify_out)
+
+        # Logged in page should return None
+        logged_in = check_signed_out_status("https://mail.google.com/mail/u/0/#inbox", "Inbox (12) - test@gmail.com")
+        self.assertIsNone(logged_in)
+
+    def test_10_failure_recovery_classification(self):
+        """Verify browser failure classifier provides specific cause and next steps."""
+        from actions.browser_session import classify_browser_failure
+
+        f_exec = classify_browser_failure("Could not locate executable for browser engine 'chrome'")
+        self.assertEqual(f_exec["category"], "chrome_not_installed")
+        self.assertIn("Google Chrome", f_exec["user_action"])
+
+        f_def = classify_browser_failure("Refusing to launch against user's default browser data directory")
+        self.assertEqual(f_def["category"], "daily_profile_blocked")
+
+        f_lock = classify_browser_failure("SingletonLock failed: profile in use by another instance")
+        self.assertEqual(f_lock["category"], "profile_locked")
+
+        f_cdp = classify_browser_failure("connect ECONNREFUSED 127.0.0.1:9222")
+        self.assertEqual(f_cdp["category"], "cdp_timeout")
+
+    def test_11_gmail_read_only_and_financial_safety(self):
+        """Verify Gmail write actions are forbidden and financial checkout requires HIGH_IMPACT."""
+        from core.permissions import ActionPermissionManager, ActionRiskLevel
+
+        mgr = ActionPermissionManager()
+
+        # 1. Financial page requires HIGH_IMPACT regardless of sub-action
+        fin_risk = mgr.get_risk_level(
+            "browser_control",
+            {"action": "click", "url": "https://store.example.com/checkout/payment"},
+        )
+        self.assertEqual(fin_risk, ActionRiskLevel.HIGH_IMPACT)
+
+        # 2. Gmail read-only guard blocks compose/send/delete
+        gmail_send_risk = mgr.get_risk_level(
+            "browser_control",
+            {"action": "click", "url": "https://mail.google.com/mail/u/0/", "text": "Send"},
+        )
+        self.assertEqual(gmail_send_risk, ActionRiskLevel.FORBIDDEN)
+
+        gmail_del_risk = mgr.get_risk_level(
+            "browser_control",
+            {"action": "click", "url": "https://mail.google.com/mail/u/0/", "text": "Delete message"},
+        )
+        self.assertEqual(gmail_del_risk, ActionRiskLevel.FORBIDDEN)
+
+        # 3. Reading/observing Gmail is permitted
+        gmail_read_risk = mgr.get_risk_level(
+            "browser_control",
+            {"action": "observe", "url": "https://mail.google.com/mail/u/0/"},
+        )
+        self.assertEqual(gmail_read_risk, ActionRiskLevel.IMMEDIATE)
+
 
 if __name__ == "__main__":
     unittest.main()

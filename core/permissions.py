@@ -582,6 +582,38 @@ class ActionPermissionManager:
         # - Download file: CONFIRMATION REQUIRED
         # - Make payment, purchase: HIGH-IMPACT
         if act in ("open_app", "computer_control", "browser_control", "action_executor", "web_search", "send_message", "whatsapp_send", "whatsapp"):
+            # Financial pages (payment and checkout) always require HIGH_IMPACT confirmation regardless of action type
+            if act in ("browser_control", "action_executor"):
+                target_url = (params.get("url") or "").lower()
+                if not target_url:
+                    try:
+                        from actions.browser_control import _get_active_url
+                        target_url = (_get_active_url() or "").lower()
+                    except Exception:
+                        pass
+                financial_keywords = (
+                    "checkout",
+                    "payment",
+                    "pay",
+                    "cart",
+                    "billing",
+                    "order",
+                    "purchase",
+                    "paypal",
+                    "stripe",
+                    "bank",
+                    "banking",
+                )
+                if any(k in target_url for k in financial_keywords):
+                    return ActionRiskLevel.HIGH_IMPACT
+
+                # Per-site read-only guards: Gmail read-only
+                if "mail.google.com" in target_url:
+                    text_param = str(params.get("text") or params.get("description") or "").lower()
+                    blocked_gmail = ("send", "reply", "forward", "delete", "archive", "move", "compose")
+                    if any(w in text_param for w in blocked_gmail) or sub_act in ("send", "reply", "forward", "delete", "archive", "move"):
+                        return ActionRiskLevel.FORBIDDEN
+
             if act in ("whatsapp_send", "whatsapp"):
                 return ActionRiskLevel.CONFIRMATION_REQUIRED
 

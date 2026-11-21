@@ -34,6 +34,16 @@ graph TD
 ### Domain Tools (`actions/`)
 - Specialized tools providing real desktop automation: `computer_control`, `windows_control`, `windows_uia`, `browser_control`, `spotify_control`, `reminder`, `system_monitor`, `file_controller`, `file_processor`, etc.
 
+### Dedicated Browser Engine & CDP Profile (`actions/browser_session.py`)
+- **Dedicated Profile Isolation**: Browser automation operates exclusively inside a dedicated user data directory (`%LOCALAPPDATA%\Google\Chrome\JarvisProfile` on Windows, `~/Library/Application Support/Google/Chrome-Jarvis` on macOS, `~/.config/google-chrome-jarvis` on Linux). Automation is strictly prohibited from running against the user's daily default browser data directory.
+- **Port Separation**: Chrome binds to port `9222`, Edge binds to port `9223`, preventing collision if both profiles exist. The debugging port binds to `127.0.0.1` only, and `--remote-allow-origins` is strictly restricted to local callers (no wildcard `*`).
+- **Identity Verification**: Before executing any browser action, Jarvis queries process command-line arguments to verify that the active CDP port is bound to the dedicated Jarvis profile. If an unverified or daily profile is detected, execution is refused.
+- **Security & Privacy Warning**: The dedicated browser profile holds live authenticated session cookies (e.g. Gmail, WhatsApp Web, ChatGPT, Claude) for convenience. **The profile directory must never be committed to Git, shared, synced to public/cloud storage, or backed up to untrusted locations.** Passwords, session tokens, and raw cookies are never logged or exposed in conversation audit logs.
+- **Per-Site Safeguards**:
+  - **Gmail Read-Only Guard**: Sending, replying, forwarding, deleting, archiving, moving emails, or typing into compose fields is blocked in code.
+  - **Financial Pages Guard**: Payment and checkout pages always require `HIGH_IMPACT` confirmation regardless of action type.
+  - **Untrusted Content Defanging**: All web page content is enclosed in `<<<UNTRUSTED source=...>>>` delimiters to defang prompt injection attacks.
+
 ### Memory & Config (`memory/`)
 - **`config_manager.py`**: Thread-safe access to persistent preferences and API configurations (`config/api_keys.json`).
 - **`memory_manager.py`**: Persistent memory store, session summaries, and semantic search.
