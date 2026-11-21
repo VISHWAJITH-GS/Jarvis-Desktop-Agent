@@ -106,6 +106,7 @@ ACTION_PERMISSIONS: dict[str, str] = {
     "skill_learner": NORMAL,
     "browser_qa": NORMAL,
     "browser_profile": NORMAL,
+    "productivity": NORMAL,
     # Task tools
     "start_task": NORMAL,
     "list_tasks": READ_ONLY,
@@ -671,6 +672,10 @@ class ActionPermissionManager:
 
             if sub_act in ("delete_system_files", "delete_system_file"):
                 return ActionRiskLevel.HIGH_IMPACT
+
+        # Productivity actions (to-do list, tasks, habits) execute immediately without confirmation
+        if act == "productivity":
+            return ActionRiskLevel.IMMEDIATE
 
         # Check generic table fallback
         if act in ACTION_PERMISSIONS:

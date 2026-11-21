@@ -25,6 +25,16 @@ from core.tasks.notify import (
     notify_task_event,
     set_notify_callback,
 )
+from core.tasks.recovery import (
+    CLASSIFICATION_BLOCKED,
+    CLASSIFICATION_FIXABLE,
+    CLASSIFICATION_TRANSIENT,
+    CLASSIFICATION_UNKNOWN,
+    build_failure_report,
+    classify_failure,
+    execute_step_with_recovery,
+    verify_state_before_retry,
+)
 from core.tasks.security import (
     DEFAULT_UNATTENDED_ALLOWLIST,
     execute_task_tool,
@@ -51,6 +61,14 @@ __all__ = [
     "wrap_untrusted",
     "DEFAULT_UNATTENDED_ALLOWLIST",
     "get_task_engine",
+    "classify_failure",
+    "execute_step_with_recovery",
+    "build_failure_report",
+    "verify_state_before_retry",
+    "CLASSIFICATION_TRANSIENT",
+    "CLASSIFICATION_FIXABLE",
+    "CLASSIFICATION_BLOCKED",
+    "CLASSIFICATION_UNKNOWN",
 ]
 
 _engine_instance: Optional[TaskEngine] = None

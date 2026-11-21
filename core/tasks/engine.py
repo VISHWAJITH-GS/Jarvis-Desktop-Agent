@@ -9,13 +9,16 @@ and strict permission gating.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+import os
+import sys
 import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from core import gemini as _gemini
 from core import outcome
@@ -30,6 +33,45 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_WORKSPACE_BASE = BASE_DIR / "scratch" / "tasks"
 
+PRIORITY_USER = 0
+PRIORITY_BACKGROUND = 10
+PRIORITY_SCHEDULED = 20
+
+
+def check_resource_guard(max_cpu: float = 85.0, max_ram: float = 90.0) -> Tuple[bool, str]:
+    """Check if system CPU or RAM exceeds threshold. Returns (allowed, reason)."""
+    try:
+        import psutil
+
+        cpu = psutil.cpu_percent(interval=None)
+        ram = psutil.virtual_memory().percent
+        if cpu > max_cpu:
+            return False, f"CPU usage high ({cpu:.1f}% > {max_cpu}%)"
+        if ram > max_ram:
+            return False, f"RAM usage high ({ram:.1f}% > {max_ram}%)"
+    except Exception:
+        pass
+    return True, ""
+
+
+def set_background_thread_priority() -> None:
+    """Set low OS thread priority for background workers where supported."""
+    if sys.platform == "win32":
+        try:
+            import ctypes
+
+            # THREAD_PRIORITY_BELOW_NORMAL = -1
+            ctypes.windll.kernel32.SetThreadPriority(
+                ctypes.windll.kernel32.GetCurrentThread(), -1
+            )
+        except Exception:
+            pass
+    else:
+        try:
+            os.nice(5)
+        except Exception:
+            pass
+
 
 class TaskEngine:
     """Autonomous durable execution engine for background tasks."""
@@ -39,13 +81,23 @@ class TaskEngine:
         store: Optional[TaskStore] = None,
         workspace_base: Optional[Path] = None,
         poll_interval: float = 1.0,
+        max_workers: int = 4,
+        idle_timeout_sec: float = 15.0,
+        max_cpu_percent: float = 85.0,
+        max_ram_percent: float = 90.0,
     ):
         self.store = store or get_default_store()
         self.workspace_base = workspace_base or _DEFAULT_WORKSPACE_BASE
         self.workspace_base.mkdir(parents=True, exist_ok=True)
         self.poll_interval = poll_interval
+        self.max_workers = max_workers
+        self.idle_timeout_sec = idle_timeout_sec
+        self.max_cpu_percent = max_cpu_percent
+        self.max_ram_percent = max_ram_percent
+
         self._running = False
-        self._worker_thread: Optional[threading.Thread] = None
+        self._wake_event = threading.Event()
+        self._workers: list[threading.Thread] = []
         self._lock = threading.Lock()
         self._active_task_ids: set[str] = set()
 
@@ -56,20 +108,23 @@ class TaskEngine:
                 return
             self._running = True
             self.recover_interrupted_tasks()
-            self._worker_thread = threading.Thread(
-                target=self._worker_loop,
-                daemon=True,
-                name="JarvisBackgroundTaskEngine",
-            )
-            self._worker_thread.start()
+            self._notify_work_available()
             logger.info("[Tasks] Background task engine started.")
 
     def stop(self) -> None:
         """Stop scheduler and wait for active turns to finish."""
         with self._lock:
             self._running = False
-        if self._worker_thread and self._worker_thread.is_alive():
-            self._worker_thread.join(timeout=3.0)
+        self._wake_event.set()
+        with self._lock:
+            workers = list(self._workers)
+        for w in workers:
+            if w.is_alive() and w != threading.current_thread():
+                w.join(timeout=2.0)
+        try:
+            self.store.flush_json_immediate()
+        except Exception:
+            pass
 
     def recover_interrupted_tasks(self) -> None:
         """Recover any tasks left in 'running' state after a crash or restart."""
@@ -103,16 +158,34 @@ class TaskEngine:
         time_budget_sec: float = 300.0,
         round_budget: int = 10,
         allowlist: Optional[list[str]] = None,
+        priority: int = PRIORITY_BACKGROUND,
+        idempotency_key: Optional[str] = None,
+        due_time: Optional[str] = None,
+        isolate: bool = False,
     ) -> TaskRecord:
-        """Create and queue a new background task."""
+        """Create and queue a new background task with deduplication and priority."""
+        # 1. Deterministic idempotency key for debouncing duplicate requests
+        if not idempotency_key:
+            idempotency_key = hashlib.sha256(
+                f"{title.strip().lower()}:{description.strip()}".encode("utf-8")
+            ).hexdigest()[:16]
+
+        # 2. Debounce and merge duplicate active tasks
+        existing = self.store.find_active_by_idempotency(idempotency_key)
+        if existing:
+            logger.info("[Tasks] Debounced duplicate task '%s' (matches active task %s)", title, existing.id)
+            return existing
+
         ws_dir = self.workspace_base / task_id
         ws_dir.mkdir(parents=True, exist_ok=True)
+
+        initial_state = "scheduled" if (due_time and datetime.fromisoformat(due_time) > datetime.now()) else "queued"
 
         task = TaskRecord(
             id=task_id,
             title=title,
             description=description,
-            state="queued",
+            state=initial_state,
             checkpoint={"rounds": [], "findings": [], "notes": []},
             attempts=0,
             max_attempts=3,
@@ -123,32 +196,97 @@ class TaskEngine:
             allowlist=allowlist or [],
             workspace_dir=str(ws_dir),
             steer_notes=[],
+            priority=priority,
+            idempotency_key=idempotency_key,
+            due_time=due_time,
+            isolate=isolate,
         )
         self.store.save_task(task)
-        logger.info("[Tasks] Enqueued task: %s (%s)", title, task_id)
+        logger.info("[Tasks] Enqueued task: %s (%s, priority=%d)", title, task_id, priority)
+
+        self._notify_work_available()
         return task
 
+    def _notify_work_available(self) -> None:
+        """Wake idle workers and lazily spawn a new worker thread up to max_workers."""
+        self._wake_event.set()
+        with self._lock:
+            if not self._running:
+                return
+            self._workers = [w for w in self._workers if w.is_alive()]
+            if len(self._workers) < self.max_workers:
+                worker = threading.Thread(
+                    target=self._worker_loop,
+                    name=f"JarvisTaskWorker-{len(self._workers) + 1}",
+                    daemon=True,
+                )
+                self._workers.append(worker)
+                worker.start()
+
     def _worker_loop(self) -> None:
+        """Worker loop: zero idle polling via event waits, resource guarding, and idle retirement."""
+        set_background_thread_priority()
+        last_active = time.monotonic()
+
         while self._running:
             try:
-                task = self._fetch_next_task()
+                # 1. Resource Guard Check
+                allowed, reason = check_resource_guard(self.max_cpu_percent, self.max_ram_percent)
+                if not allowed:
+                    logger.warning("[Tasks] Resource guard paused execution: %s", reason)
+                    self._wake_event.wait(timeout=2.0)
+                    self._wake_event.clear()
+                    continue
+
+                # 2. Fetch highest priority runnable task
+                task: Optional[TaskRecord] = None
+                with self._lock:
+                    t_cand, next_wake_diff = self.store.get_next_runnable_task(self._active_task_ids)
+                    if t_cand:
+                        task = t_cand
+                        self._active_task_ids.add(task.id)
+
                 if task:
-                    self._run_task_to_completion(task)
-                else:
-                    time.sleep(self.poll_interval)
+                    last_active = time.monotonic()
+                    try:
+                        self._run_task_to_completion(task)
+                    finally:
+                        with self._lock:
+                            self._active_task_ids.discard(task.id)
+                    continue
+
+                # 3. No runnable work right now: event-driven wait until due or idle timeout
+                self._wake_event.clear()
+                wait_timeout = self.idle_timeout_sec
+                if next_wake_diff is not None and next_wake_diff > 0:
+                    wait_timeout = min(wait_timeout, next_wake_diff)
+
+                woken = self._wake_event.wait(timeout=wait_timeout)
+                if woken:
+                    self._wake_event.clear()
+                    last_active = time.monotonic()
+                    continue
+
+                # 4. Check for idle worker retirement
+                idle_duration = time.monotonic() - last_active
+                if idle_duration >= self.idle_timeout_sec:
+                    with self._lock:
+                        t_check, _ = self.store.get_next_runnable_task(self._active_task_ids)
+                        if not t_check:
+                            cur_thread = threading.current_thread()
+                            if cur_thread in self._workers:
+                                self._workers.remove(cur_thread)
+                            logger.debug("[Tasks] Idle worker %s retired.", cur_thread.name)
+                            break
+
             except Exception as e:
                 logger.error("[Tasks] Unhandled error in task worker loop: %s", e)
-                time.sleep(self.poll_interval)
+                time.sleep(0.5)
 
     def _fetch_next_task(self) -> Optional[TaskRecord]:
         """Fetch the next runnable task (queued, scheduled, or quota-cleared)."""
-        tasks = self.store.list_tasks(limit=20)
-        for t in tasks:
-            if t.id in self._active_task_ids:
-                continue
-            if t.state in ("queued", "scheduled", "waiting_quota"):
-                return t
-        return None
+        task, _ = self.store.get_next_runnable_task(self._active_task_ids)
+        return task
 
     def _run_task_to_completion(self, task: TaskRecord) -> None:
         """Run task loop until completed, paused, cancelled, or failed."""
@@ -241,15 +379,36 @@ class TaskEngine:
                 # Check if model concluded the task
                 if round_result.get("is_final"):
                     final_text = round_result.get("final_answer", "Task complete.")
+                    all_rounds = cp.get("rounds", [])
+                    has_unverified = any(
+                        r.get("tool_status") == outcome.STATUS_UNVERIFIED
+                        or (r.get("action") and r.get("action") not in ("finish", "complete", "done") and not r.get("tool_verified", True))
+                        for r in all_rounds
+                    )
+                    has_failed = any(
+                        r.get("tool_status") == outcome.STATUS_FAILED
+                        for r in all_rounds
+                    )
+
+                    if has_failed:
+                        final_state = "failed"
+                        final_msg = f"Task completed with errors: {final_text}"
+                    elif has_unverified:
+                        final_state = "unverified"
+                        final_msg = f"Task completed (unverified): {final_text}"
+                    else:
+                        final_state = "done"
+                        final_msg = final_text
+
                     self.store.atomic_checkpoint(
                         task_id=current.id,
-                        state="done",
+                        state=final_state,
                         round_count=current.round_count,
                         elapsed_sec=new_elapsed,
                         checkpoint=cp,
-                        result=final_text,
+                        result=final_msg,
                     )
-                    notify_task_event(current.id, current.title, "done", final_text)
+                    notify_task_event(current.id, current.title, final_state, final_msg)
                     break
 
         except Exception as e:
@@ -354,17 +513,36 @@ class TaskEngine:
             round_data["summary"] = f"Finished: {final_answer[:100]}"
             return round_data
 
-        # Execute Tool Call under ActionExecutionGuard
-        tool_res = execute_task_tool(
+        # Execute Tool Call under ActionExecutionGuard with Failure Recovery
+        def _exec_fn(t_name: str, p_dict: dict) -> outcome.ActionResult:
+            return execute_task_tool(
+                task_id=task.id,
+                tool_name=t_name,
+                parameters=p_dict,
+                allowlist=task.allowlist,
+                workspace_dir=task.workspace_dir,
+            )
+
+        def _log_attempt(att: dict):
+            cp = dict(task.checkpoint or {})
+            recovery_log = list(cp.get("recovery_log", []))
+            recovery_log.append(att)
+            cp["recovery_log"] = recovery_log
+            task.checkpoint = cp
+
+        from core.tasks.recovery import execute_step_with_recovery
+        tool_res = execute_step_with_recovery(
             task_id=task.id,
+            task_title=task.title,
             tool_name=action,
             parameters=params,
-            allowlist=task.allowlist,
+            execute_fn=_exec_fn,
             workspace_dir=task.workspace_dir,
+            on_attempt_logged=_log_attempt,
         )
 
         round_data["tool_status"] = tool_res.status
-        round_data["tool_verified"] = tool_res.verified
+        round_data["tool_verified"] = getattr(tool_res, "verified", False)
         round_data["summary"] = f"Ran {action}: status={tool_res.status}"
 
         if tool_res.status == outcome.STATUS_NEEDS_CONFIRMATION:
@@ -403,12 +581,20 @@ class TaskEngine:
         except Exception:
             report = f"Task concluded ({reason}). Gathered {len(findings)} findings."
 
+        all_rounds = cp.get("rounds", [])
+        has_unverified = any(
+            r.get("tool_status") == outcome.STATUS_UNVERIFIED
+            or (r.get("action") and r.get("action") not in ("finish", "complete", "done") and not r.get("tool_verified", True))
+            for r in all_rounds
+        )
+        final_state = "unverified" if has_unverified else "done"
+
         self.store.atomic_checkpoint(
             task_id=task.id,
-            state="done",
+            state=final_state,
             round_count=task.round_count,
             elapsed_sec=task.elapsed_sec,
             checkpoint=cp,
             result=report,
         )
-        notify_task_event(task.id, task.title, "done", report or "Task concluded.")
+        notify_task_event(task.id, task.title, final_state, report or "Task concluded.")
