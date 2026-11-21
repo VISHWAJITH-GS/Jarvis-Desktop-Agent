@@ -76,6 +76,7 @@ STATUS_FAILED = "failed"
 STATUS_UNVERIFIED = "unverified"
 STATUS_NEEDS_CONFIRMATION = "needs_confirmation"
 STATUS_UNSUPPORTED = "unsupported"
+STATUS_BLOCKED = "blocked"
 
 ALLOWED_STATUSES = {
     STATUS_PENDING,
@@ -85,6 +86,7 @@ ALLOWED_STATUSES = {
     STATUS_UNVERIFIED,
     STATUS_NEEDS_CONFIRMATION,
     STATUS_UNSUPPORTED,
+    STATUS_BLOCKED,
 }
 
 # The three words a tool may answer with, plus the one that asks.
@@ -93,6 +95,7 @@ UNVERIFIED = "unverified"
 FAILED = "failed"
 ASK = "ask"
 STARTED = "started"
+BLOCKED = "blocked"
 
 
 @dataclass
@@ -204,6 +207,44 @@ class ActionResult:
             duration_ms=duration_ms,
         )
 
+    @classmethod
+    def blocked(
+        cls,
+        action: str,
+        message: str = "",
+        error: Optional[str] = None,
+        data: Optional[dict] = None,
+        duration_ms: float = 0.0,
+    ) -> ActionResult:
+        return cls(
+            status=STATUS_BLOCKED,
+            action=action,
+            success=False,
+            verified=False,
+            message=message or str(error or "Action is blocked."),
+            error=error or message,
+            data=data or {},
+            duration_ms=duration_ms,
+        )
+
+    @classmethod
+    def ask(
+        cls,
+        action: str,
+        question: str,
+        data: Optional[dict] = None,
+        duration_ms: float = 0.0,
+    ) -> ActionResult:
+        return cls(
+            status=STATUS_NEEDS_CONFIRMATION,
+            action=action,
+            success=False,
+            verified=False,
+            message=question,
+            data=data or {},
+            duration_ms=duration_ms,
+        )
+
     @property
     def contract_status(self) -> str:
         """Standard status for verification contract: SUCCESS, FAILED, PARTIAL, UNKNOWN."""
@@ -265,6 +306,8 @@ result_done = ActionResult.done
 result_failed = ActionResult.failed
 result_unverified = ActionResult.unverified
 result_needs_confirmation = ActionResult.needs_confirmation
+result_blocked = ActionResult.blocked
+result_ask = ActionResult.ask
 
 
 def normalize_result(raw: Any, action_name: str = "", duration_ms: float = 0.0) -> ActionResult:
@@ -288,6 +331,8 @@ def normalize_result(raw: Any, action_name: str = "", duration_ms: float = 0.0) 
             status = STATUS_FAILED
         elif raw_status in ("ask", "needs_confirmation"):
             status = STATUS_NEEDS_CONFIRMATION
+        elif raw_status in ("blocked",):
+            status = STATUS_BLOCKED
         elif raw_status in ("unsupported", "unknown"):
             status = STATUS_UNSUPPORTED
         elif raw_status == "started":
@@ -363,6 +408,17 @@ def normalize_result(raw: Any, action_name: str = "", duration_ms: float = 0.0) 
                 verified=False,
                 message=reason_val or raw_str,
                 error=reason_val or "Unverified outcome",
+                data={"raw": raw_str},
+                duration_ms=duration_ms,
+            )
+        elif st_name == "blocked":
+            return ActionResult(
+                status=STATUS_BLOCKED,
+                action=act,
+                success=False,
+                verified=False,
+                message=reason_val or raw_str,
+                error=reason_val or "Action is blocked",
                 data={"raw": raw_str},
                 duration_ms=duration_ms,
             )
@@ -502,6 +558,19 @@ def unverified(action: str, reason: str, /, *args: Any, **facts: Any) -> str:
     return _line(UNVERIFIED, action, {**facts, "reason": reason}) + (
         " -- NOT confirmed. Tell the user plainly that you asked and cannot "
         "confirm it worked, and say what they can check. Do NOT say it is done."
+    )
+
+
+def blocked(action: str, reason: str, /, *args: Any, **facts: Any) -> str:
+    for a in args:
+        if isinstance(a, dict):
+            facts.update(a)
+        elif isinstance(a, str):
+            facts["detail"] = a
+    """The action cannot proceed until an external condition is met (e.g. user QR code scan)."""
+    return _line(BLOCKED, action, {**facts, "reason": reason}) + (
+        " -- BLOCKED. The action cannot proceed until an external condition is met. "
+        "Tell the user what is needed (e.g. scan QR code)."
     )
 
 
@@ -662,4 +731,4 @@ def is_problem(result: str) -> bool:
     So tools print their full result and log only what this returns True for.
     """
     text = str(result or "")
-    return text.startswith((f"status={FAILED} ", f"status={UNVERIFIED} ", f"status={ASK} "))
+    return text.startswith((f"status={FAILED} ", f"status={UNVERIFIED} ", f"status={ASK} ", f"status={BLOCKED} "))
