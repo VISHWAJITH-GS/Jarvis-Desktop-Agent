@@ -16,66 +16,35 @@ from plugins import _whatsapp_core as wa
 
 
 class WhatsAppPipelineTestCase(unittest.TestCase):
-    """Test WhatsApp verification honesty, contact resolution, and UIA guards."""
+    """Test WhatsApp verification honesty, contact resolution, and CDP guards."""
 
     def setUp(self):
         self.driver = wa.WhatsAppDriver()
 
     def test_resolve_contact_empty_candidates_returns_false(self):
         """When 0 contact candidates match, resolve_contact returns False and does NOT select."""
-        with (
-            patch.object(self.driver, "open_whatsapp", return_value=True),
-            patch.object(self.driver, "_find_whatsapp_window", return_value=MagicMock()),
-            patch.object(wa, "pyautogui") as mock_pyautogui,
-        ):
-            with patch.object(self.driver, "uia") as mock_uia:
-                # Search box found, but search result ListItems return empty
-                mock_uia.find_elements.side_effect = [
-                    {"status": "success", "matches": [MagicMock()]},  # search box
-                    {"status": "success", "matches": []},  # candidates empty
-                ]
-                ok, msg, candidates = self.driver.resolve_contact("NonexistentContact")
-                self.assertFalse(ok)
-                self.assertEqual(len(candidates), 0)
-                self.assertIn("not found", msg.lower())
-                # Verify enter key was NEVER pressed (search bar clearing may use backspace/delete)
-                self.assertNotIn(unittest.mock.call("enter"), mock_pyautogui.press.call_args_list)
+        mock_res = outcome.result_failed("resolve_contact", "Contact 'NonexistentContact' not found on WhatsApp Web.")
+        with patch.object(self.driver._web, "resolve_contact", return_value=mock_res):
+            ok, msg, candidates = self.driver.resolve_contact("NonexistentContact")
+            self.assertFalse(ok)
+            self.assertEqual(len(candidates), 0)
+            self.assertIn("not found", msg.lower())
 
     def test_send_message_fails_when_uia_verification_fails(self):
-        """When UIA confirmation cannot verify the message sent, returns False (never verified=True)."""
-        with (
-            patch.object(self.driver, "open_chat", return_value=(True, "Alex")),
-            patch.object(self.driver, "_find_whatsapp_window", return_value=MagicMock()),
-            patch.object(wa, "_paste_text"),
-        ):
-            with patch.object(self.driver, "uia") as mock_uia:
-                mock_input = MagicMock()
-                # Input field was NOT cleared after typing/enter (stuck or failed)
-                mock_input.window_text.return_value = "Hello World"
-                mock_uia.find_elements.side_effect = [
-                    # 1. Input box found
-                    {"status": "success", "matches": [{"_wrapper": mock_input}]},
-                    # 2. History verification returns no matching sent bubble
-                    {"status": "success", "matches": []},
-                ]
-                ok, err = self.driver.send_message_to("Alex", "Hello World")
-                self.assertFalse(ok)
-                self.assertIn("could not be confirmed", err.lower())
+        """When confirmation cannot verify the message sent, returns False (never verified=True)."""
+        mock_res = outcome.result_unverified("whatsapp_send", "Message input field cleared on send, but sent tick could not be confirmed.")
+        with patch.object(self.driver._web, "send_message", return_value=mock_res):
+            ok, err = self.driver.send_message_to("Alex", "Hello World")
+            self.assertFalse(ok)
+            self.assertIn("could not be confirmed", err.lower())
 
     def test_send_message_fails_safely_when_input_box_missing(self):
         """When the message input element cannot be found, return False and do not paste blind."""
-        with (
-            patch.object(self.driver, "open_chat", return_value=(True, "Alex")),
-            patch.object(self.driver, "_find_whatsapp_window", return_value=MagicMock()),
-            patch.object(wa, "_paste_text") as mock_paste,
-        ):
-            with patch.object(self.driver, "uia") as mock_uia:
-                # No Edit elements found for input
-                mock_uia.find_elements.return_value = {"status": "success", "matches": []}
-                ok, err = self.driver.send_message_to("Alex", "Hello World")
-                self.assertFalse(ok)
-                self.assertIn("input box could not be located", err.lower())
-                mock_paste.assert_not_called()
+        mock_res = outcome.result_failed("whatsapp_send", "WhatsApp Web layout changed: input box could not be located")
+        with patch.object(self.driver._web, "send_message", return_value=mock_res):
+            ok, err = self.driver.send_message_to("Alex", "Hello World")
+            self.assertFalse(ok)
+            self.assertIn("input box could not be located", err.lower())
 
 
 class PluginPermissionGuardTestCase(unittest.TestCase):

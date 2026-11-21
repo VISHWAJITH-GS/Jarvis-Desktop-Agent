@@ -47,6 +47,7 @@ THE ASSISTANT IS NEVER A TARGET
 
 from __future__ import annotations
 
+import logging
 import os
 import platform
 import re
@@ -58,6 +59,8 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from core.lazyimport import LazyModule, installed
+
+logger = logging.getLogger(__name__)
 
 _PSUTIL = installed("psutil")
 psutil = LazyModule("psutil")
@@ -109,7 +112,6 @@ ALIASES: dict[str, dict[str, str]] = {
     "brave": {"Windows": "brave", "Darwin": "Brave Browser", "Linux": "brave-browser"},
     "safari": {"Windows": "msedge", "Darwin": "Safari", "Linux": "firefox"},
     "opera": {"Windows": "opera", "Darwin": "Opera", "Linux": "opera"},
-    "whatsapp": {"Windows": "WhatsApp", "Darwin": "WhatsApp", "Linux": "whatsapp"},
     "telegram": {"Windows": "Telegram", "Darwin": "Telegram", "Linux": "telegram"},
     "discord": {"Windows": "Discord", "Darwin": "Discord", "Linux": "discord"},
     "slack": {"Windows": "Slack", "Darwin": "Slack", "Linux": "slack"},
@@ -295,7 +297,7 @@ def _chain_pids() -> set[int]:
             except Exception:
                 break
     except Exception as exc:
-        print(f"[appidentity] could not map own process tree: {exc}")
+        logger.debug(f"[appidentity] could not map own process tree: {exc}")
     return pids
 
 
@@ -359,7 +361,7 @@ def own_pids() -> set[int]:
                 except Exception:
                     continue
         except Exception as exc:
-            print(f"[appidentity] sibling scan failed: {exc}")
+            logger.debug(f"[appidentity] sibling scan failed: {exc}")
 
     return pids
 
@@ -402,7 +404,7 @@ def _windows_by_pid() -> dict[int, list[str]]:
         user32.EnumWindows(WNDENUMPROC(_collect), 0)
         return titles
     except Exception as exc:
-        print(f"[appidentity] window enumeration unavailable: {exc}")
+        logger.debug(f"[appidentity] window enumeration unavailable: {exc}")
         return {}
 
 
@@ -514,7 +516,7 @@ def running(spoken: str, include_self: bool = False) -> list[Match]:
     try:
         procs = list(psutil.process_iter(["pid", "name", "exe"]))
     except Exception as exc:
-        print(f"[appidentity] process list unavailable: {exc}")
+        logger.debug(f"[appidentity] process list unavailable: {exc}")
         return []
 
     for proc in procs:
@@ -644,7 +646,7 @@ def _post_close_windows(pid: int) -> int:
         user32.EnumWindows(WNDENUMPROC(_maybe_close), 0)
         return asked
     except Exception as exc:
-        print(f"[appidentity] WM_CLOSE failed for pid {pid}: {exc}")
+        logger.debug(f"[appidentity] WM_CLOSE failed for pid {pid}: {exc}")
         return 0
 
 
@@ -753,7 +755,7 @@ def _hwnds_for(pid: int) -> list[int]:
         user32.EnumWindows(WNDENUMPROC(_collect), 0)
         return found
     except Exception as exc:
-        print(f"[appidentity] window handles unavailable: {exc}")
+        logger.debug(f"[appidentity] window handles unavailable: {exc}")
         return []
 
 
@@ -781,7 +783,6 @@ def focus(match: "Match") -> bool:
             return False
         try:
             import ctypes
-            from ctypes import wintypes
 
             user32 = ctypes.WinDLL("user32", use_last_error=True)
             kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -828,7 +829,7 @@ def focus(match: "Match") -> bool:
                     return True
             return False
         except Exception as exc:
-            print(f"[appidentity] focus failed: {exc}")
+            logger.debug(f"[appidentity] focus failed: {exc}")
             return False
 
     if _OS == "Darwin":

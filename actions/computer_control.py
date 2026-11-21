@@ -539,7 +539,22 @@ def _close_app(app_name: str, confirmed_index: int | None = None) -> str:
         return outcome.failed("close_app", "no application name was given")
 
     is_windows = _get_os() == "windows"
-    lower_app = app_name.lower()
+    lower_app = app_name.lower().strip()
+
+    # WhatsApp: WhatsApp Desktop is uninstalled, close WhatsApp Web tab if open
+    if any(tok == lower_app or tok in lower_app for tok in ("whatsapp", "whatsapp web", "whatsapp desktop", "whatsappweb", "wapp", "wp")):
+        try:
+            from actions.browser_session import get_browser_session_manager
+
+            bm = get_browser_session_manager()
+            tabs = bm.list_tabs()
+            for t in tabs:
+                if "web.whatsapp.com" in t.url.lower():
+                    bm.close_tab(t.index)
+                    return outcome.done("close_app", app=app_name, closed="WhatsApp Web", verified=True)
+        except Exception:
+            pass
+        return outcome.failed("close_app", "WhatsApp Desktop is not installed and WhatsApp Web is not currently open.", app=app_name)
 
     # Special handling for File Explorer:
     # explorer.exe is the Windows shell process (desktop & taskbar) and is also

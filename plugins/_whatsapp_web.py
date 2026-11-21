@@ -526,7 +526,7 @@ class WhatsAppWebDriver:
         if res.is_success():
             return True, f"Sent message snippet '{message[:30]}' confirmed visible in chat history with verified sent tick."
         elif res.status == outcome.STATUS_UNVERIFIED:
-            return True, "Message input field cleared on send, but sent tick could not be confirmed."
+            return False, "Message input field cleared on send, but sent tick could not be confirmed."
         return False, res.error or res.message
 
     async def _read_messages_in_page(

@@ -29,7 +29,7 @@ class WhatsAppDriver:
         if res.is_success():
             contact = res.data.get("contact", contact_name)
             return True, contact, [contact]
-        elif res.status == "ask":
+        elif res.data.get("candidates") or res.status in ("ask", "needs_confirmation"):
             candidates = res.data.get("candidates", [])
             return False, res.message, candidates
         return False, res.error or res.message, []

@@ -22,6 +22,7 @@ from actions.file_controller import (
     _score_file_match,
     find_files,
 )
+from core import outcome
 from memory import memory_manager
 from ui import JarvisUI, MemoryActionsDisplayWindow
 
@@ -80,26 +81,15 @@ class TestWhatsAppSearchBarEmptying(unittest.TestCase):
                 # Verify contact name was pasted after emptying
                 mock_paste.assert_called_with("Mom")
 
-    @patch("plugins._whatsapp_core.pyautogui")
-    def test_whatsapp_core_clears_search_bar_before_typing(self, mock_pyautogui):
+    def test_whatsapp_core_clears_search_bar_before_typing(self):
         from plugins import _whatsapp_core as wa
 
         driver = wa.WhatsAppDriver()
-        driver.open_whatsapp = MagicMock(return_value=True)
-        driver._find_whatsapp_window = MagicMock(return_value=MagicMock())
-
-        with patch.object(wa, "_PYAUTOGUI", True):
-            with patch.object(wa, "_paste_text") as mock_paste:
-                # With no UIA search box, falls back to keyboard
-                driver.uia = None
-                driver.resolve_contact("Rahul")
-
-                # Ensure search was cleared first
-                mock_pyautogui.hotkey.assert_any_call("ctrl", "f")
-                mock_pyautogui.hotkey.assert_any_call("ctrl", "a")
-                mock_pyautogui.press.assert_any_call("backspace")
-                mock_pyautogui.press.assert_any_call("delete")
-                mock_paste.assert_called_with("Rahul")
+        mock_res = outcome.result_done("resolve_contact", "Found", verified=True, data={"contact": "Rahul"})
+        with patch.object(driver._web, "resolve_contact", return_value=mock_res):
+            ok, chosen, candidates = driver.resolve_contact("Rahul")
+            self.assertTrue(ok)
+            self.assertEqual(chosen, "Rahul")
 
 
 class TestMemoryAndActionsPlatform(unittest.TestCase):

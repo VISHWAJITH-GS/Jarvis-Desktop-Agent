@@ -122,68 +122,52 @@ class TestWhatsAppIntegration(unittest.TestCase):
         self.driver = wa.WhatsAppDriver()
 
     def test_contact_disambiguation_when_multiple_matches(self):
-        with (
-            patch.object(self.driver, "open_whatsapp", return_value=True),
-            patch.object(self.driver, "_find_whatsapp_window", return_value=MagicMock()),
-        ):
-            with patch.object(self.driver, "uia") as mock_uia:
-                mock_uia.find_elements.side_effect = [
-                    # Search box
-                    {"status": "success", "matches": [MagicMock()]},
-                    # Search results with duplicate/ambiguous names
-                    {
-                        "status": "success",
-                        "matches": [{"name": "Mom Office"}, {"name": "Mom Home"}],
-                    },
-                ]
-                ok, msg, candidates = self.driver.resolve_contact("Mom")
-                self.assertFalse(ok)
-                self.assertEqual(len(candidates), 2)
-                self.assertIn("multiple contacts", msg.lower())
+        mock_res = outcome.result_ask(
+            "resolve_contact",
+            "Multiple contacts matching Mom",
+            data={"candidates": ["Mom Office", "Mom Home"]},
+        )
+        with patch.object(self.driver._web, "resolve_contact", return_value=mock_res):
+            ok, msg, candidates = self.driver.resolve_contact("Mom")
+            self.assertFalse(ok)
+            self.assertEqual(len(candidates), 2)
+            self.assertIn("multiple contacts", msg.lower())
 
     def test_message_delivery_verification_contract(self):
-        with patch.object(self.driver, "open_chat", return_value=(True, "Alex")):
-            with patch.object(self.driver, "_find_whatsapp_window", return_value=MagicMock()):
-                with patch.object(self.driver, "uia") as mock_uia:
-                    mock_input = MagicMock()
-                    mock_input.window_text.return_value = ""  # Box cleared on send
-                    mock_uia.find_elements.side_effect = [
-                        # 1. Message input field
-                        {"status": "success", "matches": [{"_wrapper": mock_input}]},
-                        # 2. Sent text bubble visible in conversation history
-                        {"status": "success", "matches": [{"name": "I will be home by 6"}]},
-                    ]
-                    ok, evidence = self.driver.send_message_to("Alex", "I will be home by 6")
-                    self.assertTrue(ok)
-                    self.assertIn("confirmed visible", evidence)
+        mock_res = outcome.result_done(
+            "whatsapp_send",
+            "I have sent the message to Alex: 'I will be home by 6'",
+            verified=True,
+        )
+        with patch.object(self.driver._web, "send_message", return_value=mock_res):
+            ok, evidence = self.driver.send_message_to("Alex", "I will be home by 6")
+            self.assertTrue(ok)
+            self.assertIn("confirmed visible", evidence)
 
     def test_read_chat_messages(self):
-        with patch.object(self.driver, "open_chat", return_value=(True, "Mom")):
-            with patch.object(self.driver, "_find_whatsapp_window", return_value=MagicMock()):
-                with patch.object(self.driver, "uia") as mock_uia:
-                    mock_uia.find_elements.return_value = {
-                        "status": "success",
-                        "matches": [
-                            {"name": "Did you reach safely?"},
-                            {"name": "Yes, I am home."},
-                        ],
-                    }
-                    ok, msgs, err = self.driver.read_chat_messages("Mom", limit=2)
-                    self.assertTrue(ok)
-                    self.assertEqual(len(msgs), 2)
-                    self.assertEqual(msgs[0]["text"], "Did you reach safely?")
+        mock_msgs = [
+            {"sender": "Mom", "timestamp": "Recent", "text": "Did you reach safely?", "raw_text": "Did you reach safely?"},
+            {"sender": "Mom", "timestamp": "Recent", "text": "Yes, I am home.", "raw_text": "Yes, I am home."},
+        ]
+        mock_res = outcome.result_done("whatsapp_read", "Done", verified=True, data={"messages": mock_msgs})
+        with patch.object(self.driver._web, "read_messages", return_value=mock_res):
+            ok, msgs, err = self.driver.read_chat_messages("Mom", limit=2)
+            self.assertTrue(ok)
+            self.assertEqual(len(msgs), 2)
+            self.assertEqual(msgs[0]["text"], "Did you reach safely?")
 
     def test_whatsapp_reader_plugin(self):
-        with patch("plugins._whatsapp_core.get") as mock_get:
+        mock_msgs = [
+            {"sender": "Mom", "timestamp": "10:00 AM", "text": "Call me later", "raw_text": "Call me later"}
+        ]
+        mock_res = outcome.result_done("whatsapp_read", "Recent messages:\nMom: Call me later", verified=True, data={"messages": mock_msgs})
+        with patch("plugins._whatsapp_web.get_driver") as mock_get:
             mock_driver = MagicMock()
-            mock_driver.read_chat_messages.return_value = (
-                True,
-                [{"sender": "Mom", "text": "Call me later", "time": "10:00 AM"}],
-                "",
-            )
-            mock_get.return_value = (mock_driver, "")
+            mock_driver.read_messages.return_value = mock_res
+            mock_get.return_value = mock_driver
             res = whatsapp_reader.run({"action": "read_chat", "contact": "Mom"})
-            self.assertIn("Call me later", res)
+            res_str = res.to_speech_text() if hasattr(res, "to_speech_text") else str(res)
+            self.assertIn("Call me later", res_str)
 
 
 class TestWindowsSystemSettings(unittest.TestCase):
