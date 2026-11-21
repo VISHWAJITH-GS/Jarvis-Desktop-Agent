@@ -89,11 +89,10 @@ def execute_task_tool(
     set_current_task_id(task_id)
     set_untrusted_context(True)
     try:
-        # 4. Route through centralized ActionExecutionGuard
-        res = ActionExecutionGuard.guard_and_execute(
-            action_name=tool_name,
-            parameters=parameters,
-        )
+        from core.action_loader import get_default_registry
+        reg = get_default_registry()
+        # 4. Route through centralized ActionRegistry and ActionExecutionGuard
+        res = reg.execute(tool_name, parameters, ctx={"player": None})
 
         # 5. Wrap external content from read tools to defang prompt injection
         if res.status == outcome.STATUS_DONE and tool_name in READ_TOOLS:

@@ -702,6 +702,7 @@ Mark LVI/
 |---|---|---|
 | `core/face_model.obj` | [MediaPipe](https://github.com/google-ai-edge/mediapipe) canonical face model — 468 vertices of measured human face geometry | Apache License 2.0 |
 | Aviation weather reports | [AviationWeather.gov](https://aviationweather.gov/) public data API | Public data; no API key or account required |
+| Background Task Engine Design | [Mark LVII](https://github.com/FatihMakes/Mark-LVII) `core/tasks/` design reference | Creative Commons BY-NC 4.0 |
 
 ---
 

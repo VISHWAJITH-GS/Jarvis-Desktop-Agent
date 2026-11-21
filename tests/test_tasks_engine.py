@@ -220,22 +220,22 @@ class TestTaskEngine(unittest.TestCase):
             task_id="task_perm_1",
             title="Perm Test",
             description="Testing confirmation gating",
-            allowlist=["computer_control"],
+            allowlist=["windows_control"],
         )
 
-        # computer_control is a sensitive action requiring confirmation
+        # windows_control switch_wifi is a sensitive action requiring confirmation
         res = execute_task_tool(
             task_id="task_perm_1",
-            tool_name="computer_control",
-            parameters={"action": "click", "x": 100, "y": 100},
-            allowlist=["computer_control"],
+            tool_name="windows_control",
+            parameters={"action": "switch_wifi", "target": "Mobile_Hotspot"},
+            allowlist=["windows_control"],
         )
 
         # Background tasks must never auto-confirm: must return needs_confirmation
         self.assertEqual(res.status, outcome.STATUS_NEEDS_CONFIRMATION)
 
         # Verify tool execution in round pauses task
-        with patch("core.gemini.as_json", return_value={"action": "computer_control", "parameters": {"action": "click"}}):
+        with patch("core.gemini.as_json", return_value={"action": "windows_control", "parameters": {"action": "switch_wifi"}}):
             with patch("core.tasks.security.execute_task_tool", return_value=res):
                 round_res = self.engine._execute_round(task, [])
                 self.assertTrue(round_res.get("needs_confirmation"))
