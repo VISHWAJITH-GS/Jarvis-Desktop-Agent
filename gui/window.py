@@ -97,6 +97,7 @@ class MainWindow(
     _jarvis_window_sig = pyqtSignal(str)  # ("minimize" | "maximize" | "restore")
     _slide_alert_sig = pyqtSignal(str, str)  # (title, message)
     _reminders_sig = pyqtSignal(str)  # (scope)
+    _tasks_sig = pyqtSignal(str)  # (scope)
     _memory_actions_sig = pyqtSignal(str)  # (tab: "memory" | "actions")
     _screen_glow_sig = pyqtSignal(int)  # (duration_ms)
     _refresh_audio_sig = pyqtSignal()  # Trigger audio device dropdown refresh
@@ -343,6 +344,7 @@ class MainWindow(
         self._jarvis_window_sig.connect(self._on_jarvis_window_control)
         self._slide_alert_sig.connect(self._show_slide_alert)
         self._reminders_sig.connect(self._show_reminders)
+        self._tasks_sig.connect(self._show_tasks)
         self._memory_actions_sig.connect(self._show_memory_actions)
         self._screen_glow_sig.connect(self._on_screen_glow)
         self._refresh_audio_sig.connect(self._refresh_audio_tab)
@@ -350,9 +352,11 @@ class MainWindow(
         self._screen_glow_overlay = ScreenGlowOverlay(self)
         self._search_dock_minimized_to_bar = False
         self._reminders_dock_minimized_to_bar = False
+        self._tasks_dock_minimized_to_bar = False
         self._memory_actions_dock_minimized_to_bar = False
         self._slide_alert = None
         self._reminders_dock = None
+        self._tasks_dock = None
         self._memory_actions_dock = None
         self._displays: dict[int, JarvisDisplayWindow] = {}
         self._display_counter: int = 0

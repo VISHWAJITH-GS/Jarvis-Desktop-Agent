@@ -52,6 +52,8 @@ __all__ = [
     "format_visual_content_html",
     "RemindersDisplayWindow",
     "MemoryActionsDisplayWindow",
+    "TasksDisplayWindow",
+    "TodoListDisplayWindow",
     "ArmouryCrateTelemetryWidget",
     "MinimizedDisplayPill",
     "MinimizedDisplaysDock",

@@ -249,6 +249,11 @@ class WindowPanelsMixin:
             self._reminders_dock = RemindersDisplayWindow(self)
         self._reminders_dock.popup(scope)
 
+    def _show_tasks(self, scope: str = "all"):
+        if getattr(self, "_tasks_dock", None) is None:
+            self._tasks_dock = TasksDisplayWindow(self)
+        self._tasks_dock.popup(scope)
+
     def _show_memory_actions(self, tab: str = "memory"):
         if getattr(self, "_memory_actions_dock", None) is None:
             self._memory_actions_dock = MemoryActionsDisplayWindow(self)

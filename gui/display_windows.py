@@ -1446,3 +1446,786 @@ class MemoryActionsDisplayWindow(_FramelessWindowResizeMixin, QWidget):
             if self._filter_child_mouse_event(watched, event):
                 return True
         return super().eventFilter(watched, event)
+
+
+class TasksDisplayWindow(_FramelessWindowResizeMixin, QWidget):
+    """
+    Dedicated floating display window showing an active, manageable to-do list
+    with separate sections for 'Pending' and 'Completed' tasks, similar to Google Tasks.
+
+    Features:
+      - Separate 'Pending' and 'Completed' task sections with live counts
+      - Interactive checkboxes next to pending tasks to check them off immediately
+      - Clicking checked tasks re-opens them to Pending
+      - Clear title/description, formatted due dates (overdue, today, upcoming, or none),
+        priority tags, recurrence badges, and optional notes preview
+      - Quick-add input bar for new tasks with due date & priority selector
+      - Individual delete controls on every task card
+      - Collapsible Completed section (expand / collapse toggle like Google Tasks)
+      - Search / filter by keyword and scope (All, Today, Upcoming, High Priority)
+      - Clean, concise, and professional Google Tasks-inspired dark aesthetic
+    """
+
+    def __init__(self, main_win: "MainWindow" = None, parent=None):
+        super().__init__(parent)
+        self._main_win = main_win
+        self.setWindowTitle("JARVIS Google Tasks Matrix")
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setMinimumSize(420, 420)
+        self._init_frameless_resize()
+
+        self._active_scope = "all"
+        self._search_query = ""
+        self._completed_expanded = True
+        self._collapsed = False
+        self._cached_pending_count = 0
+        self._cached_completed_count = 0
+
+        screen = QApplication.primaryScreen().availableGeometry()
+        w = min(540, max(460, screen.width() // 3))
+        h = min(680, screen.height() - 100)
+        self._normal_h = h
+        x = max(screen.left() + 30, screen.center().x() - w // 2)
+        y = screen.top() + (screen.height() - h) // 2
+        self.setGeometry(x, y, w, h)
+
+        self._build_ui()
+        self.load_tasks()
+
+    def _build_ui(self):
+        self._outer = QFrame(self)
+        self._outer.setObjectName("TasksOuter")
+        self._outer.setStyleSheet(f"""
+            QFrame#TasksOuter {{
+                background: rgba(14, 18, 26, 250);
+                border: 1px solid rgba(0, 229, 255, 0.45);
+                border-radius: 8px;
+            }}
+        """)
+        self._outer.setMouseTracking(True)
+        self._outer.installEventFilter(self)
+        v_outer = QVBoxLayout(self)
+        v_outer.setContentsMargins(0, 0, 0, 0)
+        v_outer.addWidget(self._outer)
+
+        self._main_lay = QVBoxLayout(self._outer)
+        self._main_lay.setContentsMargins(12, 10, 12, 10)
+        self._main_lay.setSpacing(8)
+
+        # ── Header bar ──────────────────────────────────────────────────────
+        hdr = QHBoxLayout()
+        hdr.setSpacing(6)
+
+        dot = QLabel("☑")
+        dot.setFont(QFont("Montserrat", 10, QFont.Weight.Bold))
+        dot.setStyleSheet(f"color: {C.PRI}; background: transparent;")
+        hdr.addWidget(dot)
+
+        title_lbl = QLabel("GOOGLE TASKS — ACTIVE TO-DO MATRIX")
+        title_lbl.setFont(QFont("Montserrat", 8, QFont.Weight.Bold))
+        title_lbl.setStyleSheet(f"color: {C.PRI}; background: transparent; letter-spacing: 1px;")
+        hdr.addWidget(title_lbl)
+
+        hdr.addStretch()
+
+        self._count_lbl = QLabel("[ 0 PENDING | 0 DONE ]")
+        self._count_lbl.setFont(QFont("Montserrat", 7, QFont.Weight.Bold))
+        self._count_lbl.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
+        hdr.addWidget(self._count_lbl)
+
+        self._ref_btn = QPushButton("")
+        self._ref_btn.setIcon(get_uicon("refresh", color=C.PRI, size=13))
+        self._ref_btn.setFixedSize(22, 18)
+        self._ref_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._ref_btn.setToolTip("Refresh tasks")
+        self._ref_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: rgba(0, 229, 255, 0.12); color: {C.TEXT_DIM};
+                border: 1px solid rgba(0, 229, 255, 0.35); border-radius: 2px;
+            }}
+            QPushButton:hover {{ color: #ffffff; background: rgba(0, 229, 255, 0.35); border-color: {C.PRI}; }}
+        """)
+        self._ref_btn.clicked.connect(self.load_tasks)
+        hdr.addWidget(self._ref_btn)
+
+        self._min_btn = QPushButton(" MIN")
+        self._min_btn.setIcon(get_uicon("minus", color=C.PRI, size=11))
+        self._min_btn.setFont(QFont("Montserrat", 7))
+        self._min_btn.setFixedHeight(18)
+        self._min_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._min_btn.setToolTip("Minimize to-do list")
+        self._min_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: rgba(0, 229, 255, 0.12); color: {C.TEXT_DIM};
+                border: 1px solid rgba(0, 229, 255, 0.35); border-radius: 2px; padding: 0 5px;
+            }}
+            QPushButton:hover {{ color: #ffffff; background: rgba(0, 229, 255, 0.35); border-color: {C.PRI}; }}
+        """)
+        self._min_btn.clicked.connect(self.toggle_collapse)
+        hdr.addWidget(self._min_btn)
+
+        close_btn = QPushButton(" DISMISS")
+        close_btn.setIcon(get_uicon("cross", color=C.TEXT_DIM, size=11))
+        close_btn.setFont(QFont("Montserrat", 7))
+        close_btn.setFixedHeight(18)
+        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: rgba(0, 229, 255, 0.12); color: {C.TEXT_DIM};
+                border: 1px solid rgba(0, 229, 255, 0.35); border-radius: 2px; padding: 0 5px;
+            }}
+            QPushButton:hover {{ color: #ffffff; background: rgba(255, 23, 68, 0.45); border-color: {C.PRI}; }}
+        """)
+        close_btn.clicked.connect(self.hide)
+        hdr.addWidget(close_btn)
+
+        self._main_lay.addLayout(hdr)
+
+        # ── Body container ───────────────────────────────────────────────────
+        self._body_widget = QWidget()
+        self._body_widget.setStyleSheet("background: transparent;")
+        b_lay = QVBoxLayout(self._body_widget)
+        b_lay.setContentsMargins(0, 0, 0, 0)
+        b_lay.setSpacing(8)
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet(f"color: {C.BORDER};")
+        b_lay.addWidget(sep)
+
+        # ── Quick-Add Bar ────────────────────────────────────────────────────
+        add_frame = QFrame()
+        add_frame.setStyleSheet(f"""
+            QFrame {{
+                background: rgba(20, 25, 36, 230);
+                border: 1px solid rgba(0, 229, 255, 0.3);
+                border-radius: 5px;
+                padding: 4px;
+            }}
+        """)
+        add_lay = QVBoxLayout(add_frame)
+        add_lay.setContentsMargins(6, 6, 6, 6)
+        add_lay.setSpacing(6)
+
+        # Row 1: Task Title
+        self._in_title = QLineEdit()
+        self._in_title.setPlaceholderText("+ Add a task (e.g. Finish report, Buy groceries)...")
+        self._in_title.setFont(QFont("Montserrat", 8))
+        self._in_title.setStyleSheet(f"""
+            QLineEdit {{
+                background: {C.DARK}; color: {C.TEXT};
+                border: 1px solid {C.BORDER}; border-radius: 3px; padding: 5px 8px;
+            }}
+            QLineEdit:focus {{
+                border: 1px solid {C.PRI}; color: #ffffff;
+            }}
+        """)
+        self._in_title.returnPressed.connect(self._on_quick_add)
+        add_lay.addWidget(self._in_title)
+
+        # Row 2: Due Date + Priority + Add Button
+        row2 = QHBoxLayout()
+        row2.setSpacing(6)
+
+        self._in_due = QLineEdit()
+        self._in_due.setPlaceholderText("Due date (e.g. today 5pm, tomorrow, Friday)...")
+        self._in_due.setFont(QFont("Montserrat", 8))
+        self._in_due.setStyleSheet(f"""
+            QLineEdit {{
+                background: {C.DARK}; color: {C.TEXT};
+                border: 1px solid {C.BORDER}; border-radius: 3px; padding: 4px 6px;
+            }}
+            QLineEdit:focus {{ border: 1px solid {C.PRI}; color: #ffffff; }}
+        """)
+        self._in_due.returnPressed.connect(self._on_quick_add)
+        row2.addWidget(self._in_due, stretch=3)
+
+        self._priority_combo = QComboBox()
+        self._priority_combo.addItems(["Normal", "High", "Low"])
+        self._priority_combo.setFont(QFont("Montserrat", 8))
+        self._priority_combo.setFixedHeight(26)
+        self._priority_combo.setStyleSheet(f"""
+            QComboBox {{
+                background: {C.DARK}; color: {C.TEXT};
+                border: 1px solid {C.BORDER}; border-radius: 3px; padding: 2px 6px;
+            }}
+            QComboBox QAbstractItemView {{
+                background: {C.DARK}; color: #ffffff; selection-background-color: {C.PRI};
+            }}
+        """)
+        row2.addWidget(self._priority_combo, stretch=1)
+
+        self._add_btn = QPushButton("+ ADD TASK")
+        self._add_btn.setFont(QFont("Montserrat", 8, QFont.Weight.Bold))
+        self._add_btn.setFixedHeight(26)
+        self._add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._add_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: rgba(0, 229, 255, 0.22); color: #ffffff;
+                border: 1px solid {C.PRI}; border-radius: 3px; padding: 0 10px;
+            }}
+            QPushButton:hover {{ background: rgba(0, 229, 255, 0.55); }}
+        """)
+        self._add_btn.clicked.connect(self._on_quick_add)
+        row2.addWidget(self._add_btn)
+
+        add_lay.addLayout(row2)
+        b_lay.addWidget(add_frame)
+
+        # ── Filter Tabs & Search Bar ─────────────────────────────────────────
+        filter_bar = QHBoxLayout()
+        filter_bar.setSpacing(6)
+
+        self._search_in = QLineEdit()
+        self._search_in.setPlaceholderText("Filter tasks...")
+        self._search_in.setFont(QFont("Montserrat", 8))
+        self._search_in.setFixedHeight(22)
+        self._search_in.setStyleSheet(f"""
+            QLineEdit {{
+                background: rgba(18, 22, 32, 200); color: {C.TEXT};
+                border: 1px solid {C.BORDER}; border-radius: 3px; padding: 2px 6px;
+            }}
+        """)
+        self._search_in.textChanged.connect(self._on_search_changed)
+        filter_bar.addWidget(self._search_in, stretch=2)
+
+        self._tab_btns = {}
+        for scope_name in ("ALL", "TODAY", "UPCOMING", "HIGH"):
+            btn = QPushButton(scope_name)
+            btn.setFont(QFont("Montserrat", 7, QFont.Weight.Bold))
+            btn.setFixedHeight(22)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(lambda _, s=scope_name.lower(): self._set_scope(s))
+            filter_bar.addWidget(btn)
+            self._tab_btns[scope_name.lower()] = btn
+
+        b_lay.addLayout(filter_bar)
+
+        # ── Scroll Area for Tasks ────────────────────────────────────────────
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._scroll.setStyleSheet(f"""
+            QScrollArea {{
+                background: transparent;
+                border: 1px solid {C.BORDER};
+                border-radius: 4px;
+            }}
+            QScrollBar:vertical, QScrollBar:horizontal {{
+                background: transparent; width: 0px; height: 0px; border: none;
+            }}
+            QScrollBar::handle:vertical, QScrollBar::handle:horizontal {{
+                background: transparent; width: 0px; height: 0px;
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                width: 0; height: 0; border: none;
+            }}
+        """)
+
+        self._cards_widget = QWidget()
+        self._cards_widget.setStyleSheet("background: transparent;")
+        self._cards_lay = QVBoxLayout(self._cards_widget)
+        self._cards_lay.setContentsMargins(6, 6, 6, 6)
+        self._cards_lay.setSpacing(6)
+        self._cards_lay.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        # Section 1: Pending Tasks Header & Layout
+        self._pending_hdr = QLabel("PENDING (0)")
+        self._pending_hdr.setFont(QFont("Montserrat", 8, QFont.Weight.Bold))
+        self._pending_hdr.setStyleSheet(f"color: {C.PRI}; letter-spacing: 1px; padding: 4px 2px 2px 2px;")
+        self._cards_lay.addWidget(self._pending_hdr)
+
+        self._pending_container = QWidget()
+        self._pending_container.setStyleSheet("background: transparent;")
+        self._pending_lay = QVBoxLayout(self._pending_container)
+        self._pending_lay.setContentsMargins(0, 0, 0, 0)
+        self._pending_lay.setSpacing(5)
+        self._cards_lay.addWidget(self._pending_container)
+
+        # Section 2: Completed Tasks Header (Collapsible) & Layout
+        self._completed_sep = QFrame()
+        self._completed_sep.setFrameShape(QFrame.Shape.HLine)
+        self._completed_sep.setStyleSheet(f"color: {C.BORDER}; margin: 8px 0;")
+        self._cards_lay.addWidget(self._completed_sep)
+
+        self._completed_toggle_btn = QPushButton("▼  COMPLETED (0)")
+        self._completed_toggle_btn.setFont(QFont("Montserrat", 8, QFont.Weight.Bold))
+        self._completed_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._completed_toggle_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent; color: {C.TEXT_DIM}; border: none;
+                text-align: left; padding: 4px 2px;
+            }}
+            QPushButton:hover {{ color: #ffffff; }}
+        """)
+        self._completed_toggle_btn.clicked.connect(self._toggle_completed)
+        self._cards_lay.addWidget(self._completed_toggle_btn)
+
+        self._completed_container = QWidget()
+        self._completed_container.setStyleSheet("background: transparent;")
+        self._completed_lay = QVBoxLayout(self._completed_container)
+        self._completed_lay.setContentsMargins(0, 0, 0, 0)
+        self._completed_lay.setSpacing(5)
+        self._cards_lay.addWidget(self._completed_container)
+
+        self._scroll.setWidget(self._cards_widget)
+        b_lay.addWidget(self._scroll, stretch=1)
+
+        self._main_lay.addWidget(self._body_widget, stretch=1)
+
+    def _set_scope(self, scope: str):
+        self._active_scope = (scope or "all").lower()
+        self.load_tasks()
+
+    def _on_search_changed(self, text: str):
+        self._search_query = (text or "").strip().lower()
+        self.load_tasks()
+
+    def _toggle_completed(self):
+        self._completed_expanded = not self._completed_expanded
+        self._completed_container.setVisible(self._completed_expanded)
+        arrow = "▼" if self._completed_expanded else "▶"
+        self._completed_toggle_btn.setText(f"{arrow}  COMPLETED ({self._cached_completed_count})")
+
+    def _update_tab_styles(self):
+        for s_name, btn in self._tab_btns.items():
+            if s_name == self._active_scope:
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background: rgba(0, 229, 255, 0.35); color: #ffffff;
+                        border: 1px solid {C.PRI}; border-radius: 3px;
+                    }}
+                """)
+            else:
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background: rgba(20, 24, 34, 200); color: {C.TEXT_DIM};
+                        border: 1px solid {C.BORDER}; border-radius: 3px;
+                    }}
+                    QPushButton:hover {{
+                        color: #ffffff; border-color: {C.PRI};
+                    }}
+                """)
+
+    def load_tasks(self):
+        """Read tasks from memory/productivity.json and render separate Pending & Completed lists."""
+        self._update_tab_styles()
+
+        # Clear existing pending & completed cards
+        while self._pending_lay.count():
+            item = self._pending_lay.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        while self._completed_lay.count():
+            item = self._completed_lay.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        from datetime import datetime, timedelta
+        from plugins.productivity import get_store
+
+        store = get_store()
+        data = store.load()
+        raw_tasks = data.get("tasks", {})
+        task_list = list(raw_tasks.values())
+
+        now = datetime.now()
+        today_date = now.date()
+
+        pending_items = []
+        completed_items = []
+
+        for t in task_list:
+            status = t.get("status", "pending")
+            title = t.get("title", "")
+            notes = t.get("notes", "")
+
+            # Filter by search query if set
+            if self._search_query:
+                q = self._search_query
+                if q not in title.lower() and q not in notes.lower():
+                    continue
+
+            # Scope filtering
+            due_iso = t.get("due")
+            due_dt = None
+            if due_iso:
+                try:
+                    due_dt = datetime.fromisoformat(due_iso)
+                except Exception:
+                    pass
+
+            priority = (t.get("priority") or "normal").lower()
+
+            if self._active_scope == "today":
+                if due_dt and due_dt.date() != today_date:
+                    continue
+                elif not due_dt and status != "done":
+                    continue
+            elif self._active_scope == "upcoming":
+                if due_dt and due_dt < now and status != "done":
+                    continue
+            elif self._active_scope == "high":
+                if priority != "high":
+                    continue
+
+            if status in ("done", "completed"):
+                completed_items.append(t)
+            else:
+                pending_items.append(t)
+
+        # Sort pending: Overdue first, then by due date, then high priority
+        def _pending_sort_key(t):
+            due_iso = t.get("due") or "9999-12-31T23:59:59"
+            p_order = {"high": 0, "normal": 1, "low": 2}.get((t.get("priority") or "normal").lower(), 1)
+            return (due_iso, p_order)
+
+        pending_items.sort(key=_pending_sort_key)
+
+        # Sort completed: most recently completed first
+        def _completed_sort_key(t):
+            return t.get("completed_at") or t.get("due") or ""
+
+        completed_items.sort(key=_completed_sort_key, reverse=True)
+
+        self._cached_pending_count = len(pending_items)
+        self._cached_completed_count = len(completed_items)
+
+        self._count_lbl.setText(f"[ {self._cached_pending_count} PENDING | {self._cached_completed_count} DONE ]")
+        self._pending_hdr.setText(f"PENDING ({self._cached_pending_count})")
+        arrow = "▼" if self._completed_expanded else "▶"
+        self._completed_toggle_btn.setText(f"{arrow}  COMPLETED ({self._cached_completed_count})")
+
+        # Render Pending Tasks
+        if not pending_items:
+            empty_pend = QLabel("◈ All caught up! No pending tasks in this view. ◈")
+            empty_pend.setFont(QFont("Montserrat", 8))
+            empty_pend.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            empty_pend.setStyleSheet(f"color: {C.TEXT_DIM}; padding: 14px 6px; background: rgba(18, 22, 32, 140); border-radius: 4px;")
+            self._pending_lay.addWidget(empty_pend)
+        else:
+            for task in pending_items:
+                card = self._create_task_card(task, is_pending=True)
+                self._pending_lay.addWidget(card)
+
+        # Render Completed Tasks
+        if not completed_items:
+            empty_comp = QLabel("No completed tasks.")
+            empty_comp.setFont(QFont("Montserrat", 8))
+            empty_comp.setStyleSheet(f"color: {C.TEXT_DIM}; padding: 6px 2px;")
+            self._completed_lay.addWidget(empty_comp)
+        else:
+            for task in completed_items:
+                card = self._create_task_card(task, is_pending=False)
+                self._completed_lay.addWidget(card)
+
+    def _create_task_card(self, task: dict, is_pending: bool) -> QFrame:
+        """Create an interactive task card with Google Tasks layout, checkbox, due date badge, and delete button."""
+        from datetime import datetime, timedelta
+
+        card = QFrame()
+        task_id = task.get("id", "")
+        title = task.get("title", "Untitled task")
+        notes = task.get("notes", "")
+        due_iso = task.get("due")
+        priority = (task.get("priority") or "normal").lower()
+        recurrence = task.get("recurrence")
+        completed_at = task.get("completed_at")
+
+        border_accent = "#00e676" if not is_pending else ("#ff1744" if priority == "high" else "#00e5ff")
+
+        card.setStyleSheet(f"""
+            QFrame {{
+                background: {'rgba(22, 28, 40, 220)' if is_pending else 'rgba(16, 20, 28, 160)'};
+                border: 1px solid {'rgba(0, 229, 255, 0.22)' if is_pending else 'rgba(255, 255, 255, 0.07)'};
+                border-left: 3px solid {border_accent};
+                border-radius: 5px;
+            }}
+        """)
+
+        c_lay = QHBoxLayout(card)
+        c_lay.setContentsMargins(8, 7, 8, 7)
+        c_lay.setSpacing(8)
+
+        # ── Checkbox Element ─────────────────────────────────────────────────
+        chk_btn = QPushButton()
+        chk_btn.setFixedSize(22, 22)
+        chk_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        if is_pending:
+            chk_btn.setText("○")
+            chk_btn.setFont(QFont("Montserrat", 11, QFont.Weight.Bold))
+            chk_btn.setToolTip("Mark as completed")
+            chk_btn.setStyleSheet("""
+                QPushButton {
+                    background: transparent; color: #80cbc4;
+                    border: 1px solid rgba(0, 229, 255, 0.5); border-radius: 11px;
+                }
+                QPushButton:hover {
+                    background: rgba(0, 230, 118, 0.3); color: #00e676; border-color: #00e676;
+                }
+            """)
+            chk_btn.clicked.connect(lambda _, tid=task_id, ttitle=title: self._on_complete(tid, ttitle))
+        else:
+            chk_btn.setText("✓")
+            chk_btn.setFont(QFont("Montserrat", 10, QFont.Weight.Bold))
+            chk_btn.setToolTip("Reopen task (mark pending)")
+            chk_btn.setStyleSheet("""
+                QPushButton {
+                    background: rgba(0, 230, 118, 0.25); color: #00e676;
+                    border: 1px solid #00e676; border-radius: 11px;
+                }
+                QPushButton:hover {
+                    background: rgba(255, 23, 68, 0.25); color: #ff5252; border-color: #ff5252;
+                }
+            """)
+            chk_btn.clicked.connect(lambda _, tid=task_id, ttitle=title: self._on_reopen(tid, ttitle))
+
+        c_lay.addWidget(chk_btn)
+
+        # ── Content Column ───────────────────────────────────────────────────
+        content_col = QVBoxLayout()
+        content_col.setContentsMargins(0, 0, 0, 0)
+        content_col.setSpacing(3)
+
+        # Title / Description
+        t_lbl = QLabel(title)
+        t_font = QFont("Montserrat", 9)
+        if not is_pending:
+            t_font.setStrikeOut(True)
+            t_lbl.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent; border: none;")
+        else:
+            t_font.setWeight(QFont.Weight.Medium)
+            t_lbl.setStyleSheet("color: #ffffff; background: transparent; border: none;")
+        t_lbl.setFont(t_font)
+        t_lbl.setWordWrap(True)
+        content_col.addWidget(t_lbl)
+
+        # Badges Row (Due date, Priority, Recurrence)
+        badge_row = QHBoxLayout()
+        badge_row.setSpacing(6)
+
+        # Due Date Badge
+        due_text = ""
+        due_col = C.TEXT_DIM
+        now = datetime.now()
+        if due_iso:
+            try:
+                dt = datetime.fromisoformat(due_iso)
+                if not is_pending:
+                    due_text = f"Due: {dt.strftime('%b %d')}"
+                    due_col = C.TEXT_DIM
+                elif dt < now:
+                    due_text = f"⚠ Overdue ({dt.strftime('%b %d, %I:%M %p')})"
+                    due_col = "#ff1744"
+                elif dt.date() == now.date():
+                    due_text = f"Today at {dt.strftime('%I:%M %p')}"
+                    due_col = "#00e5ff"
+                elif dt.date() == now.date() + timedelta(days=1):
+                    due_text = f"Tomorrow at {dt.strftime('%I:%M %p')}"
+                    due_col = "#ff9100"
+                else:
+                    due_text = dt.strftime("%b %d, %I:%M %p")
+                    due_col = "#90caf9"
+            except Exception:
+                due_text = str(due_iso)
+        else:
+            if is_pending:
+                due_text = "No due date"
+                due_col = "#546e7a"
+
+        if due_text:
+            due_lbl = QLabel(due_text)
+            due_lbl.setFont(QFont("Montserrat", 7))
+            due_lbl.setStyleSheet(f"color: {due_col}; background: transparent; border: none;")
+            badge_row.addWidget(due_lbl)
+
+        # Priority Badge
+        if priority == "high":
+            p_lbl = QLabel("[HIGH]")
+            p_lbl.setFont(QFont("Montserrat", 7, QFont.Weight.Bold))
+            p_lbl.setStyleSheet("color: #ff5252; background: transparent; border: none;")
+            badge_row.addWidget(p_lbl)
+        elif priority == "low":
+            p_lbl = QLabel("[LOW]")
+            p_lbl.setFont(QFont("Montserrat", 7))
+            p_lbl.setStyleSheet("color: #78909c; background: transparent; border: none;")
+            badge_row.addWidget(p_lbl)
+
+        # Recurrence Badge
+        if recurrence and recurrence != "none":
+            rec_lbl = QLabel(f"[↻ {recurrence}]")
+            rec_lbl.setFont(QFont("Montserrat", 7))
+            rec_lbl.setStyleSheet("color: #ffab40; background: transparent; border: none;")
+            badge_row.addWidget(rec_lbl)
+
+        # Completed Timestamp
+        if not is_pending and completed_at:
+            try:
+                cdt = datetime.fromisoformat(completed_at)
+                comp_lbl = QLabel(f"(Done {cdt.strftime('%b %d, %I:%M %p')})")
+                comp_lbl.setFont(QFont("Montserrat", 7))
+                comp_lbl.setStyleSheet("color: #00e676; background: transparent; border: none;")
+                badge_row.addWidget(comp_lbl)
+            except Exception:
+                pass
+
+        badge_row.addStretch()
+        content_col.addLayout(badge_row)
+
+        # Optional Notes preview
+        if notes and notes.strip():
+            n_lbl = QLabel(notes.strip())
+            n_lbl.setFont(QFont("Montserrat", 7))
+            n_lbl.setStyleSheet("color: #8892b0; background: transparent; border: none;")
+            n_lbl.setWordWrap(True)
+            content_col.addWidget(n_lbl)
+
+        c_lay.addLayout(content_col, stretch=1)
+
+        # ── Delete Button ────────────────────────────────────────────────────
+        del_btn = QPushButton("")
+        del_btn.setIcon(get_uicon("cross", color=C.TEXT_DIM, size=11))
+        del_btn.setFixedSize(18, 18)
+        del_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        del_btn.setToolTip("Delete task")
+        del_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: rgba(255, 23, 68, 0.1); color: {C.TEXT_DIM};
+                border: 1px solid rgba(255, 23, 68, 0.25); border-radius: 2px;
+            }}
+            QPushButton:hover {{
+                color: #ffffff; background: rgba(255, 23, 68, 0.45); border-color: {C.PRI};
+            }}
+        """)
+        del_btn.clicked.connect(lambda _, tid=task_id, ttitle=title: self._on_delete(tid, ttitle))
+        c_lay.addWidget(del_btn)
+
+        return card
+
+    def _on_complete(self, task_id: str, task_title: str):
+        """Mark task completed via productivity plugin."""
+        from plugins.productivity import get_store, complete_task
+        store = get_store()
+        complete_task(store, {"task_id": task_id, "title": task_title})
+        if self._main_win and hasattr(self._main_win, "write_log"):
+            self._main_win.write_log(f"SYS: Task completed — '{task_title}'.")
+        self.load_tasks()
+
+    def _on_reopen(self, task_id: str, task_title: str):
+        """Reopen a completed task to pending status."""
+        from plugins.productivity import get_store
+        store = get_store()
+        data = store.load()
+        tasks = data.get("tasks", {})
+        if task_id in tasks:
+            tasks[task_id]["status"] = "pending"
+            tasks[task_id]["completed_at"] = None
+            store.save_and_verify(data)
+            if self._main_win and hasattr(self._main_win, "write_log"):
+                self._main_win.write_log(f"SYS: Task reopened — '{task_title}'.")
+        self.load_tasks()
+
+    def _on_delete(self, task_id: str, task_title: str):
+        """Delete task from store."""
+        from plugins.productivity import get_store, delete_task
+        store = get_store()
+        delete_task(store, {"task_id": task_id, "title": task_title})
+        if self._main_win and hasattr(self._main_win, "write_log"):
+            self._main_win.write_log(f"SYS: Task deleted — '{task_title}'.")
+        self.load_tasks()
+
+    def _on_quick_add(self):
+        """Create new task from quick-add inputs."""
+        title = self._in_title.text().strip()
+        if not title:
+            return
+
+        due = self._in_due.text().strip() or None
+        priority = self._priority_combo.currentText().lower()
+
+        from plugins.productivity import get_store, add_task
+        store = get_store()
+        add_task(store, {
+            "title": title,
+            "due": due,
+            "priority": priority,
+            "scope": "once",
+        })
+
+        self._in_title.clear()
+        self._in_due.clear()
+        if self._main_win and hasattr(self._main_win, "write_log"):
+            self._main_win.write_log(f"SYS: Task added — '{title}'.")
+        self.load_tasks()
+
+    def popup(self, scope: str = "all"):
+        self._active_scope = (scope or "all").lower()
+        self._collapsed = False
+        self._body_widget.show()
+        screen = QApplication.primaryScreen().availableGeometry()
+        h = getattr(self, "_normal_h", min(680, screen.height() - 100))
+        self.setFixedHeight(h)
+        self._min_btn.setText(" MIN")
+        self._min_btn.setIcon(get_uicon("minus", color=C.PRI, size=11))
+        self.load_tasks()
+        self.show()
+        self.raise_()
+        self.activateWindow()
+
+    def minimize_to_dock(self):
+        self._collapsed = True
+        self._body_widget.hide()
+        self.setFixedHeight(46)
+        self._min_btn.setText(" RESTORE")
+        self._min_btn.setIcon(get_uicon("restore", color=C.PRI, size=11))
+        self._min_btn.setToolTip("Restore to-do display")
+        self.hide()
+        if self._main_win and hasattr(self._main_win, "write_log"):
+            self._main_win.write_log("SYS: To-do matrix minimized.")
+
+    def restore_from_dock(self):
+        self._collapsed = False
+        self._body_widget.show()
+        screen = QApplication.primaryScreen().availableGeometry()
+        h = getattr(self, "_normal_h", min(680, screen.height() - 100))
+        self.setFixedHeight(h)
+        self._min_btn.setText(" MIN")
+        self._min_btn.setIcon(get_uicon("minus", color=C.PRI, size=11))
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        if self._main_win and hasattr(self._main_win, "write_log"):
+            self._main_win.write_log("SYS: To-do matrix restored.")
+
+    def toggle_collapse(self):
+        if self.isVisible():
+            self.minimize_to_dock()
+        else:
+            self.restore_from_dock()
+
+    def mousePressEvent(self, e):
+        if self._handle_mouse_press(e):
+            return
+        super().mousePressEvent(e)
+
+    def mouseMoveEvent(self, e):
+        if self._handle_mouse_move(e):
+            return
+        super().mouseMoveEvent(e)
+
+    def mouseReleaseEvent(self, e):
+        self._handle_mouse_release(e)
+        super().mouseReleaseEvent(e)
+
+    def eventFilter(self, watched, event):
+        if watched == getattr(self, "_outer", None):
+            if self._filter_child_mouse_event(watched, event):
+                return True
+        return super().eventFilter(watched, event)
+
+
+TodoListDisplayWindow = TasksDisplayWindow

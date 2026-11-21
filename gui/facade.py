@@ -611,6 +611,18 @@ class JarvisUI:
         except (RuntimeError, AttributeError):
             pass
 
+    def show_tasks(self, scope: str = "all"):
+        """Thread-safe: Display the active to-do list and task management window."""
+        try:
+            if self._is_alive():
+                self._win._tasks_sig.emit(str(scope or "all"))
+        except (RuntimeError, AttributeError):
+            pass
+
+    def show_todo_list(self, scope: str = "all"):
+        """Thread-safe alias for show_tasks."""
+        self.show_tasks(scope=scope)
+
     def toggle_search_dock_minimize(self):
         """Thread-safe: Toggle minimizing / restoring the search dock."""
         try:

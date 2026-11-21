@@ -41,7 +41,7 @@ PLUGIN = {
     "name": "productivity",
     "description": (
         "Manage tasks, to-dos, habits, and daily/weekly reviews. "
-        "Actions: add_task, list_tasks, complete_task, update_task, delete_task, "
+        "Actions: add_task, list_tasks, show_tasks, complete_task, update_task, delete_task, "
         "daily_summary, snooze, add_habit, log_habit, list_habits, habit_stats, weekly_review. "
         "Supports natural dates ('tomorrow 6pm', 'every Monday', 'end of month'), recurrence, "
         "fuzzy matching, and undo."
@@ -53,13 +53,15 @@ PLUGIN = {
                 "type": "STRING",
                 "description": (
                     "The productivity action to perform. One of: "
-                    "'add_task', 'list_tasks', 'complete_task', 'update_task', 'delete_task', "
+                    "'add_task', 'list_tasks', 'show_tasks', 'complete_task', 'update_task', 'delete_task', "
                     "'daily_summary', 'snooze', 'add_habit', 'log_habit', 'list_habits', "
                     "'habit_stats', 'weekly_review'."
                 ),
                 "enum": [
                     "add_task",
                     "list_tasks",
+                    "show_tasks",
+                    "show_todo_list",
                     "complete_task",
                     "update_task",
                     "delete_task",
@@ -410,9 +412,6 @@ def parse_natural_date(
     if "today" in raw:
         t = parsed_time or dt_time(18, 0)
         dt = datetime.combine(curr.date(), t)
-        if parsed_time and dt <= curr:
-            # Time has passed today
-            return dt + timedelta(days=1), None, None
         return dt, None, None
 
     if "tomorrow" in raw:
@@ -1777,14 +1776,51 @@ def run(parameters: dict, player=None, session_memory=None) -> str:
     try:
         if action == "add_task":
             result = add_task(store, parameters)
+            if player and hasattr(player, "show_tasks"):
+                try:
+                    player.show_tasks("all")
+                except Exception:
+                    pass
         elif action == "list_tasks":
             result = list_tasks(store, parameters)
+            if player and hasattr(player, "show_tasks"):
+                try:
+                    player.show_tasks(parameters.get("scope", "all"))
+                except Exception:
+                    pass
+        elif action in ("show_tasks", "show_todo_list", "open_tasks"):
+            scope = parameters.get("scope", "all")
+            if player and hasattr(player, "show_tasks"):
+                try:
+                    player.show_tasks(scope)
+                except Exception:
+                    pass
+            result = outcome.done(
+                "productivity",
+                summary="Displayed active tasks to-do list window.",
+                scope=scope,
+            )
         elif action == "complete_task":
             result = complete_task(store, parameters)
+            if player and hasattr(player, "show_tasks"):
+                try:
+                    player.show_tasks("all")
+                except Exception:
+                    pass
         elif action == "update_task":
             result = update_task(store, parameters)
+            if player and hasattr(player, "show_tasks"):
+                try:
+                    player.show_tasks("all")
+                except Exception:
+                    pass
         elif action == "delete_task":
             result = delete_task(store, parameters)
+            if player and hasattr(player, "show_tasks"):
+                try:
+                    player.show_tasks("all")
+                except Exception:
+                    pass
         elif action == "daily_summary":
             result = daily_summary(store, parameters)
         elif action == "add_habit":
@@ -1808,7 +1844,8 @@ def run(parameters: dict, player=None, session_memory=None) -> str:
                 "productivity",
                 f"Unknown productivity action: '{action}'.",
                 valid_actions=[
-                    "add_task", "list_tasks", "complete_task", "update_task", "delete_task",
+                    "add_task", "list_tasks", "show_tasks", "show_todo_list",
+                    "complete_task", "update_task", "delete_task",
                     "daily_summary", "snooze", "add_habit", "log_habit", "list_habits",
                     "habit_stats", "weekly_review", "coaching_nudge"
                 ],
