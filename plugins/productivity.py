@@ -1135,12 +1135,21 @@ def daily_summary(store: ProductivityStore, params: dict) -> str:
     if rolled_over_count > 0:
         store.save_and_verify(data)
 
+    # Active habits and streaks
+    habits = [h for h in data.get("habits", {}).values() if not h.get("archived", False)]
+    habit_items = []
+    for h in habits:
+        done_icon = "✓" if today_str in h.get("log", []) else "○"
+        habit_items.append(f"{done_icon} {h.get('name')} (streak: {h.get('streak', 0)}d)")
+
     brief = params.get("brief", False)
     summary_parts = [
         f"Today ({today_str}): {len(pending_today)} due, {len(overdue)} overdue, {len(completed_today)} completed."
     ]
     if rolled_over_count > 0:
         summary_parts.append(f"{rolled_over_count} missed recurring tasks rolled over to today.")
+    if habit_items:
+        summary_parts.append("Habit streaks: " + "; ".join(habit_items))
 
     return outcome.done(
         "productivity",
@@ -1149,7 +1158,459 @@ def daily_summary(store: ProductivityStore, params: dict) -> str:
         overdue=len(overdue),
         completed_today=len(completed_today),
         rolled_over=rolled_over_count,
+        habit_streaks="; ".join(habit_items) if habit_items else "None",
         summary=" ".join(summary_parts),
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Habit Tracking & Coaching Analytics
+# ─────────────────────────────────────────────────────────────────────────────
+
+def resolve_habit_by_name_or_id(
+    query: str,
+    habits: Dict[str, dict],
+) -> Tuple[Optional[dict], List[dict], Optional[str]]:
+    """Resolve habit deterministically or return ambiguous candidates."""
+    q = (query or "").strip()
+    if not q:
+        return None, [], "Please specify the habit name or ID."
+
+    # 1. Exact ID match
+    if q in habits:
+        return habits[q], [], None
+
+    # 2. Exact Name match (case-insensitive)
+    exact = [h for h in habits.values() if h.get("name", "").strip().lower() == q.lower()]
+    if len(exact) == 1:
+        return exact[0], [], None
+    elif len(exact) > 1:
+        names_str = ", ".join(f"'{c.get('name')}' (id: {c.get('id')})" for c in exact)
+        return None, exact, f"Multiple habits match '{q}': {names_str}. Which one did you mean?"
+
+    # 3. Fuzzy & Substring Match
+    scored = []
+    q_lower = q.lower()
+    for h in habits.values():
+        name = h.get("name", "")
+        n_lower = name.strip().lower()
+        if q_lower in n_lower:
+            ratio = 0.85 + (len(q_lower) / max(len(n_lower), 1)) * 0.14
+        else:
+            ratio = difflib.SequenceMatcher(None, q_lower, n_lower).ratio()
+
+        if ratio >= 0.55:
+            scored.append((ratio, h))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    if not scored:
+        return None, [], f"No habit found matching '{q}'."
+
+    top_score, top_habit = scored[0]
+    close = [h for score, h in scored if score >= 0.55 and (top_score - score) <= 0.15]
+    if len(close) > 1:
+        c_str = ", ".join(f"'{c.get('name')}' (id: {c.get('id')})" for c in close)
+        return None, close, f"Multiple habits might match '{q}': {c_str}. Which one did you mean?"
+
+    if top_score >= 0.6:
+        return top_habit, [], None
+
+    return None, [], f"No habit clearly matched '{q}'. Closest was '{top_habit.get('name')}'."
+
+
+def calculate_habit_streaks(log_dates: List[str], today: Optional[date] = None) -> Tuple[int, int]:
+    """
+    Calculate current streak and longest streak from list of YYYY-MM-DD date strings.
+    Handles day boundaries and timezone date normalization.
+    """
+    if not log_dates:
+        return 0, 0
+
+    curr_d = today or datetime.now().date()
+    parsed_dates = set()
+    for ds in log_dates:
+        try:
+            parsed_dates.add(date.fromisoformat(ds.split("T")[0]))
+        except Exception:
+            pass
+
+    if not parsed_dates:
+        return 0, 0
+
+    sorted_dates = sorted(parsed_dates)
+
+    # 1. Current streak: active if logged today or yesterday
+    current_streak = 0
+    check_d = curr_d
+    if check_d not in parsed_dates:
+        check_d = curr_d - timedelta(days=1)
+
+    while check_d in parsed_dates:
+        current_streak += 1
+        check_d -= timedelta(days=1)
+
+    # 2. Longest streak in history
+    longest_streak = 0
+    running = 0
+    prev_d = None
+    for d in sorted_dates:
+        if prev_d is None or (d - prev_d).days == 1:
+            running += 1
+        elif (d - prev_d).days > 1:
+            running = 1
+        longest_streak = max(longest_streak, running)
+        prev_d = d
+
+    longest_streak = max(longest_streak, current_streak)
+    return current_streak, longest_streak
+
+
+def calculate_completion_rate(
+    log_dates: List[str],
+    days: int,
+    target: str = "daily",
+    today: Optional[date] = None,
+) -> float:
+    """Calculate percentage completion rate over the last N days."""
+    if not log_dates or days <= 0:
+        return 0.0
+
+    curr_d = today or datetime.now().date()
+    start_d = curr_d - timedelta(days=days - 1)
+
+    parsed = set()
+    for ds in log_dates:
+        try:
+            d = date.fromisoformat(ds.split("T")[0])
+            if start_d <= d <= curr_d:
+                parsed.add(d)
+        except Exception:
+            pass
+
+    # Determine expected completions
+    target_lower = target.lower().strip()
+    if "3x" in target_lower:
+        expected = max(1, round(days * 3 / 7))
+    elif "4x" in target_lower:
+        expected = max(1, round(days * 4 / 7))
+    elif "5x" in target_lower:
+        expected = max(1, round(days * 5 / 7))
+    else:
+        expected = days
+
+    pct = (len(parsed) / expected) * 100.0
+    return min(100.0, round(pct, 1))
+
+
+def find_best_weekday(log_dates: List[str]) -> Optional[str]:
+    """Find the weekday with the most completions if enough history exists."""
+    if len(log_dates) < 3:
+        return None
+
+    day_counts: Dict[str, int] = {}
+    for ds in log_dates:
+        try:
+            d = date.fromisoformat(ds.split("T")[0])
+            w = d.strftime("%A")
+            day_counts[w] = day_counts.get(w, 0) + 1
+        except Exception:
+            pass
+
+    if not day_counts:
+        return None
+    return max(day_counts, key=day_counts.get)
+
+
+def add_habit(store: ProductivityStore, params: dict) -> str:
+    """Add a new habit to track."""
+    name = (params.get("name") or params.get("title") or "").strip()
+    if not name:
+        return outcome.failed("productivity", "Habit name cannot be empty.")
+
+    target = (params.get("target") or "daily").strip()
+    reminder_time = params.get("reminder_time")
+    if reminder_time:
+        reminder_time = reminder_time.strip()
+
+    habit_id = str(uuid.uuid4())[:8]
+    now_iso = datetime.now().isoformat()
+
+    new_habit = {
+        "id": habit_id,
+        "name": name,
+        "target": target,
+        "reminder_time": reminder_time,
+        "log": [],
+        "streak": 0,
+        "longest_streak": 0,
+        "created_at": now_iso,
+        "archived": False,
+    }
+
+    data = store.load()
+    data.setdefault("habits", {})[habit_id] = new_habit
+    verified = store.save_and_verify(data)
+    if not verified:
+        return outcome.unverified("productivity", "Failed to verify habit save.", id=habit_id)
+
+    def _undo_add_habit():
+        d = store.load()
+        if habit_id in d.get("habits", {}):
+            del d["habits"][habit_id]
+            store.save_and_verify(d)
+        return f"Habit '{name}' removed."
+
+    push_undo(f"add habit '{name}'", _undo_add_habit)
+
+    return outcome.done(
+        "productivity",
+        id=habit_id,
+        name=name,
+        target=target,
+        reminder_time=reminder_time or "none",
+    )
+
+
+def log_habit(store: ProductivityStore, params: dict) -> str:
+    """Log completion of a habit for today or a specific date."""
+    data = store.load()
+    habits = data.get("habits", {})
+
+    target_query = params.get("habit_id") or params.get("name") or params.get("title") or ""
+    habit, candidates, err = resolve_habit_by_name_or_id(target_query, habits)
+    if err and not habit:
+        if candidates:
+            return outcome.ask("productivity", err)
+        return outcome.failed("productivity", err)
+
+    habit_id = habit["id"]
+    old_snapshot = {
+        **habit,
+        "log": list(habit.get("log", [])),
+    }
+
+    target_date = params.get("date")
+    if target_date:
+        parsed_dt, _, _ = parse_natural_date(target_date)
+        log_d = parsed_dt.date() if parsed_dt else datetime.now().date()
+    else:
+        log_d = datetime.now().date()
+
+    log_d_str = log_d.isoformat()
+    current_log = habit.setdefault("log", [])
+    already_logged = log_d_str in current_log
+
+    if not already_logged:
+        current_log.append(log_d_str)
+        current_log.sort()
+
+    # Recalculate streaks
+    streak, longest = calculate_habit_streaks(current_log, today=datetime.now().date())
+    habit["streak"] = streak
+    habit["longest_streak"] = max(habit.get("longest_streak", 0), longest)
+
+    data["habits"][habit_id] = habit
+    verified = store.save_and_verify(data)
+    if not verified:
+        return outcome.unverified("productivity", "Failed to verify habit log save.", id=habit_id)
+
+    def _undo_log():
+        d = store.load()
+        if habit_id in d.get("habits", {}):
+            d["habits"][habit_id] = old_snapshot
+            store.save_and_verify(d)
+        return f"Habit log for '{old_snapshot.get('name')}' reverted."
+
+    push_undo(f"log habit '{habit['name']}'", _undo_log)
+
+    return outcome.done(
+        "productivity",
+        id=habit_id,
+        name=habit["name"],
+        date=log_d_str,
+        streak=streak,
+        longest_streak=habit["longest_streak"],
+        already_logged=already_logged,
+    )
+
+
+def list_habits(store: ProductivityStore, params: dict) -> str:
+    """List habits with current streaks and today's status."""
+    data = store.load()
+    habits = list(data.get("habits", {}).values())
+
+    filter_status = params.get("status", "active").lower()
+    if filter_status == "active":
+        habits = [h for h in habits if not h.get("archived", False)]
+    elif filter_status == "archived":
+        habits = [h for h in habits if h.get("archived", False)]
+
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    items = []
+    for h in habits:
+        done_today = "✓" if today_str in h.get("log", []) else "○"
+        s = h.get("streak", 0)
+        items.append(f"{done_today} {h.get('name')} (streak: {s}d, target: {h.get('target')})")
+
+    brief = params.get("brief", False)
+    if not habits:
+        return outcome.done("productivity", count=0, summary="No habits found.")
+
+    return outcome.done(
+        "productivity",
+        count=len(habits),
+        habits="; ".join(items) if not brief else f"{len(habits)} habits",
+    )
+
+
+def habit_stats(store: ProductivityStore, params: dict) -> str:
+    """Return statistical insights and consistency rates for a habit."""
+    data = store.load()
+    habits = data.get("habits", {})
+
+    target_query = params.get("habit_id") or params.get("name") or params.get("title") or ""
+    habit, candidates, err = resolve_habit_by_name_or_id(target_query, habits)
+    if err and not habit:
+        if candidates:
+            return outcome.ask("productivity", err)
+        return outcome.failed("productivity", err)
+
+    log_dates = habit.get("log", [])
+    today = datetime.now().date()
+    streak, longest = calculate_habit_streaks(log_dates, today=today)
+    rate_7d = calculate_completion_rate(log_dates, 7, habit.get("target", "daily"), today=today)
+    rate_30d = calculate_completion_rate(log_dates, 30, habit.get("target", "daily"), today=today)
+    rate_90d = calculate_completion_rate(log_dates, 90, habit.get("target", "daily"), today=today)
+    best_day = find_best_weekday(log_dates)
+
+    facts = {
+        "id": habit["id"],
+        "name": habit["name"],
+        "total_completions": len(log_dates),
+        "streak": streak,
+        "longest_streak": longest,
+        "rate_7d": f"{rate_7d}%",
+        "rate_30d": f"{rate_30d}%",
+        "rate_90d": f"{rate_90d}%",
+    }
+    if best_day:
+        facts["best_weekday"] = best_day
+    else:
+        facts["best_weekday"] = "Not enough history yet"
+
+    return outcome.done("productivity", **facts)
+
+
+def archive_habit(store: ProductivityStore, params: dict) -> str:
+    """Archive a habit (reversible via undo)."""
+    data = store.load()
+    habits = data.get("habits", {})
+
+    target_query = params.get("habit_id") or params.get("name") or params.get("title") or ""
+    habit, candidates, err = resolve_habit_by_name_or_id(target_query, habits)
+    if err and not habit:
+        if candidates:
+            return outcome.ask("productivity", err)
+        return outcome.failed("productivity", err)
+
+    habit_id = habit["id"]
+    habit["archived"] = True
+    data["habits"][habit_id] = habit
+    verified = store.save_and_verify(data)
+    if not verified:
+        return outcome.unverified("productivity", "Failed to verify habit archival.", id=habit_id)
+
+    def _undo_archive():
+        d = store.load()
+        if habit_id in d.get("habits", {}):
+            d["habits"][habit_id]["archived"] = False
+            store.save_and_verify(d)
+        return f"Habit '{habit.get('name')}' unarchived."
+
+    push_undo(f"archive habit '{habit['name']}'", _undo_archive)
+
+    return outcome.done("productivity", id=habit_id, name=habit["name"], archived=True)
+
+
+def weekly_review(store: ProductivityStore, params: dict) -> str:
+    """
+    Produce a short factual summary of the past 7 days and one data-driven suggestion.
+    Never invents data; reports insufficient history honestly.
+    """
+    data = store.load()
+    tasks = list(data.get("tasks", {}).values())
+    habits = [h for h in data.get("habits", {}).values() if not h.get("archived", False)]
+
+    now = datetime.now()
+    today = now.date()
+    seven_days_ago = today - timedelta(days=7)
+
+    # 1. Tasks in last 7 days
+    completed_7d = []
+    pending_count = 0
+    overdue_count = 0
+
+    for t in tasks:
+        st = t.get("status")
+        comp = t.get("completed_at")
+        due = t.get("due")
+        if st == "done" and comp:
+            try:
+                comp_d = date.fromisoformat(comp.split("T")[0])
+                if comp_d >= seven_days_ago:
+                    completed_7d.append(t)
+            except Exception:
+                pass
+        elif st == "pending":
+            pending_count += 1
+            if due:
+                try:
+                    due_d = date.fromisoformat(due.split("T")[0])
+                    if due_d < today:
+                        overdue_count += 1
+                except Exception:
+                    pass
+
+    # 2. Habit consistency in last 7 days
+    habit_performances = []
+    skipped_habits = []
+
+    for h in habits:
+        log_dates = h.get("log", [])
+        rate = calculate_completion_rate(log_dates, 7, h.get("target", "daily"), today=today)
+        habit_performances.append((h["name"], rate, h.get("streak", 0)))
+        if rate < 50.0:
+            skipped_habits.append(h)
+
+    # 3. Formulate one factual suggestion
+    total_data_points = len(completed_7d) + sum(len(h.get("log", [])) for h in habits)
+    if total_data_points < 3:
+        suggestion = "Not enough history to determine weekly patterns yet. Complete a few more days of tasks and habits to unlock tailored suggestions."
+    elif overdue_count > 2:
+        suggestion = f"You have {overdue_count} overdue tasks accumulating. Consider scheduling smaller daily steps to regain momentum."
+    elif skipped_habits:
+        worst_habit = min(skipped_habits, key=lambda h: calculate_completion_rate(h.get("log", []), 7, h.get("target", "daily"), today=today))
+        rem = worst_habit.get("reminder_time")
+        if rem:
+            suggestion = f"Consistency dropped on '{worst_habit['name']}' this week. Try adjusting your {rem} reminder to an earlier part of your day."
+        else:
+            suggestion = f"Consistency dropped on '{worst_habit['name']}' this week. Try assigning a fixed daily reminder time for it."
+    elif all(p[1] >= 85.0 for p in habit_performances) and habit_performances:
+        suggestion = "Outstanding consistency across all tracked habits this week. Keep this exact rhythm going into next week."
+    else:
+        suggestion = "Steady weekly progress. Focus on finishing your open tasks before picking up new ones."
+
+    habit_summary_parts = [f"{name}: {rate}% (streak: {streak}d)" for name, rate, streak in habit_performances]
+    habits_str = "; ".join(habit_summary_parts) if habit_summary_parts else "No active habits tracked"
+
+    return outcome.done(
+        "productivity",
+        period=f"{seven_days_ago.isoformat()} to {today.isoformat()}",
+        tasks_completed=len(completed_7d),
+        tasks_pending=pending_count,
+        tasks_overdue=overdue_count,
+        habits=habits_str,
+        suggestion=suggestion,
     )
 
 
@@ -1178,9 +1639,18 @@ def run(parameters: dict, player=None, session_memory=None) -> str:
             result = delete_task(store, parameters)
         elif action == "daily_summary":
             result = daily_summary(store, parameters)
-        elif action in ("add_habit", "log_habit", "list_habits", "habit_stats", "weekly_review"):
-            # Will be fully fleshed out in Part 3
-            result = outcome.failed("productivity", f"Habit action '{action}' is being initialized.")
+        elif action == "add_habit":
+            result = add_habit(store, parameters)
+        elif action == "log_habit":
+            result = log_habit(store, parameters)
+        elif action == "list_habits":
+            result = list_habits(store, parameters)
+        elif action == "habit_stats":
+            result = habit_stats(store, parameters)
+        elif action == "archive_habit":
+            result = archive_habit(store, parameters)
+        elif action == "weekly_review":
+            result = weekly_review(store, parameters)
         elif action == "snooze":
             result = snooze(store, parameters)
         else:

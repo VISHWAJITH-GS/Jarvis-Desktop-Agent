@@ -295,5 +295,131 @@ class TestProductivityPart2(unittest.TestCase):
         self.assertEqual(task["due"], t0.isoformat())
 
 
+class TestProductivityPart3(unittest.TestCase):
+    def setUp(self):
+        self.test_dir = tempfile.mkdtemp()
+        self.store_file = Path(self.test_dir) / "productivity.json"
+        self.store = productivity.ProductivityStore(self.store_file)
+        self._orig_store = productivity._global_store
+        productivity._global_store = self.store
+        undo.clear()
+
+    def tearDown(self):
+        productivity._global_store = self._orig_store
+        undo.clear()
+        try:
+            shutil.rmtree(self.test_dir, ignore_errors=True)
+        except Exception:
+            pass
+
+    def test_add_log_and_list_habits(self):
+        add_res = productivity.run({
+            "action": "add_habit",
+            "name": "Morning Meditation",
+            "target": "daily",
+            "reminder_time": "07:30",
+        })
+        self.assertIn("status=done", add_res)
+        self.assertIn("Morning Meditation", add_res)
+
+        # Log completion
+        log_res = productivity.run({
+            "action": "log_habit",
+            "name": "meditation",
+        })
+        self.assertIn("status=done", log_res)
+        self.assertIn("streak=1", log_res)
+
+        # List habits
+        list_res = productivity.run({"action": "list_habits"})
+        self.assertIn("status=done", list_res)
+        self.assertIn("Morning Meditation", list_res)
+
+    def test_streak_calculation_across_boundaries_and_timezones(self):
+        from datetime import date
+
+        # 1. Test streaks across month boundary (Oct 30, Oct 31, Nov 01)
+        log_dates = ["2026-10-30", "2026-10-31", "2026-11-01"]
+        streak, longest = productivity.calculate_habit_streaks(log_dates, today=date(2026, 11, 1))
+        self.assertEqual(streak, 3)
+        self.assertEqual(longest, 3)
+
+        # If today is Nov 2 (not logged yet, but yesterday was), streak remains 3
+        streak_next_day, _ = productivity.calculate_habit_streaks(log_dates, today=date(2026, 11, 2))
+        self.assertEqual(streak_next_day, 3)
+
+        # If today is Nov 3 (gap of a day), streak drops to 0
+        streak_gap, _ = productivity.calculate_habit_streaks(log_dates, today=date(2026, 11, 3))
+        self.assertEqual(streak_gap, 0)
+
+        # 2. Test leap year boundary (Feb 28, Feb 29, Mar 01 on leap year 2028)
+        leap_dates = ["2028-02-28", "2028-02-29", "2028-03-01"]
+        leap_streak, _ = productivity.calculate_habit_streaks(leap_dates, today=date(2028, 3, 1))
+        self.assertEqual(leap_streak, 3)
+
+        # 3. Test duplicate logs on same day (idempotent)
+        dupe_dates = ["2026-11-20", "2026-11-20", "2026-11-21"]
+        dupe_streak, _ = productivity.calculate_habit_streaks(dupe_dates, today=date(2026, 11, 21))
+        self.assertEqual(dupe_streak, 2)
+
+    def test_habit_stats_and_best_weekday(self):
+        productivity.run({
+            "action": "add_habit",
+            "name": "Evening Reading",
+            "target": "daily",
+        })
+
+        # Insufficient history initially
+        stats_empty = productivity.run({"action": "habit_stats", "name": "reading"})
+        self.assertIn("status=done", stats_empty)
+        self.assertIn("Not enough history yet", stats_empty)
+
+        # Log completions on specific dates (Mondays: 2026-11-02, 2026-11-09, 2026-11-16)
+        productivity.run({"action": "log_habit", "name": "reading", "date": "2026-11-02"})
+        productivity.run({"action": "log_habit", "name": "reading", "date": "2026-11-09"})
+        productivity.run({"action": "log_habit", "name": "reading", "date": "2026-11-16"})
+
+        stats_res = productivity.run({"action": "habit_stats", "name": "reading"})
+        self.assertIn("status=done", stats_res)
+        self.assertIn("best_weekday=Monday", stats_res)
+        self.assertIn("total_completions=3", stats_res)
+
+    def test_archive_habit_and_undo(self):
+        productivity.run({"action": "add_habit", "name": "Guitar Practice"})
+        archive_res = productivity.run({"action": "archive_habit", "name": "guitar"})
+        self.assertIn("status=done", archive_res)
+        self.assertIn("archived=true", archive_res)
+
+        # List habits (default active) should not contain archived habit
+        list_res = productivity.run({"action": "list_habits"})
+        self.assertNotIn("Guitar Practice", list_res)
+
+        # Undo archive
+        undo_res = undo.undo_last()
+        self.assertIn("Undone: archive habit 'Guitar Practice'", undo_res)
+        list_res2 = productivity.run({"action": "list_habits"})
+        self.assertIn("Guitar Practice", list_res2)
+
+    def test_weekly_review(self):
+        # 1. Weekly review with insufficient history
+        rev_insufficient = productivity.run({"action": "weekly_review"})
+        self.assertIn("status=done", rev_insufficient)
+        self.assertIn("Not enough history", rev_insufficient)
+
+        # 2. Add tasks and habit logs to establish history
+        productivity.run({"action": "add_task", "title": "Deploy update", "due": "today 5pm"})
+        productivity.run({"action": "complete_task", "title": "Deploy update"})
+
+        productivity.run({"action": "add_habit", "name": "Workout", "reminder_time": "18:00"})
+        for i in range(5):
+            d = (datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d")
+            productivity.run({"action": "log_habit", "name": "Workout", "date": d})
+
+        rev_res = productivity.run({"action": "weekly_review"})
+        self.assertIn("status=done", rev_res)
+        self.assertIn("tasks_completed=1", rev_res)
+        self.assertIn("suggestion=", rev_res)
+
+
 if __name__ == "__main__":
     unittest.main()
