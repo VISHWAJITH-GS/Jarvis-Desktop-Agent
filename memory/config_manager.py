@@ -7,6 +7,7 @@ import stat
 import subprocess
 import sys
 from pathlib import Path
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -1258,3 +1259,112 @@ def save_providers(
 
     data["providers"] = block
     CONFIG_FILE.write_text(json.dumps(data, indent=4), encoding="utf-8")
+
+
+# ── Browser Engine & Dedicated Profile Directory ──────────────────────────────
+DEFAULT_BROWSER_ENGINE = "chrome"
+VALID_BROWSER_ENGINES = ("chrome", "edge")
+
+
+def get_browser_engine() -> str:
+    """Return the configured browser engine: 'chrome' or 'edge' (default: 'chrome')."""
+    val = load_api_keys().get("browser_engine")
+    if isinstance(val, str):
+        v = val.strip().lower()
+        if v in VALID_BROWSER_ENGINES:
+            return v
+    return DEFAULT_BROWSER_ENGINE
+
+
+def save_browser_engine(engine: str) -> None:
+    """Persist browser engine selection ('chrome' | 'edge')."""
+    e = str(engine or "").strip().lower()
+    _save_flag("browser_engine", e if e in VALID_BROWSER_ENGINES else DEFAULT_BROWSER_ENGINE)
+
+
+def get_default_browser_profile_dir(engine: Optional[str] = None) -> Path:
+    """Return the sensible default dedicated profile directory for the given engine and OS."""
+    eng = (engine or get_browser_engine()).lower()
+    sys_name = platform.system()
+
+    if eng == "edge":
+        if sys_name == "Windows":
+            return Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / "Microsoft" / "Edge" / "JarvisProfile"
+        elif sys_name == "Darwin":
+            return Path.home() / "Library" / "Application Support" / "Microsoft Edge-Jarvis"
+        else:
+            return Path.home() / ".config" / "microsoft-edge-jarvis"
+    else:
+        if sys_name == "Windows":
+            return Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / "Google" / "Chrome" / "JarvisProfile"
+        elif sys_name == "Darwin":
+            return Path.home() / "Library" / "Application Support" / "Google" / "Chrome-Jarvis"
+        else:
+            return Path.home() / ".config" / "google-chrome-jarvis"
+
+
+def get_system_default_data_dirs(engine: Optional[str] = None) -> list[Path]:
+    """Return standard user data directories for the browser that must NEVER be used for Jarvis."""
+    eng = (engine or get_browser_engine()).lower()
+    sys_name = platform.system()
+    dirs = []
+    if eng == "edge":
+        if sys_name == "Windows":
+            dirs.append(Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "Edge" / "User Data")
+        elif sys_name == "Darwin":
+            dirs.append(Path.home() / "Library" / "Application Support" / "Microsoft Edge")
+        else:
+            dirs.append(Path.home() / ".config" / "microsoft-edge")
+    else:
+        if sys_name == "Windows":
+            dirs.append(Path(os.environ.get("LOCALAPPDATA", "")) / "Google" / "Chrome" / "User Data")
+        elif sys_name == "Darwin":
+            dirs.append(Path.home() / "Library" / "Application Support" / "Google" / "Chrome")
+        else:
+            dirs.append(Path.home() / ".config" / "google-chrome")
+            dirs.append(Path.home() / ".config" / "chromium")
+    return dirs
+
+
+def validate_browser_profile_dir(path: Path | str, engine: Optional[str] = None) -> tuple[bool, str]:
+    """Ensure the path is a safe, dedicated directory and does not resolve to the user's default data dir."""
+    if not path:
+        return False, "Browser profile directory path cannot be empty."
+    try:
+        resolved = Path(path).expanduser().resolve()
+    except Exception as e:
+        return False, f"Invalid path format: {e}"
+
+    default_dirs = get_system_default_data_dirs(engine)
+    for d in default_dirs:
+        try:
+            d_res = d.expanduser().resolve()
+            if resolved == d_res:
+                return False, f"Refusing to launch against user's default browser data directory ({resolved}). A dedicated profile directory is strictly required."
+            if resolved == (d_res / "Default"):
+                return False, f"Refusing to launch against user's default profile directory ({resolved}). A dedicated profile directory is strictly required."
+        except Exception:
+            continue
+
+    return True, ""
+
+
+def get_browser_profile_dir() -> Path:
+    """Return configured or default dedicated browser profile directory."""
+    raw = load_api_keys().get("browser_profile_dir")
+    engine = get_browser_engine()
+    if raw and isinstance(raw, str) and raw.strip():
+        candidate = Path(raw.strip()).expanduser()
+        valid, _ = validate_browser_profile_dir(candidate, engine)
+        if valid:
+            return candidate
+    return get_default_browser_profile_dir(engine)
+
+
+def save_browser_profile_dir(path: str | Path) -> None:
+    """Persist browser_profile_dir if valid, refusing default user data directory."""
+    p = Path(path).expanduser()
+    valid, err = validate_browser_profile_dir(p, get_browser_engine())
+    if not valid:
+        raise ValueError(err)
+    _save_flag("browser_profile_dir", str(p))

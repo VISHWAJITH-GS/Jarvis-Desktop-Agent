@@ -11,6 +11,14 @@ config/api_keys.json
 config/certs/
 # Linked WhatsApp session
 config/whatsapp_web/
+# Dedicated browser profiles (Chrome & Edge)
+**/JarvisProfile*
+**/Chrome/JarvisProfile*
+**/Edge/JarvisProfile*
+**/google-chrome-jarvis*
+**/microsoft-edge-jarvis*
+**/Chrome-Jarvis*
+**/Microsoft Edge-Jarvis*
 # Google OAuth tokens (Gmail / Calendar plugins)
 **/token*.json
 # Google OAuth client secrets
