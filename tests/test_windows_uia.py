@@ -15,6 +15,7 @@ Covers all 12 test cases specified in the engineering requirements:
   11. Test coordinate fallback and boundary validation.
   12. Test Windows display scaling and DPI awareness.
 """
+
 from __future__ import annotations
 
 import unittest
@@ -138,7 +139,9 @@ def build_mock_file_explorer_tree() -> MockUIAElement:
 
     # Folders inside list view
     f_downloads = MockUIAElement("Downloads", "ListItem", MockBoundingRect(160, 210, 400, 250), parent=list_view)
-    f_academic = MockUIAElement("Academic Information", "ListItem", MockBoundingRect(160, 260, 400, 300), parent=list_view)
+    f_academic = MockUIAElement(
+        "Academic Information", "ListItem", MockBoundingRect(160, 260, 400, 300), parent=list_view
+    )
     f_sem5 = MockUIAElement("Semester 5", "ListItem", MockBoundingRect(160, 310, 400, 350), parent=list_view)
     f_sem6 = MockUIAElement("Semester 6", "ListItem", MockBoundingRect(160, 360, 400, 400), parent=list_view)
     f_projects = MockUIAElement("Projects", "ListItem", MockBoundingRect(160, 410, 400, 450), parent=list_view)
@@ -157,9 +160,10 @@ class TestWindowsUIA(unittest.TestCase):
     # ── Test Case 1: Open File Explorer ──────────────────────────────────────
     def test_01_open_file_explorer(self):
         """Test identification and retrieval of File Explorer window."""
-        with patch.object(windows_uia, "is_available", return_value=True), \
-             patch.object(windows_uia, "_get_file_explorer_window", return_value=self.explorer_tree):
-
+        with (
+            patch.object(windows_uia, "is_available", return_value=True),
+            patch.object(windows_uia, "_get_file_explorer_window", return_value=self.explorer_tree),
+        ):
             win = windows_uia._get_file_explorer_window()
             self.assertIsNotNone(win)
             self.assertEqual(win.window_text(), "File Explorer")
@@ -217,20 +221,22 @@ class TestWindowsUIA(unittest.TestCase):
     def test_05_verify_opened_folder_success_and_mismatch(self):
         """Test verification of opened folder, including mismatch detection."""
         # 5A: Success scenario: title changes to Semester 5
-        with patch.object(windows_uia, "is_available", return_value=True), \
-             patch.object(windows_uia, "_get_file_explorer_window", return_value=self.explorer_tree), \
-             patch.object(windows_uia, "get_active_window", return_value={"status": "success", "title": "Semester 5"}):
-
+        with (
+            patch.object(windows_uia, "is_available", return_value=True),
+            patch.object(windows_uia, "_get_file_explorer_window", return_value=self.explorer_tree),
+            patch.object(windows_uia, "get_active_window", return_value={"status": "success", "title": "Semester 5"}),
+        ):
             res = windows_uia.open_file_explorer_item("Semester 5", window=self.explorer_tree, timeout=0.1)
             self.assertIn("status=done", res)
             self.assertIn("verified=true", res)
             self.assertIn("Semester 5", res)
 
         # 5B: Mismatch scenario: accidentally navigated to Downloads
-        with patch.object(windows_uia, "is_available", return_value=True), \
-             patch.object(windows_uia, "_get_file_explorer_window", return_value=self.explorer_tree), \
-             patch.object(windows_uia, "get_active_window", return_value={"status": "success", "title": "Downloads"}):
-
+        with (
+            patch.object(windows_uia, "is_available", return_value=True),
+            patch.object(windows_uia, "_get_file_explorer_window", return_value=self.explorer_tree),
+            patch.object(windows_uia, "get_active_window", return_value={"status": "success", "title": "Downloads"}),
+        ):
             res_mismatch = windows_uia.open_file_explorer_item("Semester 5", window=self.explorer_tree, timeout=0.1)
             self.assertIn("status=failed", res_mismatch)
             self.assertIn("opened_wrong", res_mismatch)
@@ -253,10 +259,13 @@ class TestWindowsUIA(unittest.TestCase):
     # ── Test Case 7: Open Academic Information ───────────────────────────────
     def test_07_open_academic_information(self):
         """Test opening 'Academic Information' and verifying destination."""
-        with patch.object(windows_uia, "is_available", return_value=True), \
-             patch.object(windows_uia, "_get_file_explorer_window", return_value=self.explorer_tree), \
-             patch.object(windows_uia, "get_active_window", return_value={"status": "success", "title": "Academic Information"}):
-
+        with (
+            patch.object(windows_uia, "is_available", return_value=True),
+            patch.object(windows_uia, "_get_file_explorer_window", return_value=self.explorer_tree),
+            patch.object(
+                windows_uia, "get_active_window", return_value={"status": "success", "title": "Academic Information"}
+            ),
+        ):
             res = windows_uia.open_file_explorer_item("Academic Information", window=self.explorer_tree, timeout=0.1)
             self.assertIn("status=done", res)
             self.assertIn("Academic Information", res)
@@ -287,9 +296,10 @@ class TestWindowsUIA(unittest.TestCase):
     # ── Test Case 9: Handle missing folder names ─────────────────────────────
     def test_09_handle_missing_folder_names(self):
         """Test searching for a non-existent folder never clicks adjacent items."""
-        with patch.object(windows_uia, "is_available", return_value=True), \
-             patch.object(windows_uia, "_get_file_explorer_window", return_value=self.explorer_tree):
-
+        with (
+            patch.object(windows_uia, "is_available", return_value=True),
+            patch.object(windows_uia, "_get_file_explorer_window", return_value=self.explorer_tree),
+        ):
             res = windows_uia.open_file_explorer_item("NonExistentSemesterX", window=self.explorer_tree, timeout=0.1)
             self.assertIn("status=failed", res)
             self.assertIn("not found", res.lower())
@@ -322,9 +332,7 @@ class TestWindowsUIA(unittest.TestCase):
         self.assertTrue(is_valid)
 
         # Out-of-bounds coordinates
-        x, y, is_valid, reason = windows_uia.validate_coordinates(
-            99999, 99999
-        )
+        x, y, is_valid, reason = windows_uia.validate_coordinates(99999, 99999)
         self.assertFalse(is_valid)
         self.assertIn("outside virtual screen", reason)
 
@@ -346,15 +354,16 @@ class TestWindowsUIA(unittest.TestCase):
         self.assertGreater(metrics["virtual_h"], 0)
         self.assertGreaterEqual(metrics["scale_factor"], 1.0)
 
-
     # ── Integration with computer_control ────────────────────────────────────
     def test_13_computer_control_uia_open(self):
         """Test computer_control action='uia_open' invokes Windows UIA."""
         from actions.computer_control import computer_control
-        with patch.object(windows_uia, "is_available", return_value=True), \
-             patch.object(windows_uia, "_get_file_explorer_window", return_value=self.explorer_tree), \
-             patch.object(windows_uia, "get_active_window", return_value={"status": "success", "title": "Semester 5"}):
 
+        with (
+            patch.object(windows_uia, "is_available", return_value=True),
+            patch.object(windows_uia, "_get_file_explorer_window", return_value=self.explorer_tree),
+            patch.object(windows_uia, "get_active_window", return_value={"status": "success", "title": "Semester 5"}),
+        ):
             res = computer_control({"action": "uia_open", "name": "Semester 5"})
             self.assertIn("status=done", res)
             self.assertIn("Semester 5", res)
@@ -362,13 +371,23 @@ class TestWindowsUIA(unittest.TestCase):
     def test_14_computer_control_screen_click_uia_routing(self):
         """Test computer_control action='screen_click' routes to UIA before vision."""
         from actions.computer_control import computer_control
-        with patch.object(windows_uia, "is_available", return_value=True), \
-             patch.object(windows_uia, "find_element", return_value={
-                 "status": "success",
-                 "match": {"name": "Semester 5", "control_type": "ListItem", "bounding_rectangle": {"left": 160, "top": 310, "right": 400, "bottom": 350}},
-                 "element": self.explorer_tree._children[1]._children[2],
-             }):
 
+        with (
+            patch.object(windows_uia, "is_available", return_value=True),
+            patch.object(
+                windows_uia,
+                "find_element",
+                return_value={
+                    "status": "success",
+                    "match": {
+                        "name": "Semester 5",
+                        "control_type": "ListItem",
+                        "bounding_rectangle": {"left": 160, "top": 310, "right": 400, "bottom": 350},
+                    },
+                    "element": self.explorer_tree._children[1]._children[2],
+                },
+            ),
+        ):
             res = computer_control({"action": "screen_click", "description": "Semester 5"})
             self.assertIn("status=done", res)
             self.assertIn("Semester 5", res)
@@ -376,10 +395,12 @@ class TestWindowsUIA(unittest.TestCase):
     def test_15_computer_control_screen_click_bounds_rejection(self):
         """Test that invalid coordinates in screen_click are safely rejected."""
         from actions.computer_control import computer_control
-        with patch.object(windows_uia, "is_available", return_value=True), \
-             patch.object(windows_uia, "find_element", return_value={"status": "failed"}), \
-             patch("actions.computer_control._screen_find", return_value=(99999, 99999)):
 
+        with (
+            patch.object(windows_uia, "is_available", return_value=True),
+            patch.object(windows_uia, "find_element", return_value={"status": "failed"}),
+            patch("actions.computer_control._screen_find", return_value=(99999, 99999)),
+        ):
             res = computer_control({"action": "screen_click", "description": "OffscreenButton"})
             self.assertIn("status=failed", res)
             self.assertIn("out of bounds", res)

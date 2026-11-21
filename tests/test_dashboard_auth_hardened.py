@@ -6,7 +6,6 @@ from memory import config_manager
 
 
 class TestDashboardAuthHardened(unittest.TestCase):
-
     def setUp(self):
         # Ensure default loopback config
         config_manager.set_dashboard_allow_lan(False)
@@ -87,7 +86,7 @@ class TestDashboardAuthHardened(unittest.TestCase):
         # Multiple failures trigger lockout
         for _ in range(6):
             self.client.post("/login", json={"pin": "WRONGPIN"})
-        
+
         locked_resp = self.client.post("/login", json={"pin": "WRONGPIN"})
         self.assertEqual(locked_resp.status_code, 429)
         self.assertIn("Too many attempts", locked_resp.json().get("error", ""))

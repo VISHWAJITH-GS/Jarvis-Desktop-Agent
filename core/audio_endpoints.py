@@ -1,6 +1,7 @@
 """
 core/audio_endpoints.py — Windows CoreAudio/WASAPI audio endpoints and volume management.
 """
+
 from __future__ import annotations
 
 import logging
@@ -13,27 +14,36 @@ from core import platform_hooks
 
 logger = logging.getLogger("jarvis.audio_endpoints")
 
+
 def _get_devices_module() -> Any:
     from core import audio_devices
+
     return audio_devices
+
 
 def _display_name(name: str, devices: Any) -> str:
     return _get_devices_module()._display_name(name, devices)
 
+
 def _invalidate_cache() -> None:
     _get_devices_module().invalidate_cache()
 
+
 DEFAULT_LABEL = "System default"
+
 
 def _platform_is() -> str:
     return platform.system()
 
+
 def _fold(text: str) -> str:
     try:
         from core.appidentity import fold
+
         return fold(text)
     except Exception:
         return "".join(c for c in str(text or "").lower() if c.isalnum())
+
 
 def get_current_default_endpoint(kind: str = "output") -> tuple[str | None, str | None]:
     """Return (endpoint_id, friendly_name) for current default Windows audio device."""
@@ -41,9 +51,11 @@ def get_current_default_endpoint(kind: str = "output") -> tuple[str | None, str 
         return (None, None)
     try:
         import comtypes
+
         comtypes.CoInitialize()
         try:
             from pycaw.pycaw import AudioUtilities
+
             if kind == "output":
                 dev = AudioUtilities.GetSpeakers()
             else:
@@ -56,6 +68,7 @@ def get_current_default_endpoint(kind: str = "output") -> tuple[str | None, str 
                 # Fall through to sounddevice display name while preserving ep_id
                 try:
                     import sounddevice as sd
+
                     info = sd.query_devices(kind=kind)
                     if info and info.get("name"):
                         return (ep_id, _display_name(str(info["name"]).strip(), list(sd.query_devices())))
@@ -72,6 +85,7 @@ def get_current_default_endpoint(kind: str = "output") -> tuple[str | None, str 
     # Fallback to sounddevice default device name when pycaw GetMicrophone/GetSpeakers returns None
     try:
         import sounddevice as sd
+
         info = sd.query_devices(kind=kind)
         if info and info.get("name"):
             return (None, _display_name(str(info["name"]).strip(), list(sd.query_devices())))
@@ -91,9 +105,11 @@ def get_connected_endpoints_snapshot() -> set[str]:
         return snapshot
     try:
         import comtypes
+
         comtypes.CoInitialize()
         try:
             from pycaw.pycaw import AudioUtilities
+
             for dev in AudioUtilities.GetAllDevices():
                 state = getattr(dev, "state", None)
                 if state is not None and "active" not in str(state).lower():
@@ -134,24 +150,32 @@ def set_default_endpoint(device_name_or_id: str, kind: str = "output") -> bool:
         from pycaw.pycaw import AudioUtilities
 
         class IPolicyConfig(IUnknown):
-            _iid_ = GUID('{f8679f50-850a-41cf-9c72-430f290290c8}')
+            _iid_ = GUID("{f8679f50-850a-41cf-9c72-430f290290c8}")
             _methods_ = [
-                COMMETHOD([], ctypes.HRESULT, 'GetMixFormat',
-                          (['in'], ctypes.c_wchar_p, 'pwszDeviceId'),
-                          (['out'], ctypes.c_void_p, 'ppFormat')),
-                COMMETHOD([], ctypes.HRESULT, 'GetDeviceFormat'),
-                COMMETHOD([], ctypes.HRESULT, 'ResetDeviceFormat'),
-                COMMETHOD([], ctypes.HRESULT, 'SetDeviceFormat'),
-                COMMETHOD([], ctypes.HRESULT, 'GetProcessingPeriod'),
-                COMMETHOD([], ctypes.HRESULT, 'SetProcessingPeriod'),
-                COMMETHOD([], ctypes.HRESULT, 'GetShareMode'),
-                COMMETHOD([], ctypes.HRESULT, 'SetShareMode'),
-                COMMETHOD([], ctypes.HRESULT, 'GetPropertyValue'),
-                COMMETHOD([], ctypes.HRESULT, 'SetPropertyValue'),
-                COMMETHOD([], ctypes.HRESULT, 'SetDefaultEndpoint',
-                          (['in'], ctypes.c_wchar_p, 'pwszDeviceId'),
-                          (['in'], ctypes.c_uint, 'role')),
-                COMMETHOD([], ctypes.HRESULT, 'SetEndpointVisibility'),
+                COMMETHOD(
+                    [],
+                    ctypes.HRESULT,
+                    "GetMixFormat",
+                    (["in"], ctypes.c_wchar_p, "pwszDeviceId"),
+                    (["out"], ctypes.c_void_p, "ppFormat"),
+                ),
+                COMMETHOD([], ctypes.HRESULT, "GetDeviceFormat"),
+                COMMETHOD([], ctypes.HRESULT, "ResetDeviceFormat"),
+                COMMETHOD([], ctypes.HRESULT, "SetDeviceFormat"),
+                COMMETHOD([], ctypes.HRESULT, "GetProcessingPeriod"),
+                COMMETHOD([], ctypes.HRESULT, "SetProcessingPeriod"),
+                COMMETHOD([], ctypes.HRESULT, "GetShareMode"),
+                COMMETHOD([], ctypes.HRESULT, "SetShareMode"),
+                COMMETHOD([], ctypes.HRESULT, "GetPropertyValue"),
+                COMMETHOD([], ctypes.HRESULT, "SetPropertyValue"),
+                COMMETHOD(
+                    [],
+                    ctypes.HRESULT,
+                    "SetDefaultEndpoint",
+                    (["in"], ctypes.c_wchar_p, "pwszDeviceId"),
+                    (["in"], ctypes.c_uint, "role"),
+                ),
+                COMMETHOD([], ctypes.HRESULT, "SetEndpointVisibility"),
             ]
 
         comtypes.CoInitialize()
@@ -170,7 +194,7 @@ def set_default_endpoint(device_name_or_id: str, kind: str = "output") -> bool:
             if not target_id:
                 return False
 
-            CLSID_PolicyConfigClient = GUID('{870af99c-171d-4f9e-af0d-e63df40c2bc9}')
+            CLSID_PolicyConfigClient = GUID("{870af99c-171d-4f9e-af0d-e63df40c2bc9}")
             policy = comtypes.client.CreateObject(CLSID_PolicyConfigClient, interface=IPolicyConfig)
             # 0: eConsole, 1: eMultimedia, 2: eCommunications
             for role in (0, 1, 2):
@@ -196,6 +220,7 @@ def _is_wasapi_endpoint(name: str) -> bool:
         return True
     try:
         import sounddevice as sd
+
         apis = [a.get("name", "").lower() for a in sd.query_hostapis()]
         target = _fold(name)
         for d in sd.query_devices():
@@ -235,6 +260,7 @@ def _endpoint_for(name: str):
         return None
     try:
         from pycaw.pycaw import AudioUtilities
+
         wanted = _fold(name)
         if not wanted:
             return None
@@ -279,16 +305,12 @@ def _endpoint_for(name: str):
             if friendly == wanted:
                 exact = endpoint
                 break
-            if partial is None and (friendly.startswith(wanted[:24])
-                                    or wanted.startswith(friendly[:24])):
+            if partial is None and (friendly.startswith(wanted[:24]) or wanted.startswith(friendly[:24])):
                 partial = endpoint
         return exact or partial
     except Exception as e:
         print(f"[Audio] per-device volume unavailable: {e}")
     return None
-
-
-
 
 
 def get_output_volume(name: str = "") -> Optional[int]:
@@ -301,12 +323,12 @@ def get_output_volume(name: str = "") -> Optional[int]:
     endpoint = _endpoint_for(name)
     if endpoint is not None:
         try:
-            return max(0, min(100, round(
-                endpoint.GetMasterVolumeLevelScalar() * 100)))
+            return max(0, min(100, round(endpoint.GetMasterVolumeLevelScalar() * 100)))
         except Exception as e:
             print(f"[Audio] could not read '{name}' volume: {e}")
     try:
         from core import platform_hooks
+
         vol_fn = platform_hooks.get_hook("volume_get")
         if vol_fn:
             return vol_fn()
@@ -332,10 +354,10 @@ def set_output_volume(percent: int, name: str = "") -> bool:
         except Exception as e:
             print(f"[Audio] could not set '{name}' volume: {e}")
     if name:
-        print(f"[Audio] '{name}' has no separate volume control here — "
-              f"setting the system level instead.")
+        print(f"[Audio] '{name}' has no separate volume control here — setting the system level instead.")
     try:
         from core import platform_hooks
+
         vol_set_fn = platform_hooks.get_hook("volume_set")
         vol_get_fn = platform_hooks.get_hook("volume_get")
         if vol_set_fn:

@@ -4,6 +4,7 @@ core/skill_learning/workflow_builder.py — Declarative Workflow & Step Assemble
 Converts analyzed demonstration data into structured StepDefinitions,
 attaches verification conditions, configures recovery parameters, and calculates risk tiers.
 """
+
 from __future__ import annotations
 
 from typing import Any, Dict, List
@@ -33,14 +34,16 @@ class WorkflowBuilder:
         params = []
         for p in analysis_data.get("parameters", []):
             if isinstance(p, dict):
-                params.append(ParameterDefinition(
-                    name=p.get("name", "param"),
-                    type=p.get("type", "string"),
-                    description=p.get("description", ""),
-                    required=p.get("required", True),
-                    default=p.get("default"),
-                    example=p.get("example"),
-                ))
+                params.append(
+                    ParameterDefinition(
+                        name=p.get("name", "param"),
+                        type=p.get("type", "string"),
+                        description=p.get("description", ""),
+                        required=p.get("required", True),
+                        default=p.get("default"),
+                        example=p.get("example"),
+                    )
+                )
 
         # Steps
         steps = []
@@ -69,16 +72,18 @@ class WorkflowBuilder:
                 "reobserve_window": True,
             }
 
-            steps.append(StepDefinition(
-                step_id=s.get("step_id", idx),
-                thought=s.get("thought", f"Execute {tool_name}"),
-                tool=tool_name,
-                parameters=dict(s.get("parameters", {})),
-                selector=s.get("selector"),
-                verification=v_cond,
-                recovery=recovery,
-                is_sensitive=bool(s.get("is_sensitive", False)),
-            ))
+            steps.append(
+                StepDefinition(
+                    step_id=s.get("step_id", idx),
+                    thought=s.get("thought", f"Execute {tool_name}"),
+                    tool=tool_name,
+                    parameters=dict(s.get("parameters", {})),
+                    selector=s.get("selector"),
+                    verification=v_cond,
+                    recovery=recovery,
+                    is_sensitive=bool(s.get("is_sensitive", False)),
+                )
+            )
 
         # Security classification
         risk = classify_skill_risk(steps, description=desc)
@@ -99,4 +104,3 @@ class WorkflowBuilder:
             status=SkillStatus.DRAFT.value,
             author=author,
         )
-

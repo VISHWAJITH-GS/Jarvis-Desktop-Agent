@@ -36,6 +36,7 @@ _logger.setLevel(logging.INFO)
 def _log_info(msg: str) -> None:
     try:
         from memory.config_manager import redact_secret
+
         msg = redact_secret(str(msg))
     except Exception:
         pass
@@ -45,6 +46,7 @@ def _log_info(msg: str) -> None:
 def _log_warning(msg: str) -> None:
     try:
         from memory.config_manager import redact_secret
+
         msg = redact_secret(str(msg))
     except Exception:
         pass
@@ -54,16 +56,19 @@ def _log_warning(msg: str) -> None:
 def _log_error(msg: str) -> None:
     try:
         from memory.config_manager import redact_secret
+
         msg = redact_secret(str(msg))
     except Exception:
         pass
     _logger.error(msg)
+
 
 _DEPS_OK = False
 try:
     from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
     from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
     import uvicorn
+
     _DEPS_OK = True
 except ImportError:
     pass
@@ -72,12 +77,13 @@ except ImportError:
 _UPLOAD_OK = False
 try:
     from fastapi import UploadFile, File as FastAPIFile
+
     _UPLOAD_OK = True
 except Exception:
     pass
 
-BASE_DIR    = Path(__file__).resolve().parent.parent
-STATIC_DIR  = Path(__file__).parent / "static"
+BASE_DIR = Path(__file__).resolve().parent.parent
+STATIC_DIR = Path(__file__).parent / "static"
 # The port people TYPE, and the port the app actually runs on.
 #
 # They are not the same, and that is the fix for the most confusing failure
@@ -89,8 +95,8 @@ STATIC_DIR  = Path(__file__).parent / "static"
 # So the port people reach for answers in the protocol they reach for it with,
 # and sends them one hop to the secure one. The QR code carries the secure URL
 # directly, so it never takes the hop.
-PORT        = 8000      # HTTP, redirects to SECURE_PORT
-SECURE_PORT = 8001      # HTTPS, the dashboard itself
+PORT = 8000  # HTTP, redirects to SECURE_PORT
+SECURE_PORT = 8001  # HTTPS, the dashboard itself
 MAX_UPLOAD_MB = 500
 
 
@@ -111,9 +117,11 @@ def _make_uploads_dir() -> Path:
 
 UPLOADS_DIR = _make_uploads_dir()
 
+
 def _get_gemini_key() -> str | None:
     try:
         from memory.config_manager import get_gemini_key
+
         k = get_gemini_key()
         if k:
             return k
@@ -121,16 +129,17 @@ def _get_gemini_key() -> str | None:
         pass
     try:
         import json as _json
+
         with open(BASE_DIR / "config" / "api_keys.json", "r", encoding="utf-8") as f:
             return _json.load(f).get("gemini_api_key")
     except Exception:
         return None
 
-_KEY_CHARS = [c for c in (string.ascii_uppercase + string.digits)
-              if c not in ('O', 'I', 'L', '0', '1')]
+
+_KEY_CHARS = [c for c in (string.ascii_uppercase + string.digits) if c not in ("O", "I", "L", "0", "1")]
 
 # ── AES-256-CBC ───────────────────────────────────────────────────────────────
-_AES_SALT = b'JARVIS-DASHBOARD-v1'
+_AES_SALT = b"JARVIS-DASHBOARD-v1"
 
 
 # Rounds for the pairing key -> AES key derivation.
@@ -151,9 +160,7 @@ _KDF_ROUNDS = 200_000
 
 def _derive_key(session_key: str) -> bytes:
     """Pairing key → 32-byte AES-256 key, deliberately slowly. See _KDF_ROUNDS."""
-    return hashlib.pbkdf2_hmac(
-        "sha256", session_key.encode("utf-8"), _AES_SALT, _KDF_ROUNDS, dklen=32
-    )
+    return hashlib.pbkdf2_hmac("sha256", session_key.encode("utf-8"), _AES_SALT, _KDF_ROUNDS, dklen=32)
 
 
 def _decrypt(aes_key: bytes, enc_b64: str) -> str:
@@ -176,6 +183,7 @@ def _decrypt(aes_key: bytes, enc_b64: str) -> str:
     a downgrade left available is a downgrade that will be used.
     """
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
     raw = base64.b64decode(enc_b64)
     if len(raw) < 13:
         raise ValueError("ciphertext too short to contain a nonce")
@@ -198,6 +206,7 @@ def blocking_firewall_rules() -> list:
     -> [(rule name, program path), ...]
     """
     import sys
+
     if sys.platform != "win32":
         return []
 
@@ -213,8 +222,8 @@ def blocking_firewall_rules() -> list:
 
     py_exe = sys.executable
     sibling = os.path.join(
-        os.path.dirname(py_exe),
-        "pythonw.exe" if py_exe.lower().endswith("python.exe") else "python.exe")
+        os.path.dirname(py_exe), "pythonw.exe" if py_exe.lower().endswith("python.exe") else "python.exe"
+    )
     wanted = {py_exe.lower()}
     if os.path.exists(sibling):
         wanted.add(sibling.lower())
@@ -222,10 +231,12 @@ def blocking_firewall_rules() -> list:
     found: list = []
     try:
         r = subprocess.run(
-            ["netsh", "advfirewall", "firewall", "show", "rule",
-             "name=all", "dir=in", "verbose"],
-            capture_output=True, text=True, encoding="utf-8",
-            errors="replace", timeout=20,
+            ["netsh", "advfirewall", "firewall", "show", "rule", "name=all", "dir=in", "verbose"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=20,
         )
         name = program = None
         for line in r.stdout.splitlines():
@@ -235,9 +246,13 @@ def blocking_firewall_rules() -> list:
             elif line.startswith("Program:"):
                 program = line.split(":", 1)[1].strip().lower()
             elif line.startswith("Action:"):
-                if (name and program and program in wanted
-                        and line.split(":", 1)[1].strip().lower() == "block"
-                        and (name, program) not in found):
+                if (
+                    name
+                    and program
+                    and program in wanted
+                    and line.split(":", 1)[1].strip().lower() == "block"
+                    and (name, program) not in found
+                ):
                     found.append((name, program))
     except Exception as exc:
         print(f"[Dashboard] could not read the firewall rules: {exc}")
@@ -264,6 +279,7 @@ def report_network_access(*ports: int) -> bool:
         needs it — where the dialog has an obvious reason.
     """
     import sys
+
     if sys.platform != "win32":
         return True
     try:
@@ -271,9 +287,11 @@ def report_network_access(*ports: int) -> bool:
     except Exception:
         return True
     if blocked:
-        print("[Dashboard] Windows Firewall is blocking this Python from the "
-              "network — the phone dashboard will not connect until that is "
-              "fixed. Open REMOTE CONTROL to fix it (Windows will ask once).")
+        print(
+            "[Dashboard] Windows Firewall is blocking this Python from the "
+            "network — the phone dashboard will not connect until that is "
+            "fixed. Open REMOTE CONTROL to fix it (Windows will ask once)."
+        )
         return False
     return True
 
@@ -310,7 +328,7 @@ def _ensure_network_access(*ports: int) -> None:
         # racing .bat files whose output interleaved into contradictory
         # messages on the console.
         port_rules = {pt: f"JARVIS Dashboard Port {pt}" for pt in ports}
-        prog_rule  = "JARVIS Dashboard Python"
+        prog_rule = "JARVIS Dashboard Python"
 
         # BOTH interpreters, because the app runs under either one.
         #
@@ -323,16 +341,20 @@ def _ensure_network_access(*ports: int) -> None:
         #     one way and "refused to connect" when launched the other, on the
         #     same machine and the same network.
         py_exe = sys.executable
-        _sibling = os.path.join(os.path.dirname(py_exe),
-                                "pythonw.exe" if py_exe.lower().endswith("python.exe")
-                                else "python.exe")
+        _sibling = os.path.join(
+            os.path.dirname(py_exe), "pythonw.exe" if py_exe.lower().endswith("python.exe") else "python.exe"
+        )
         py_exes = [py_exe] + ([_sibling] if os.path.exists(_sibling) else [])
 
         def _netsh_rule_exists(name: str) -> bool:
             try:
                 r = subprocess.run(
                     ["netsh", "advfirewall", "firewall", "show", "rule", f"name={name}"],
-                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=5,
                 )
                 return r.returncode == 0 and "No rules match" not in r.stdout
             except Exception:
@@ -341,11 +363,20 @@ def _ensure_network_access(*ports: int) -> None:
         def _network_is_public() -> bool:
             try:
                 r = subprocess.run(
-                    ["powershell", "-NoProfile", "-NonInteractive", "-Command",
-                     "(Get-NetConnectionProfile | "
-                     "Where-Object {$_.NetworkCategory -eq 'Public'} | "
-                     "Measure-Object).Count"],
-                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=6,
+                    [
+                        "powershell",
+                        "-NoProfile",
+                        "-NonInteractive",
+                        "-Command",
+                        "(Get-NetConnectionProfile | "
+                        "Where-Object {$_.NetworkCategory -eq 'Public'} | "
+                        "Measure-Object).Count",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=6,
                 )
                 return r.stdout.strip() not in ("", "0")
             except Exception:
@@ -354,24 +385,27 @@ def _ensure_network_access(*ports: int) -> None:
         # One implementation, at module scope — see blocking_firewall_rules().
         # There were briefly two, and they disagreed about their return type,
         # which surfaced as 'too many values to unpack' in the error path.
-        blocked      = blocking_firewall_rules()
-        missing_ports = [pt for pt, nm in port_rules.items()
-                         if not _netsh_rule_exists(nm)]
-        need_prog    = not _netsh_rule_exists(prog_rule)
+        blocked = blocking_firewall_rules()
+        missing_ports = [pt for pt, nm in port_rules.items() if not _netsh_rule_exists(nm)]
+        need_prog = not _netsh_rule_exists(prog_rule)
         if _network_is_public():
-            print("[Dashboard] This network is set to Public in Windows, which "
-                  "blocks phones on it. If it is your own network, set it to "
-                  "Private in Settings > Network & internet. JARVIS will not "
-                  "change that for you — on public Wi-Fi it would expose this "
-                  "computer.")
+            print(
+                "[Dashboard] This network is set to Public in Windows, which "
+                "blocks phones on it. If it is your own network, set it to "
+                "Private in Settings > Network & internet. JARVIS will not "
+                "change that for you — on public Wi-Fi it would expose this "
+                "computer."
+            )
         need_private = False
 
         if blocked:
-            print(f"[Dashboard] Windows is BLOCKING inbound connections to "
-                  f"{', '.join(sorted(set(os.path.basename(e) for e in py_exes)))} "
-                  f"({len(blocked)} block rule(s)). Your phone cannot reach the "
-                  f"dashboard until those are removed — asking for permission "
-                  f"to do that now.")
+            print(
+                f"[Dashboard] Windows is BLOCKING inbound connections to "
+                f"{', '.join(sorted(set(os.path.basename(e) for e in py_exes)))} "
+                f"({len(blocked)} block rule(s)). Your phone cannot reach the "
+                f"dashboard until those are removed — asking for permission "
+                f"to do that now."
+            )
 
         if not missing_ports and not need_prog and not need_private and not blocked:
             return  # already fully configured
@@ -381,35 +415,30 @@ def _ensure_network_access(*ports: int) -> None:
         if need_private:
             bat_lines.append(
                 'powershell -NoProfile -NonInteractive -Command "'
-                'Get-NetConnectionProfile | '
+                "Get-NetConnectionProfile | "
                 "Where-Object {$_.NetworkCategory -eq 'Public'} | "
                 'Set-NetConnectionProfile -NetworkCategory Private"'
             )
         for pt in missing_ports:
             bat_lines.append(
-                f'netsh advfirewall firewall add rule '
+                f"netsh advfirewall firewall add rule "
                 f'name="{port_rules[pt]}" protocol=TCP dir=in '
-                f'localport={pt} action=allow'
+                f"localport={pt} action=allow"
             )
         # Remove the blocks FIRST. Adding an allow rule beside a block rule
         # changes nothing at all — Windows resolves the conflict in the block's
         # favour — so this is the line that actually fixes the connection.
         for rule_name in blocked:
-            bat_lines.append(
-                f'netsh advfirewall firewall delete rule '
-                f'name="{rule_name}" dir=in'
-            )
+            bat_lines.append(f'netsh advfirewall firewall delete rule name="{rule_name}" dir=in')
 
         if need_prog or blocked:
             # One allow rule per interpreter. `add rule` with an existing name
             # appends rather than replacing, so deleting first keeps this from
             # accumulating a new copy on every launch.
-            bat_lines.append(
-                f'netsh advfirewall firewall delete rule name="{prog_rule}" dir=in'
-            )
+            bat_lines.append(f'netsh advfirewall firewall delete rule name="{prog_rule}" dir=in')
             for exe in py_exes:
                 bat_lines.append(
-                    f'netsh advfirewall firewall add rule '
+                    f"netsh advfirewall firewall add rule "
                     f'name="{prog_rule}" dir=in action=allow '
                     f'program="{exe}" enable=yes'
                 )
@@ -417,14 +446,16 @@ def _ensure_network_access(*ports: int) -> None:
         # Say what will be attempted, so a UAC prompt nobody expected has a
         # reason attached to it in the terminal.
         if blocked:
-            print("[Dashboard] The Windows prompt about to appear is JARVIS "
-                  "removing those block rules. Declining it leaves the phone "
-                  "dashboard unreachable, and nothing else is affected.")
+            print(
+                "[Dashboard] The Windows prompt about to appear is JARVIS "
+                "removing those block rules. Declining it leaves the phone "
+                "dashboard unreachable, and nothing else is affected."
+            )
 
         bat_body = "\r\n".join(bat_lines) + "\r\n"
         fd, bat_path = tempfile.mkstemp(suffix=".bat", prefix="jarvis_fw_")
         try:
-            os.write(fd, bat_body.encode("mbcs"))   # Windows cmd.exe expects ANSI
+            os.write(fd, bat_body.encode("mbcs"))  # Windows cmd.exe expects ANSI
             os.close(fd)
         except Exception:
             try:
@@ -436,9 +467,7 @@ def _ensure_network_access(*ports: int) -> None:
         # ── Try running directly (succeeds when already admin) ────────────────
         try:
             cmd_exe = os.environ.get("COMSPEC", "cmd.exe")
-            r = subprocess.run(
-                [cmd_exe, "/c", bat_path], capture_output=True, timeout=8, shell=False
-            )
+            r = subprocess.run([cmd_exe, "/c", bat_path], capture_output=True, timeout=8, shell=False)
             if r.returncode == 0:
                 print(f"[Dashboard] Firewall configured for {', '.join(str(pt) for pt in ports)}.")
                 try:
@@ -456,12 +485,12 @@ def _ensure_network_access(*ports: int) -> None:
         print("[Dashboard] >>> A Windows security dialog will appear — click 'Yes' <<<")
         try:
             ret = ctypes.windll.shell32.ShellExecuteW(
-                None,       # hwnd  (no parent window)
-                "runas",    # verb  (request elevation)
-                bat_path,   # file  (our .bat)
-                None,       # params
-                None,       # working dir
-                0,          # SW_HIDE (run without a visible cmd window)
+                None,  # hwnd  (no parent window)
+                "runas",  # verb  (request elevation)
+                bat_path,  # file  (our .bat)
+                None,  # params
+                None,  # working dir
+                0,  # SW_HIDE (run without a visible cmd window)
             )
             if int(ret) > 32:
                 # ShellExecuteW returns immediately; bat finishes in ~1 second.
@@ -473,28 +502,30 @@ def _ensure_network_access(*ports: int) -> None:
                 # nobody looked at.
                 still = blocking_firewall_rules()
                 if still:
-                    print("[Dashboard] ⚠️  Windows is STILL blocking inbound "
-                          "connections to this interpreter.")
-                    print("[Dashboard] ⚠️  Remove these by hand in Windows "
-                          "Defender Firewall > Inbound Rules: "
-                          + ", ".join(sorted({n for n, _ in still})))
+                    print("[Dashboard] ⚠️  Windows is STILL blocking inbound connections to this interpreter.")
+                    print(
+                        "[Dashboard] ⚠️  Remove these by hand in Windows "
+                        "Defender Firewall > Inbound Rules: " + ", ".join(sorted({n for n, _ in still}))
+                    )
                 else:
-                    print(f"[Dashboard] Network setup complete — "
-                          f"{', '.join(str(pt) for pt in ports)} open.")
+                    print(f"[Dashboard] Network setup complete — {', '.join(str(pt) for pt in ports)} open.")
                     print("[Dashboard] Refresh your phone browser to connect.")
             else:
                 print("[Dashboard] Setup was not allowed.")
                 if blocked:
-                    print("[Dashboard] Your phone CANNOT reach the dashboard "
-                          "until this is done: Windows has block rules for "
-                          + ", ".join(sorted({n for n, _ in blocked}))
-                          + " which override every allow rule.")
-                    print("[Dashboard] Either restart JARVIS and accept the "
-                          "prompt, or delete those rules in Windows Defender "
-                          "Firewall > Inbound Rules.")
+                    print(
+                        "[Dashboard] Your phone CANNOT reach the dashboard "
+                        "until this is done: Windows has block rules for "
+                        + ", ".join(sorted({n for n, _ in blocked}))
+                        + " which override every allow rule."
+                    )
+                    print(
+                        "[Dashboard] Either restart JARVIS and accept the "
+                        "prompt, or delete those rules in Windows Defender "
+                        "Firewall > Inbound Rules."
+                    )
                 else:
-                    print("[Dashboard] Phone connections may fail until JARVIS "
-                          "is run as Administrator.")
+                    print("[Dashboard] Phone connections may fail until JARVIS is run as Administrator.")
         except Exception as e:
             print(f"[Dashboard] Firewall setup error: {e}")
         finally:
@@ -505,6 +536,7 @@ def _ensure_network_access(*ports: int) -> None:
                     os.unlink(path)
                 except Exception:
                     pass
+
             threading.Thread(target=_cleanup, args=(bat_path,), daemon=True).start()
         return
 
@@ -513,23 +545,36 @@ def _ensure_network_access(*ports: int) -> None:
         fw_ctl = "/usr/libexec/ApplicationFirewall/socketfilterfw"
         try:
             r = subprocess.run(
-                [fw_ctl, "--getglobalstate"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5,
+                [fw_ctl, "--getglobalstate"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=5,
             )
             if "disabled" in r.stdout.lower():
                 return  # firewall off — nothing to do
 
             py = sys.executable
             listed = subprocess.run(
-                [fw_ctl, "--listapps"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5,
+                [fw_ctl, "--listapps"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=5,
             )
             if py in listed.stdout:
                 return  # already allowed
 
             print("[Dashboard] One-time network setup — enter your password in the macOS dialog.")
             subprocess.run(
-                ["osascript", "-e",
-                 f'do shell script "{fw_ctl} --add {py} && {fw_ctl} --unblockapp {py}"'
-                 f' with administrator privileges'],
+                [
+                    "osascript",
+                    "-e",
+                    f'do shell script "{fw_ctl} --add {py} && {fw_ctl} --unblockapp {py}"'
+                    f" with administrator privileges",
+                ],
                 timeout=60,
             )
         except Exception:
@@ -549,7 +594,9 @@ def _ensure_network_access(*ports: int) -> None:
 
     for port in ports:
         try:  # ufw
-            r = subprocess.run(["ufw", "status"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5)
+            r = subprocess.run(
+                ["ufw", "status"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5
+            )
             if "active" in r.stdout.lower():
                 if _privileged(["ufw", "allow", f"{port}/tcp"]):
                     print(f"[Dashboard] ufw: port {port} allowed.")
@@ -561,15 +608,23 @@ def _ensure_network_access(*ports: int) -> None:
 
         try:  # firewalld
             r = subprocess.run(
-                ["firewall-cmd", "--state"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5,
+                ["firewall-cmd", "--state"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=5,
             )
             if "running" in r.stdout.lower():
-                ok = (_privileged(["firewall-cmd", "--add-port", f"{port}/tcp", "--permanent"])
-                      and _privileged(["firewall-cmd", "--reload"]))
+                ok = _privileged(["firewall-cmd", "--add-port", f"{port}/tcp", "--permanent"]) and _privileged(
+                    ["firewall-cmd", "--reload"]
+                )
                 if ok:
                     print(f"[Dashboard] firewalld: port {port} allowed.")
                 else:
-                    print(f"[Dashboard] Run manually:  sudo firewall-cmd --add-port={port}/tcp --permanent && sudo firewall-cmd --reload")
+                    print(
+                        f"[Dashboard] Run manually:  sudo firewall-cmd --add-port={port}/tcp --permanent && sudo firewall-cmd --reload"
+                    )
                 continue
         except FileNotFoundError:
             pass
@@ -585,13 +640,13 @@ def _ensure_network_access(*ports: int) -> None:
             pass  # no iptables means firewall is probably off — nothing to do
 
 
-
-
 # ── helpers ───────────────────────────────────────────────────────────────────
+
 
 def _local_ip() -> str:
     """Return the best LAN-facing IPv4 address if LAN is enabled, otherwise loopback."""
     from memory.config_manager import get_dashboard_allow_lan
+
     if not get_dashboard_allow_lan():
         return "127.0.0.1"
 
@@ -635,6 +690,7 @@ def _is_allowed_ip(ip_str: str) -> bool:
         return False
 
     from memory.config_manager import get_dashboard_allow_lan, get_dashboard_allowed_subnets
+
     if not get_dashboard_allow_lan():
         return ip.is_loopback
 
@@ -684,21 +740,22 @@ def _ensure_certs() -> bool:
         certs.mkdir(parents=True, exist_ok=True)
         key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
-        who = x509.Name([
-            x509.NameAttribute(NameOID.COMMON_NAME, "JARVIS Dashboard"),
-            x509.NameAttribute(NameOID.ORGANIZATION_NAME, "JARVIS"),
-        ])
+        who = x509.Name(
+            [
+                x509.NameAttribute(NameOID.COMMON_NAME, "JARVIS Dashboard"),
+                x509.NameAttribute(NameOID.ORGANIZATION_NAME, "JARVIS"),
+            ]
+        )
 
         # The SAN has to cover every address the phone might use: the LAN IP the
         # QR code encodes, plus localhost when testing on the machine itself.
-        alt = [x509.DNSName("localhost"),
-               x509.IPAddress(ipaddress.IPv4Address("127.0.0.1"))]
+        alt = [x509.DNSName("localhost"), x509.IPAddress(ipaddress.IPv4Address("127.0.0.1"))]
         try:
             lan = _local_ip()
             if not lan.startswith("127."):
                 alt.append(x509.IPAddress(ipaddress.IPv4Address(lan)))
         except Exception:
-            pass          # no LAN address resolvable — localhost entries still work
+            pass  # no LAN address resolvable — localhost entries still work
 
         # Timezone-aware UTC: datetime.utcnow() is deprecated from Python 3.12 on,
         # and the builder normalises aware values to UTC itself.
@@ -716,16 +773,19 @@ def _ensure_certs() -> bool:
             .sign(key, hashes.SHA256())
         )
 
-        key_p.write_bytes(key.private_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PrivateFormat.TraditionalOpenSSL,
-            encryption_algorithm=serialization.NoEncryption(),
-        ))
+        key_p.write_bytes(
+            key.private_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PrivateFormat.TraditionalOpenSSL,
+                encryption_algorithm=serialization.NoEncryption(),
+            )
+        )
         crt_p.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
 
         try:
             import os as _os
-            _os.chmod(key_p, 0o600)   # best effort — largely a no-op on Windows
+
+            _os.chmod(key_p, 0o600)  # best effort — largely a no-op on Windows
         except Exception:
             pass
 
@@ -753,10 +813,10 @@ def _read(name: str) -> str:
 # twice never notices it exists.
 # Short-lived token lifetime: 1 hour (3600 seconds)
 _TOKEN_TTL_SECONDS = 3600
-_LOGIN_MAX_TRIES   = 6
-_LOGIN_WINDOW      = 300.0      # seconds the counter looks back over
-_LOGIN_LOCKOUT     = 300.0      # seconds an address waits after using them up
-_BACKOFF           = [0.0, 1.0, 2.0, 5.0, 15.0, 30.0]
+_LOGIN_MAX_TRIES = 6
+_LOGIN_WINDOW = 300.0  # seconds the counter looks back over
+_LOGIN_LOCKOUT = 300.0  # seconds an address waits after using them up
+_BACKOFF = [0.0, 1.0, 2.0, 5.0, 15.0, 30.0]
 
 
 class _Throttle:
@@ -794,39 +854,38 @@ class _Throttle:
 
 
 class DashboardServer:
-
     def __init__(self):
-        self._ip                          = _local_ip()
+        self._ip = _local_ip()
         # token -> issued-at. A set had no way to expire anything; this does,
         # and `_auth` sweeps as it reads so nothing has to run a timer.
-        self._tokens: dict[str, float]    = {}
-        self._token_keys: dict[str, str]  = {}   # auth_token → session_key
-        self._aes_cache:  dict[str, bytes]= {}   # session_key → AES bytes
-        self._clients: set[WebSocket]     = set()
-        self._history: list[dict]         = []
-        self._command_queue               = asyncio.Queue()
-        self._wake_callback               = None
-        self._connect_callback            = None
+        self._tokens: dict[str, float] = {}
+        self._token_keys: dict[str, str] = {}  # auth_token → session_key
+        self._aes_cache: dict[str, bytes] = {}  # session_key → AES bytes
+        self._clients: set[WebSocket] = set()
+        self._history: list[dict] = []
+        self._command_queue = asyncio.Queue()
+        self._wake_callback = None
+        self._connect_callback = None
         self._pending_keys: dict[str, float] = {}
-        self._throttle                    = _Throttle()
+        self._throttle = _Throttle()
         self._device_sessions: dict[str, dict] = {}  # device_token → {session_key}
-        self._device_tokens: dict[str, dict]   = {}  # dev_tok -> metadata
-        self._revoked_tokens: set[str]         = set()
-        self._phone_audio_queue: asyncio.Queue    = asyncio.Queue(maxsize=200)
-        self._uploads_dir                 = UPLOADS_DIR
+        self._device_tokens: dict[str, dict] = {}  # dev_tok -> metadata
+        self._revoked_tokens: set[str] = set()
+        self._phone_audio_queue: asyncio.Queue = asyncio.Queue(maxsize=200)
+        self._uploads_dir = UPLOADS_DIR
         # Set by serve() when the port could not be taken, so the UI can say
         # why the QR code leads nowhere instead of showing it regardless.
         self._bind_error: str = ""
-        self._login_html                  = _read("login.html")
-        self._app_html                    = _read("app.html")
-        self.app                          = self._build_app()
+        self._login_html = _read("login.html")
+        self._app_html = _read("app.html")
+        self.app = self._build_app()
 
     # ── one-time key management ───────────────────────────────────────────
 
     def new_key(self, expiry_secs: int = 600) -> str:
         now = time.time()
         self._pending_keys = {k: v for k, v in self._pending_keys.items() if v > now}
-        key = ''.join(secrets.choice(_KEY_CHARS) for _ in range(8))
+        key = "".join(secrets.choice(_KEY_CHARS) for _ in range(8))
         self._pending_keys[key] = now + expiry_secs
         return key
 
@@ -859,8 +918,8 @@ class DashboardServer:
         """
         try:
             import json as _json
-            with open(BASE_DIR / "config" / "api_keys.json", "r",
-                      encoding="utf-8") as f:
+
+            with open(BASE_DIR / "config" / "api_keys.json", "r", encoding="utf-8") as f:
                 if not _json.load(f).get("dashboard_https"):
                     return False
         except Exception:
@@ -928,7 +987,7 @@ class DashboardServer:
 
         def _who(req: Request) -> str:
             """The client address a throttle counts against."""
-            return (getattr(getattr(req, "client", None), "host", "") or "unknown")
+            return getattr(getattr(req, "client", None), "host", "") or "unknown"
 
         @app.middleware("http")
         async def security_and_network_middleware(req: Request, call_next):
@@ -977,6 +1036,7 @@ class DashboardServer:
                 return True
             try:
                 from urllib.parse import urlparse
+
                 parsed = urlparse(origin)
                 origin_host = parsed.netloc.lower()
                 req_host = websocket.headers.get("host", "").strip().lower()
@@ -1008,16 +1068,19 @@ class DashboardServer:
         async def health_check():
             """Health check endpoint reporting service, security, and runtime status."""
             from memory.config_manager import get_dashboard_allow_lan
+
             tls_active = getattr(self, "_use_ssl", False)
             active_sessions = len(self._tokens)
-            return JSONResponse({
-                "status": "healthy",
-                "service": "JARVIS Dashboard",
-                "timestamp": time.time(),
-                "tls_enabled": tls_active,
-                "active_sessions": active_sessions,
-                "allow_lan": get_dashboard_allow_lan(),
-            })
+            return JSONResponse(
+                {
+                    "status": "healthy",
+                    "service": "JARVIS Dashboard",
+                    "timestamp": time.time(),
+                    "tls_enabled": tls_active,
+                    "active_sessions": active_sessions,
+                    "allow_lan": get_dashboard_allow_lan(),
+                }
+            )
 
         @app.get("/login", response_class=HTMLResponse)
         async def login_page():
@@ -1025,25 +1088,21 @@ class DashboardServer:
 
         @app.get("/", response_class=HTMLResponse)
         async def index():
-            html = (self._app_html
-                    .replace("__IP__", self._ip)
-                    .replace("__PORT__", str(PORT)))
+            html = self._app_html.replace("__IP__", self._ip).replace("__PORT__", str(PORT))
             return HTMLResponse(html)
 
         @app.post("/login")
         async def login(req: Request):
-            who  = _who(req)
+            who = _who(req)
             wait = self._throttle.blocked_for(who)
             if wait > 0:
                 return JSONResponse(
-                    {"ok": False,
-                     "error": f"Too many attempts. Try again in "
-                              f"{int(wait) + 1} seconds."},
+                    {"ok": False, "error": f"Too many attempts. Try again in {int(wait) + 1} seconds."},
                     status_code=429,
                 )
-            body    = await req.json()
+            body = await req.json()
             entered = str(body.get("pin", "")).strip().upper()
-            now     = time.time()
+            now = time.time()
 
             matched_key = None
             for key, exp in list(self._pending_keys.items()):
@@ -1067,9 +1126,7 @@ class DashboardServer:
                 }
                 if self._connect_callback:
                     self._connect_callback()
-                asyncio.create_task(self.broadcast(
-                    {"type": "sys", "text": "Remote connection established."}
-                ))
+                asyncio.create_task(self.broadcast({"type": "sys", "text": "Remote connection established."}))
                 resp = JSONResponse({"ok": True, "token": tok, "device_token": dev_tok})
                 resp.set_cookie(
                     key="jarvis_auth_token",
@@ -1082,8 +1139,7 @@ class DashboardServer:
                 return resp
 
             self._throttle.record_failure(who)
-            return JSONResponse({"ok": False, "error": "Invalid or expired key"},
-                                status_code=401)
+            return JSONResponse({"ok": False, "error": "Invalid or expired key"}, status_code=401)
 
         @app.get("/auto-login")
         async def auto_login(key: str = ""):
@@ -1109,7 +1165,7 @@ class DashboardServer:
 </div></body></html>""")
 
             del self._pending_keys[matched_key]
-            tok     = secrets.token_urlsafe(32)
+            tok = secrets.token_urlsafe(32)
             dev_tok = secrets.token_urlsafe(32)
             self._tokens[tok] = time.time()
             self._token_keys[tok] = matched_key
@@ -1123,9 +1179,7 @@ class DashboardServer:
 
             if self._connect_callback:
                 self._connect_callback()
-            asyncio.create_task(self.broadcast(
-                {"type": "sys", "text": "Remote connection established via QR code."}
-            ))
+            asyncio.create_task(self.broadcast({"type": "sys", "text": "Remote connection established via QR code."}))
 
             resp = HTMLResponse(f"""<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width">
@@ -1172,9 +1226,7 @@ class DashboardServer:
             self._aes_key(session_key)
             if self._connect_callback:
                 self._connect_callback()
-            asyncio.create_task(self.broadcast(
-                {"type": "sys", "text": "Known device reconnected automatically."}
-            ))
+            asyncio.create_task(self.broadcast({"type": "sys", "text": "Known device reconnected automatically."}))
             resp = JSONResponse({"ok": True, "token": tok, "key": session_key})
             resp.set_cookie(
                 key="jarvis_auth_token",
@@ -1216,7 +1268,9 @@ class DashboardServer:
             if target_id or target_token:
                 revoked = 0
                 for d_tok, info in list(self._device_sessions.items()):
-                    if (target_token and hmac.compare_digest(target_token, d_tok)) or (target_id and info.get("device_id") == target_id):
+                    if (target_token and hmac.compare_digest(target_token, d_tok)) or (
+                        target_id and info.get("device_id") == target_id
+                    ):
                         self._device_sessions.pop(d_tok, None)
                         revoked += 1
                 return JSONResponse({"ok": True, "revoked": revoked})
@@ -1242,9 +1296,9 @@ class DashboardServer:
         async def command(req: Request):
             if not _auth(req):
                 return JSONResponse({"error": "Unauthorized"}, status_code=401)
-            body  = await req.json()
+            body = await req.json()
             token = _extract_token(req)
-            enc   = body.get("enc", "")
+            enc = body.get("enc", "")
             if enc:
                 text = self._decrypt(token, enc)
                 if text is None:
@@ -1277,33 +1331,28 @@ class DashboardServer:
                 await websocket.close(code=4001)
                 return
             await websocket.accept()
-            asyncio.create_task(self.broadcast(
-                {"type": "sys", "text": "Phone microphone live."}
-            ))
+            asyncio.create_task(self.broadcast({"type": "sys", "text": "Phone microphone live."}))
             try:
                 while True:
                     data = await websocket.receive_bytes()
                     try:
-                        self._phone_audio_queue.put_nowait(
-                            {"data": data, "mime_type": "audio/pcm"}
-                        )
+                        self._phone_audio_queue.put_nowait({"data": data, "mime_type": "audio/pcm"})
                     except asyncio.QueueFull:
                         pass  # drop frame rather than block
             except WebSocketDisconnect:
                 pass
             finally:
-                asyncio.create_task(self.broadcast(
-                    {"type": "sys", "text": "Phone microphone stopped."}
-                ))
+                asyncio.create_task(self.broadcast({"type": "sys", "text": "Phone microphone stopped."}))
 
         # ── File sharing ──────────────────────────────────────────────────────
 
         def _safe_filename(raw: str) -> str:
-            name = Path(raw).name                          # strip path components
-            name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', name).strip(". ")
+            name = Path(raw).name  # strip path components
+            name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", name).strip(". ")
             return name or "upload"
 
         if _UPLOAD_OK:
+
             @app.post("/api/upload")
             async def upload_file(req: Request, file: UploadFile = FastAPIFile(...)):
                 if not _auth(req):
@@ -1341,14 +1390,19 @@ class DashboardServer:
                         pass
                     return JSONResponse({"error": str(exc)}, status_code=500)
 
-                asyncio.create_task(self.broadcast({
-                    "type": "file_received",
-                    "name": dest.name,
-                    "size": size,
-                    "saved_to": str(self._uploads_dir),
-                }))
+                asyncio.create_task(
+                    self.broadcast(
+                        {
+                            "type": "file_received",
+                            "name": dest.name,
+                            "size": size,
+                            "saved_to": str(self._uploads_dir),
+                        }
+                    )
+                )
                 return JSONResponse({"ok": True, "name": dest.name, "size": size})
         else:
+
             @app.post("/api/upload")
             async def upload_unavailable(req: Request):
                 return JSONResponse(
@@ -1377,7 +1431,7 @@ class DashboardServer:
             tok = _extract_token(req) or token.strip()
             if not _valid(tok):
                 return JSONResponse({"error": "Unauthorized"}, status_code=401)
-            safe = re.sub(r'[/\\]', '', filename)
+            safe = re.sub(r"[/\\]", "", filename)
             path = self._uploads_dir / safe
             if not path.exists() or not path.is_file():
                 return JSONResponse({"error": "Not found"}, status_code=404)
@@ -1392,6 +1446,7 @@ class DashboardServer:
                 return JSONResponse({"error": "Unauthorized"}, status_code=401)
             try:
                 from core.skill_learning.skill_registry import get_default_skill_registry
+
                 reg = get_default_skill_registry()
                 reg.reload()
                 skills = [s.to_dict() for s in reg.get_all_skills(approved_only=False)]
@@ -1405,13 +1460,16 @@ class DashboardServer:
                 return JSONResponse({"error": "Unauthorized"}, status_code=401)
             try:
                 from core.skill_learning.learning_manager import get_default_learning_manager
+
                 mgr = get_default_learning_manager()
                 session_data = mgr.current_session.to_dict() if mgr.current_session else None
-                return JSONResponse({
-                    "ok": True,
-                    "is_active": mgr.is_learning_active(),
-                    "session": session_data,
-                })
+                return JSONResponse(
+                    {
+                        "ok": True,
+                        "is_active": mgr.is_learning_active(),
+                        "session": session_data,
+                    }
+                )
             except Exception as e:
                 return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
@@ -1421,6 +1479,7 @@ class DashboardServer:
                 return JSONResponse({"error": "Unauthorized"}, status_code=401)
             try:
                 from core.skill_learning.skill_registry import get_default_skill_registry
+
                 reg = get_default_skill_registry()
                 skill = reg.get_skill(skill_id)
                 if not skill:
@@ -1435,6 +1494,7 @@ class DashboardServer:
                 return JSONResponse({"error": "Unauthorized"}, status_code=401)
             try:
                 from core.skill_learning.learning_manager import get_default_learning_manager
+
                 mgr = get_default_learning_manager()
                 res = mgr.approve_skill(skill_id)
                 return JSONResponse(res.to_dict())
@@ -1448,6 +1508,7 @@ class DashboardServer:
             try:
                 body = await req.json() if req.headers.get("content-type") == "application/json" else {}
                 from core.skill_learning.learning_manager import get_default_learning_manager
+
                 mgr = get_default_learning_manager()
                 res = mgr.test_skill(skill_id, test_parameters=body.get("parameters", {}))
                 return JSONResponse(res.to_dict())
@@ -1460,6 +1521,7 @@ class DashboardServer:
                 return JSONResponse({"error": "Unauthorized"}, status_code=401)
             try:
                 from core.skill_learning.learning_manager import get_default_learning_manager
+
                 mgr = get_default_learning_manager()
                 res = mgr.delete_skill(skill_id)
                 return JSONResponse(res.to_dict())
@@ -1475,15 +1537,18 @@ class DashboardServer:
                 return JSONResponse({"error": "Unauthorized"}, status_code=401)
             try:
                 from actions.screen_observer import get_screen_observer
+
                 obs = get_screen_observer().capture_observation(trigger_reason="dashboard_poll", capture_images=False)
-                return JSONResponse({
-                    "ok": True,
-                    "active_window": obs.active_window,
-                    "monitors": obs.monitors,
-                    "cursor": {"x": obs.cursor_position[0], "y": obs.cursor_position[1]},
-                    "browser_url": obs.browser_url,
-                    "elements": obs.visible_elements[:30],
-                })
+                return JSONResponse(
+                    {
+                        "ok": True,
+                        "active_window": obs.active_window,
+                        "monitors": obs.monitors,
+                        "cursor": {"x": obs.cursor_position[0], "y": obs.cursor_position[1]},
+                        "browser_url": obs.browser_url,
+                        "elements": obs.visible_elements[:30],
+                    }
+                )
             except Exception as e:
                 return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
@@ -1494,6 +1559,7 @@ class DashboardServer:
             try:
                 from actions.display_manager import get_display_manager
                 from fastapi.responses import Response
+
                 dm = get_display_manager()
                 shot = dm.capture_screenshot(monitor_index=0)
                 preview = dm.generate_preview(shot, max_width=960, max_height=540)
@@ -1507,6 +1573,7 @@ class DashboardServer:
                 return JSONResponse({"error": "Unauthorized"}, status_code=401)
             try:
                 from core.agent_orchestrator import get_orchestrator
+
                 orch = get_orchestrator()
                 orch.emergency_stop()
                 return JSONResponse({"ok": True, "message": "Emergency stop triggered successfully."})
@@ -1522,17 +1589,20 @@ class DashboardServer:
                 return JSONResponse({"error": "Unauthorized"}, status_code=401)
             try:
                 from actions.browser_session_manager import get_browser_session_manager
+
                 bm = get_browser_session_manager()
                 st = bm.get_session_state()
-                return JSONResponse({
-                    "ok": True,
-                    "browser_type": st.browser_type,
-                    "is_connected": st.is_connected,
-                    "active_url": st.active_url,
-                    "tab_count": st.tab_count,
-                    "console_errors": st.console_errors_count,
-                    "network_errors": st.network_errors_count,
-                })
+                return JSONResponse(
+                    {
+                        "ok": True,
+                        "browser_type": st.browser_type,
+                        "is_connected": st.is_connected,
+                        "active_url": st.active_url,
+                        "tab_count": st.tab_count,
+                        "console_errors": st.console_errors_count,
+                        "network_errors": st.network_errors_count,
+                    }
+                )
             except Exception as e:
                 return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
@@ -1564,16 +1634,19 @@ class DashboardServer:
                 body = await req.json() if req.headers.get("content-type") == "application/json" else {}
                 url = body.get("url") or "http://localhost:3000"
                 from actions.browser_qa_agent import get_browser_qa_agent
+
                 agent = get_browser_qa_agent()
                 rep = agent.execute_test_suite(url=url, project_dir=body.get("project_dir"))
-                return JSONResponse({
-                    "ok": True,
-                    "site_url": rep.site_url,
-                    "total_tests": rep.total_tests,
-                    "passed_tests": rep.passed_tests,
-                    "failed_tests": rep.failed_tests,
-                    "html_report": rep.report_html_path,
-                })
+                return JSONResponse(
+                    {
+                        "ok": True,
+                        "site_url": rep.site_url,
+                        "total_tests": rep.total_tests,
+                        "passed_tests": rep.passed_tests,
+                        "failed_tests": rep.failed_tests,
+                        "html_report": rep.report_html_path,
+                    }
+                )
             except Exception as e:
                 return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
@@ -1598,7 +1671,7 @@ class DashboardServer:
                     data = await websocket.receive_json()
                     if data.get("type") == "command":
                         enc = data.get("enc", "")
-                        t   = self._decrypt(tok, enc) if enc else (data.get("text") or "").strip()
+                        t = self._decrypt(tok, enc) if enc else (data.get("text") or "").strip()
                         if t:
                             await self._command_queue.put(t)
                             if self._wake_callback:
@@ -1638,16 +1711,13 @@ class DashboardServer:
         @bounce.get("/{path:path}")
         async def _to_https(path: str, request: Request):
             query = f"?{request.url.query}" if request.url.query else ""
-            return RedirectResponse(
-                f"https://{self._ip}:{SECURE_PORT}/{path}{query}",
-                status_code=307)
+            return RedirectResponse(f"https://{self._ip}:{SECURE_PORT}/{path}{query}", status_code=307)
 
         from memory.config_manager import get_dashboard_allow_lan
+
         bind_host = "0.0.0.0" if get_dashboard_allow_lan() else "127.0.0.1"
-        cfg = uvicorn.Config(bounce, host=bind_host, port=PORT,
-                             log_level="warning")
-        print(f"[Dashboard] Type by hand:  {self._ip}:{PORT}  "
-              f"(sends you to the secure page)")
+        cfg = uvicorn.Config(bounce, host=bind_host, port=PORT, log_level="warning")
+        print(f"[Dashboard] Type by hand:  {self._ip}:{PORT}  (sends you to the secure page)")
         await uvicorn.Server(cfg).serve()
 
     async def serve(self) -> None:
@@ -1659,22 +1729,21 @@ class DashboardServer:
         # Startup only CHECKS — see report_network_access for why it never
         # asks for administrator rights here. In a thread: reading the
         # firewall rules takes about a second.
-        asyncio.get_running_loop().run_in_executor(
-            None, report_network_access, PORT, SECURE_PORT)
+        asyncio.get_running_loop().run_in_executor(None, report_network_access, PORT, SECURE_PORT)
 
         # Only make a certificate if HTTPS was actually asked for. Generating
         # one nobody uses just leaves a private key on disk.
         try:
             import json as _json
-            with open(BASE_DIR / "config" / "api_keys.json", "r",
-                      encoding="utf-8") as f:
+
+            with open(BASE_DIR / "config" / "api_keys.json", "r", encoding="utf-8") as f:
                 if _json.load(f).get("dashboard_https"):
                     _ensure_certs()
         except Exception:
             pass
 
-        use_ssl  = self._ssl_enabled()
-        ssl_key  = BASE_DIR / "config" / "certs" / "jarvis.key"
+        use_ssl = self._ssl_enabled()
+        ssl_key = BASE_DIR / "config" / "certs" / "jarvis.key"
         ssl_cert = BASE_DIR / "config" / "certs" / "jarvis.crt"
 
         # TLS IS WANTED, BUT NOT AT THE COST OF NOT STARTING.
@@ -1693,19 +1762,25 @@ class DashboardServer:
         if use_ssl:
             asyncio.create_task(self._serve_redirector())
         else:
-            print("[Dashboard] Plain HTTP on your local network. Commands are "
-                  "not encrypted; the pairing key still gates access.")
-            print('[Dashboard] For HTTPS set "dashboard_https": true in '
-                  'config/api_keys.json (your phone will ask you to trust the '
-                  'certificate once).')
+            print(
+                "[Dashboard] Plain HTTP on your local network. Commands are "
+                "not encrypted; the pairing key still gates access."
+            )
+            print(
+                '[Dashboard] For HTTPS set "dashboard_https": true in '
+                "config/api_keys.json (your phone will ask you to trust the "
+                "certificate once)."
+            )
 
         from memory.config_manager import get_dashboard_allow_lan
+
         bind_host = "0.0.0.0" if get_dashboard_allow_lan() else "127.0.0.1"
         cfg = uvicorn.Config(
-            self.app, host=bind_host,
-            port=SECURE_PORT if use_ssl else PORT, log_level="warning",
-            **({"ssl_keyfile": str(ssl_key), "ssl_certfile": str(ssl_cert)}
-               if use_ssl else {}),
+            self.app,
+            host=bind_host,
+            port=SECURE_PORT if use_ssl else PORT,
+            log_level="warning",
+            **({"ssl_keyfile": str(ssl_key), "ssl_certfile": str(ssl_cert)} if use_ssl else {}),
         )
 
         # CAN THIS PORT ACTUALLY BE TAKEN?
@@ -1719,6 +1794,7 @@ class DashboardServer:
         #
         # Asking first costs a millisecond and turns that into a sentence.
         import socket as _socket
+
         # No SO_REUSEADDR. On Windows that option lets a second socket bind a
         # port another socket already holds — which is exactly the condition
         # being tested for, so setting it made the probe always succeed.
@@ -1731,7 +1807,8 @@ class DashboardServer:
                 f"port {SECURE_PORT if use_ssl else PORT} is already in use — "
                 f"another copy of JARVIS is probably running. Close it and "
                 f"restart, or the phone dashboard will stay unreachable "
-                f"({exc.__class__.__name__})")
+                f"({exc.__class__.__name__})"
+            )
             print(f"[Dashboard] {self._bind_error}")
             return
         _probe.close()

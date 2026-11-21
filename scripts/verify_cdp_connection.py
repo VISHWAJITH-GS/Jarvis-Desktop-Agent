@@ -8,6 +8,7 @@ Connects to Microsoft Edge over Chrome DevTools Protocol (CDP):
   3. Extracts the top 15 indexed interactive elements from the active tab.
   4. Prints the distilled semantic element map.
 """
+
 import argparse
 import os
 import sys
@@ -85,7 +86,9 @@ def main():
             elem = element_map[i]
             box = elem.bounding_box
             print(f"  {elem.to_prompt_line()}")
-            print(f"       Bounds: x={box.x:.1f}, y={box.y:.1f}, w={box.width:.1f}, h={box.height:.1f} | backendNodeId={elem.backend_node_id}")
+            print(
+                f"       Bounds: x={box.x:.1f}, y={box.y:.1f}, w={box.width:.1f}, h={box.height:.1f} | backendNodeId={elem.backend_node_id}"
+            )
 
         if total_elements > top_n:
             print(f"  ... and {total_elements - top_n} more element(s).")
@@ -102,4 +105,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

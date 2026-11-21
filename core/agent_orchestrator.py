@@ -18,6 +18,7 @@ Execution Flow per Step:
   7. VERIFY: ActionVerifier checks whether intended outcome actually occurred.
   8. BOUNDED RECOVERY: If unverified or failed, attempt bounded recovery before failing safely.
 """
+
 from __future__ import annotations
 
 import base64
@@ -132,6 +133,7 @@ class AgentOrchestrator:
         """Capture complete structured observation of the desktop."""
         try:
             from core import platform_hooks
+
             obs = platform_hooks.call_hook("observe_screen", default=None)
             if obs is not None:
                 return {
@@ -177,11 +179,13 @@ class AgentOrchestrator:
             name = d.get("name")
             desc = d.get("description") or d.get("brief", "")
             params = d.get("parameters", {})
-            items.append({
-                "name": name,
-                "description": desc,
-                "parameters": params,
-            })
+            items.append(
+                {
+                    "name": name,
+                    "description": desc,
+                    "parameters": params,
+                }
+            )
         return json.dumps(items, indent=2)
 
     # ── PLAN USING GEMINI ────────────────────────────────────────────────────
@@ -226,22 +230,30 @@ Return ONLY a valid JSON array of step objects:
         if "play" in goal_lower or "song" in goal_lower or "music" in goal_lower or "spotify" in goal_lower:
             m = re.search(r"play\s+(.+?)(?:$|\s+and)", goal_lower)
             query = m.group(1).replace("the song", "").replace("spotify", "").strip() if m else "music"
-            steps.append({
-                "thought": "Play requested media track",
-                "action": "media_control",
-                "parameters": {"action": "play", "query": query},
-            })
+            steps.append(
+                {
+                    "thought": "Play requested media track",
+                    "action": "media_control",
+                    "parameters": {"action": "play", "query": query},
+                }
+            )
         elif "open" in goal_lower:
             m = re.search(r"open\s+(.+?)(?:$|\s+and)", goal_lower)
             app = m.group(1).strip() if m else ""
             if app:
-                steps.append({
-                    "thought": f"Open application '{app}'",
-                    "action": "open_app",
-                    "parameters": {"app_name": app},
-                })
+                steps.append(
+                    {
+                        "thought": f"Open application '{app}'",
+                        "action": "open_app",
+                        "parameters": {"app_name": app},
+                    }
+                )
         return steps or [
-            {"thought": "Execute task directly", "action": "computer_use", "parameters": {"action": "click_element", "name": goal}}
+            {
+                "thought": "Execute task directly",
+                "action": "computer_use",
+                "parameters": {"action": "click_element", "name": goal},
+            }
         ]
 
     # ── ACT & VERIFY VIA UNIFIED ACTION REGISTRY ─────────────────────────────
@@ -288,10 +300,12 @@ Return ONLY a valid JSON array of step objects:
             elif action == "uia_open":
                 name = params.get("name", "")
                 from core import platform_hooks
+
                 raw_res = platform_hooks.call_hook("open_file_explorer_item", name)
                 act_res = outcome.normalize_result(raw_res, action_name="uia_open")
             elif action == "click_element":
                 from core import platform_hooks
+
                 act_res = platform_hooks.call_hook(
                     "click_element",
                     name=params.get("name") or params.get("target", ""),
@@ -301,12 +315,15 @@ Return ONLY a valid JSON array of step objects:
                 )
             elif action in ("click_here", "click_cursor_position"):
                 from core import platform_hooks
+
                 act_res = platform_hooks.call_hook("click_cursor_position")
             elif action == "type_text":
                 from core import platform_hooks
+
                 act_res = platform_hooks.call_hook("type_text", text=params.get("text", ""))
             elif action == "browser_navigate":
                 from core import platform_hooks
+
                 act_res = platform_hooks.call_hook("browser_navigate", params.get("url", ""))
             elif action == "verify_state":
                 exp = params.get("expected_window", "").lower()
@@ -318,7 +335,9 @@ Return ONLY a valid JSON array of step objects:
                     action="verify_state",
                     success=ok,
                     verified=ok,
-                    message=f"Verified: '{exp}' in '{curr}'" if ok else f"Mismatch: expected '{exp}' but current is '{curr}'",
+                    message=f"Verified: '{exp}' in '{curr}'"
+                    if ok
+                    else f"Mismatch: expected '{exp}' but current is '{curr}'",
                 )
             else:
                 act_res = outcome.ActionResult(
@@ -409,15 +428,19 @@ Return ONLY a valid JSON array of step objects:
                     target = params.get("target") or params.get("name") or ""
                     # Attempt visual grounding fallback click
                     from core import platform_hooks
+
                     coords = platform_hooks.call_hook("visual_grounding_click", target, default=None)
                     if coords:
                         recovered = True
                         results_log[-1] += f" [Recovered via visual grounding at {coords}]"
 
                 elif action in ("open_app", "uia_open"):
-                    target_app = current.get("parameters", {}).get("app_name") or current.get("parameters", {}).get("name", "")
+                    target_app = current.get("parameters", {}).get("app_name") or current.get("parameters", {}).get(
+                        "name", ""
+                    )
                     try:
                         import os
+
                         os.startfile(target_app)
                         time.sleep(1.2)
                         recovered = True
@@ -430,16 +453,22 @@ Return ONLY a valid JSON array of step objects:
                     step_results[-1].verified = True
                     step_results[-1].status = outcome.STATUS_DONE
                 else:
-                    self.log(f"Step {step_idx + 1} failed and could not be recovered. Checking dynamic replan from current screen...")
-                    replan_prompt = f"Goal: {goal}. Previous progress: {results_log}. Current state: {post_obs.get('summary', '')}"
+                    self.log(
+                        f"Step {step_idx + 1} failed and could not be recovered. Checking dynamic replan from current screen..."
+                    )
+                    replan_prompt = (
+                        f"Goal: {goal}. Previous progress: {results_log}. Current state: {post_obs.get('summary', '')}"
+                    )
                     new_steps = self.plan_task(replan_prompt, post_obs)
                     if new_steps:
                         self.log(f"ReAct replanner formulated {len(new_steps)} replacement steps.")
-                        plan = plan[:step_idx + 1] + new_steps
+                        plan = plan[: step_idx + 1] + new_steps
                         step_idx += 1
                         continue
                     else:
-                        self.log(f"Prerequisite step {step_idx + 1} failed and could not be recovered. Stopping plan safely.")
+                        self.log(
+                            f"Prerequisite step {step_idx + 1} failed and could not be recovered. Stopping plan safely."
+                        )
                         results_log.append(f"Plan halted: cannot proceed past failed step {step_idx + 1}.")
                         break
 

@@ -9,6 +9,7 @@ Exposes the Learning-by-Demonstration Skill Engine to Gemini Live and the Autono
 - User approval gate for activating skills
 - Execute learned skills with runtime parameters
 """
+
 from __future__ import annotations
 
 import json

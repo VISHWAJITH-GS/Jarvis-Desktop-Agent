@@ -1,4 +1,4 @@
-#web_search.py
+# web_search.py
 import json
 import sys
 import threading
@@ -10,9 +10,9 @@ from pathlib import Path
 # generation.  Once it is spent every call returns 429 — so retrying it at the
 # top of every search only adds a dead round-trip before the DDG fallback runs.
 # After a quota error, skip Gemini entirely for a cooldown period.
-_QUOTA_COOLDOWN_SEC  = 900          # 15 minutes
+_QUOTA_COOLDOWN_SEC = 900  # 15 minutes
 _quota_blocked_until = 0.0
-_quota_lock          = threading.Lock()
+_quota_lock = threading.Lock()
 
 
 def _gemini_available() -> bool:
@@ -42,7 +42,7 @@ class _QuotaCooldown(RuntimeError):
 def _log_gemini_failure(context: str, exc: Exception) -> None:
     """Log a Gemini failure — silently when it is just the expected cooldown."""
     if isinstance(exc, _QuotaCooldown):
-        return          # announced once when the breaker tripped; not a warning
+        return  # announced once when the breaker tripped; not a warning
     print(f"[WebSearch] \u26a0\ufe0f {context} failed ({exc}) — using DDG instead")
 
 
@@ -63,19 +63,21 @@ def _run_bounded(fn, timeout: float, label: str = "task"):
         print(f"[WebSearch] {label} exceeded {timeout:.0f}s — moving on")
     return box[0]
 
+
 def _get_base_dir() -> Path:
     if getattr(sys, "frozen", False):
         return Path(sys.executable).parent
     return Path(__file__).resolve().parent.parent
 
 
-BASE_DIR        = _get_base_dir()
+BASE_DIR = _get_base_dir()
 API_CONFIG_PATH = BASE_DIR / "config" / "api_keys.json"
 
 
 def _get_api_key() -> str:
     try:
         from memory.config_manager import get_gemini_key
+
         k = get_gemini_key()
         if k:
             return k
@@ -97,9 +99,7 @@ def _gemini_search(query: str) -> str:
     # Grounded search reads a live page, so it gets a longer deadline than the
     # default — but it still HAS one, and it still walks the fallback ladder.
     try:
-        response = gemini.call(query, tier=gemini.SEARCH,
-                               config={"tools": [{"google_search": {}}]},
-                               timeout_ms=30_000)
+        response = gemini.call(query, tier=gemini.SEARCH, config={"tools": [{"google_search": {}}]}, timeout_ms=30_000)
         if response is None:
             raise RuntimeError("every Gemini model on the ladder failed")
     except Exception as e:
@@ -126,9 +126,11 @@ def _get_ddgs():
     """
     try:
         from ddgs import DDGS
+
         return DDGS
     except ImportError:
         from duckduckgo_search import DDGS
+
         print(
             "[WebSearch] ⚠️ Using the deprecated 'duckduckgo-search' package — "
             "DuckDuckGo blocks its endpoints, so every search will come back "
@@ -143,11 +145,13 @@ def _ddg_search(query: str, max_results: int = 6) -> list[dict]:
     try:
         with DDGS() as ddgs:
             for r in ddgs.text(query, max_results=max_results):
-                results.append({
-                    "title":   r.get("title",  ""),
-                    "snippet": r.get("body",   ""),
-                    "url":     r.get("href",   ""),
-                })
+                results.append(
+                    {
+                        "title": r.get("title", ""),
+                        "snippet": r.get("body", ""),
+                        "url": r.get("href", ""),
+                    }
+                )
     except Exception as e:
         print(f"[WebSearch] ⚠️ DDG text() failed: {e}")
     return results
@@ -160,12 +164,14 @@ def _ddg_news(query: str, max_results: int = 8) -> list[dict]:
     try:
         with DDGS() as ddgs:
             for r in ddgs.news(query, max_results=max_results):
-                results.append({
-                    "title":   r.get("title",  ""),
-                    "snippet": r.get("body",   ""),
-                    "url":     r.get("url",    ""),
-                    "source":  r.get("source", ""),
-                })
+                results.append(
+                    {
+                        "title": r.get("title", ""),
+                        "snippet": r.get("body", ""),
+                        "url": r.get("url", ""),
+                        "source": r.get("source", ""),
+                    }
+                )
     except Exception as e:
         print(f"[WebSearch] ⚠️ DDG news() failed ({e}) — falling back to text search")
     # Also covers the legacy-package case, where news() returns an empty list
@@ -181,9 +187,12 @@ def _format_ddg(query: str, results: list[dict]) -> str:
 
     lines = [f"Search results for: {query}\n"]
     for i, r in enumerate(results, 1):
-        if r.get("title"):   lines.append(f"{i}. {r['title']}")
-        if r.get("snippet"): lines.append(f"   {r['snippet']}")
-        if r.get("url"):     lines.append(f"   Source: {r['url']}")
+        if r.get("title"):
+            lines.append(f"{i}. {r['title']}")
+        if r.get("snippet"):
+            lines.append(f"   {r['snippet']}")
+        if r.get("url"):
+            lines.append(f"   Source: {r['url']}")
         lines.append("")
     return "\n".join(lines).strip()
 
@@ -208,6 +217,7 @@ def _format_news(query: str, results: list[dict]) -> str:
 
 
 # ── Briefing helper ────────────────────────────────────────────────────────────
+
 
 def _gemini_headlines(n: int = 5) -> tuple[list[str], str]:
     """
@@ -238,10 +248,10 @@ def _gemini_headlines(n: int = 5) -> tuple[list[str], str]:
         if not line:
             continue
         # Only accept lines that begin with a number — skips preamble/closing sentences
-        if not re.match(r'^[\d]+[.\)\-]', line):
+        if not re.match(r"^[\d]+[.\)\-]", line):
             continue
-        clean = re.sub(r'^[\d]+[.\)\-]\s*', '', line)
-        clean = re.sub(r'^\*+\s*',          '', clean).strip()
+        clean = re.sub(r"^[\d]+[.\)\-]\s*", "", line)
+        clean = re.sub(r"^\*+\s*", "", clean).strip()
         if clean and len(clean) > 10:
             headlines.append(clean)
 
@@ -249,6 +259,7 @@ def _gemini_headlines(n: int = 5) -> tuple[list[str], str]:
 
 
 # ── Modes ──────────────────────────────────────────────────────────────────────
+
 
 def _search(query: str) -> str:
     """Default search — Gemini grounded, DDG fallback."""
@@ -276,7 +287,7 @@ def _news(query: str) -> str:
     when DDG comes back empty.
     """
     gemini_query = f"latest news today: {query}" if query else "top world news today"
-    ddg_query    = query if query else "world news today"
+    ddg_query = query if query else "world news today"
 
     def _ddg_attempt() -> str:
         return _format_news(ddg_query, _ddg_news(ddg_query, max_results=8))
@@ -285,9 +296,7 @@ def _news(query: str) -> str:
     if text and len(text) > 60 and not text.startswith("No news found"):
         return text
 
-    text = _run_bounded(
-        lambda: _gemini_search(gemini_query), timeout=6.0, label="Gemini news"
-    )
+    text = _run_bounded(lambda: _gemini_search(gemini_query), timeout=6.0, label="Gemini news")
     if text and len(text) > 60:
         return text
 
@@ -323,10 +332,7 @@ def _price(query: str) -> str:
 
 
 def _compare(items: list[str], aspect: str) -> str:
-    query = (
-        f"Compare {', '.join(items)} in terms of {aspect}. "
-        "Give specific facts and data."
-    )
+    query = f"Compare {', '.join(items)} in terms of {aspect}. Give specific facts and data."
     try:
         return _gemini_search(query)
     except Exception as e:
@@ -351,6 +357,7 @@ def _compare(items: list[str], aspect: str) -> str:
 
 
 # ── Webpage Reader & Summarizer ──────────────────────────────────────────────
+
 
 def _read_webpage(url: str, max_chars: int = 5000) -> str:
     """Fetch webpage content, strip HTML tags/scripts, and return readable text."""
@@ -378,7 +385,9 @@ def _read_webpage(url: str, max_chars: int = 5000) -> str:
     m_title = re.search(r"<title[^>]*>(.*?)</title>", raw_html, flags=re.IGNORECASE | re.DOTALL)
     title = html.unescape(m_title.group(1)).strip() if m_title else "Webpage"
 
-    clean = re.sub(r"<(script|style|nav|footer|header|noscript)[^>]*>.*?</\1>", " ", raw_html, flags=re.IGNORECASE | re.DOTALL)
+    clean = re.sub(
+        r"<(script|style|nav|footer|header|noscript)[^>]*>.*?</\1>", " ", raw_html, flags=re.IGNORECASE | re.DOTALL
+    )
     text = re.sub(r"<[^>]+>", " ", clean)
     text = html.unescape(text)
     text = re.sub(r"\s+", " ", text).strip()
@@ -389,7 +398,12 @@ def _read_webpage(url: str, max_chars: int = 5000) -> str:
 def _summarize_webpage(url_or_query: str) -> str:
     """Read webpage or search topic and produce a structured summary with source link."""
     from core import gemini
-    content = _read_webpage(url_or_query) if url_or_query.startswith(("http://", "https://", "www.")) else _search(url_or_query)
+
+    content = (
+        _read_webpage(url_or_query)
+        if url_or_query.startswith(("http://", "https://", "www."))
+        else _search(url_or_query)
+    )
     prompt = (
         f"You are JARVIS. Summarize the following webpage content clearly and accurately in 3-4 bullet points. "
         f"Include key facts, conclusions, and cite the source URL:\n\n{content}"
@@ -406,6 +420,7 @@ def _summarize_webpage(url_or_query: str) -> str:
 def _open_search_result(url: str) -> str:
     """Open verified URL in user's default browser."""
     import webbrowser
+
     clean_url = url.strip()
     if not clean_url.startswith(("http://", "https://")):
         clean_url = f"https://{clean_url}"
@@ -422,15 +437,15 @@ from core import outcome
 
 
 def web_search(
-    parameters:     dict,
+    parameters: dict,
     response=None,
     player=None,
     session_memory=None,
 ) -> str:
     params = parameters or {}
-    query  = params.get("query", "").strip()
-    mode   = params.get("mode",  "search").lower().strip()
-    items  = params.get("items", [])
+    query = params.get("query", "").strip()
+    mode = params.get("mode", "search").lower().strip()
+    items = params.get("items", [])
     aspect = params.get("aspect", "general").strip() or "general"
 
     if not query and not items:
@@ -464,8 +479,7 @@ def web_search(
 
     except Exception as e:
         print(f"[WebSearch] ❌ All backends failed: {e}")
-        return outcome.failed("web_search", f"the search failed: {e}",
-                              query=query or ", ".join(items))
+        return outcome.failed("web_search", f"the search failed: {e}", query=query or ", ".join(items))
 
     # EVERYTHING BELOW THIS LINE WAS WRITTEN BY STRANGERS.
     #
@@ -488,29 +502,15 @@ TOOL = {
     "parameters": {
         "type": "OBJECT",
         "properties": {
-            "query": {
-                "type": "STRING",
-                "description": "Search query, URL to read or summarize, or topic"
-            },
+            "query": {"type": "STRING", "description": "Search query, URL to read or summarize, or topic"},
             "mode": {
                 "type": "STRING",
-                "description": "search | news | research | read_webpage | summarize | open | compare | price"
+                "description": "search | news | research | read_webpage | summarize | open | compare | price",
             },
-            "items": {
-                "type": "ARRAY",
-                "items": {
-                    "type": "STRING"
-                },
-                "description": "Items to compare (compare mode)"
-            },
-            "aspect": {
-                "type": "STRING",
-                "description": "Comparison aspect: price | specs | reviews | features"
-            }
+            "items": {"type": "ARRAY", "items": {"type": "STRING"}, "description": "Items to compare (compare mode)"},
+            "aspect": {"type": "STRING", "description": "Comparison aspect: price | specs | reviews | features"},
         },
-        "required": [
-            "query"
-        ]
+        "required": ["query"],
     },
     "handler": web_search,
 }

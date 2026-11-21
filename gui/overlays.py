@@ -14,11 +14,41 @@ import threading
 import time
 from pathlib import Path
 from gui.base import *
-from gui.base import _WIN_HIDE, _base_dir, BASE_DIR, CONFIG_DIR, API_FILE, _read_full_config, _DEFAULT_W, _DEFAULT_H, _MIN_W, _MIN_H, _LEFT_W, _RIGHT_W, _OS, _ResizeEdge, _detect_resize_edge, _cursor_for_edge, _FramelessWindowResizeMixin, _SysMetrics, _metrics, _nvml_gpu_windows, _load_app_fonts, keena_font, HAVE_VIDEO, HoloAvatar, get_uicon, QGraphicsVideoItem, QAudioOutput, QMediaPlayer
+from gui.base import (
+    _WIN_HIDE,
+    _base_dir,
+    BASE_DIR,
+    CONFIG_DIR,
+    API_FILE,
+    _read_full_config,
+    _DEFAULT_W,
+    _DEFAULT_H,
+    _MIN_W,
+    _MIN_H,
+    _LEFT_W,
+    _RIGHT_W,
+    _OS,
+    _ResizeEdge,
+    _detect_resize_edge,
+    _cursor_for_edge,
+    _FramelessWindowResizeMixin,
+    _SysMetrics,
+    _metrics,
+    _nvml_gpu_windows,
+    _load_app_fonts,
+    keena_font,
+    HAVE_VIDEO,
+    HoloAvatar,
+    get_uicon,
+    QGraphicsVideoItem,
+    QAudioOutput,
+    QMediaPlayer,
+)
 from gui.theme import *
 from gui.theme import _RESIZE_MARGIN, _NO_SCROLLBAR_STYLE, _HUE_LINKED, _PALETTE_DEFAULTS, _lerp_color
 
 from gui.widgets import *
+
 
 class SetupOverlay(QWidget):
     done = pyqtSignal(str, str)
@@ -34,21 +64,17 @@ class SetupOverlay(QWidget):
             }}
         """)
 
-        detected = {"darwin": "mac", "windows": "windows"}.get(
-            _OS.lower(), "linux"
-        )
+        detected = {"darwin": "mac", "windows": "windows"}.get(_OS.lower(), "linux")
         self._sel_os = detected
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(30, 22, 30, 22)
         layout.setSpacing(8)
 
-        def _lbl(txt, font_size=9, bold=False, color=C.PRI,
-                 align=Qt.AlignmentFlag.AlignCenter):
+        def _lbl(txt, font_size=9, bold=False, color=C.PRI, align=Qt.AlignmentFlag.AlignCenter):
             w = QLabel(txt)
             w.setAlignment(align)
-            w.setFont(QFont("Montserrat", font_size,
-                            QFont.Weight.Bold if bold else QFont.Weight.Normal))
+            w.setFont(QFont("Montserrat", font_size, QFont.Weight.Bold if bold else QFont.Weight.Normal))
             w.setStyleSheet(f"color: {color}; background: transparent;")
             return w
 
@@ -56,12 +82,13 @@ class SetupOverlay(QWidget):
         layout.addWidget(_lbl("Configure J.A.R.V.I.S. before first boot.", 9, color=C.PRI_DIM))
         layout.addSpacing(6)
 
-        sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setStyleSheet(f"color: {C.BORDER};"); layout.addWidget(sep)
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet(f"color: {C.BORDER};")
+        layout.addWidget(sep)
         layout.addSpacing(4)
 
-        layout.addWidget(_lbl("GEMINI API KEY", 8, color=C.TEXT_DIM,
-                               align=Qt.AlignmentFlag.AlignLeft))
+        layout.addWidget(_lbl("GEMINI API KEY", 8, color=C.TEXT_DIM, align=Qt.AlignmentFlag.AlignLeft))
         self._key_input = QLineEdit()
         self._key_input.setEchoMode(QLineEdit.EchoMode.Password)
         self._key_input.setPlaceholderText("AIza…")
@@ -77,19 +104,20 @@ class SetupOverlay(QWidget):
         layout.addWidget(self._key_input)
         layout.addSpacing(12)
 
-        sep2 = QFrame(); sep2.setFrameShape(QFrame.Shape.HLine)
-        sep2.setStyleSheet(f"color: {C.BORDER};"); layout.addWidget(sep2)
+        sep2 = QFrame()
+        sep2.setFrameShape(QFrame.Shape.HLine)
+        sep2.setStyleSheet(f"color: {C.BORDER};")
+        layout.addWidget(sep2)
         layout.addSpacing(4)
 
-        layout.addWidget(_lbl("OPERATING SYSTEM", 8, color=C.TEXT_DIM,
-                               align=Qt.AlignmentFlag.AlignLeft))
+        layout.addWidget(_lbl("OPERATING SYSTEM", 8, color=C.TEXT_DIM, align=Qt.AlignmentFlag.AlignLeft))
         det_name = {"windows": "Windows", "mac": "macOS", "linux": "Linux"}[detected]
-        layout.addWidget(_lbl(f"Auto-detected: {det_name}", 8, color=C.ACC2,
-                               align=Qt.AlignmentFlag.AlignLeft))
+        layout.addWidget(_lbl(f"Auto-detected: {det_name}", 8, color=C.ACC2, align=Qt.AlignmentFlag.AlignLeft))
 
-        os_row = QHBoxLayout(); os_row.setSpacing(6)
+        os_row = QHBoxLayout()
+        os_row.setSpacing(6)
         self._os_btns: dict[str, QPushButton] = {}
-        for key, label in [("windows","⊞  Windows"),("mac","  macOS"),("linux","🐧  Linux")]:
+        for key, label in [("windows", "⊞  Windows"), ("mac", "  macOS"), ("linux", "🐧  Linux")]:
             btn = QPushButton(label)
             btn.setFont(QFont("Montserrat", 9, QFont.Weight.Bold))
             btn.setFixedHeight(32)
@@ -119,7 +147,7 @@ class SetupOverlay(QWidget):
 
     def _sel(self, key: str):
         self._sel_os = key
-        pal = {"windows":(C.PRI,"#001a22"),"mac":(C.ACC2,"#1a1400"),"linux":(C.GREEN,"#001a0d")}
+        pal = {"windows": (C.PRI, "#001a22"), "mac": (C.ACC2, "#1a1400"), "linux": (C.GREEN, "#001a0d")}
         for k, btn in self._os_btns.items():
             if k == key:
                 fg, bg = pal[k]
@@ -141,10 +169,7 @@ class SetupOverlay(QWidget):
     def _submit(self):
         key = self._key_input.text().strip()
         if not key:
-            self._key_input.setStyleSheet(
-                self._key_input.styleSheet() +
-                f" QLineEdit {{ border: 1px solid {C.RED}; }}"
-            )
+            self._key_input.setStyleSheet(self._key_input.styleSheet() + f" QLineEdit {{ border: 1px solid {C.RED}; }}")
             return
         self.done.emit(key, self._sel_os)
 
@@ -156,16 +181,16 @@ class HueWheel(QWidget):
     is a live preview of the selected colour.
     """
 
-    hue_picked    = pyqtSignal(str)   # while dragging (live)
-    hue_committed = pyqtSignal(str)   # when the handle is released
+    hue_picked = pyqtSignal(str)  # while dragging (live)
+    hue_committed = pyqtSignal(str)  # when the handle is released
 
-    _RING = 16   # ring thickness (px)
+    _RING = 16  # ring thickness (px)
 
     def __init__(self, initial_hex: str = DEFAULT_UI_COLOR, parent=None):
         super().__init__(parent)
         self.setFixedSize(148, 148)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._hue  = 0.53
+        self._hue = 0.53
         self._drag = False
         self.set_color(initial_hex)
 
@@ -185,10 +210,10 @@ class HueWheel(QWidget):
         return QRectF(self.rect()).adjusted(m, m, -m, -m)
 
     def _hue_from_pos(self, pos: QPointF) -> float:
-        c  = QRectF(self.rect()).center()
+        c = QRectF(self.rect()).center()
         dx = pos.x() - c.x()
-        dy = c.y() - pos.y()          # screen y goes down — flip to math axis
-        ang = math.atan2(dy, dx)      # [-π, π], counter-clockwise
+        dy = c.y() - pos.y()  # screen y goes down — flip to math axis
+        ang = math.atan2(dy, dx)  # [-π, π], counter-clockwise
         return (ang / (2 * math.pi)) % 1.0
 
     # ── drawing ──────────────────────────────────────────────────────────────
@@ -197,7 +222,7 @@ class HueWheel(QWidget):
         if not p.isActive():
             return
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        rect   = self._ring_rect()
+        rect = self._ring_rect()
         center = rect.center()
 
         grad = QConicalGradient(center, 0)
@@ -209,16 +234,16 @@ class HueWheel(QWidget):
 
         # centre preview circle
         preview = QColor.fromHsvF(self._hue, 1.0, 1.0)
-        inner   = rect.adjusted(30, 30, -30, -30)
+        inner = rect.adjusted(30, 30, -30, -30)
         p.setPen(QPen(qcol(C.BORDER_B), 1))
         p.setBrush(QBrush(preview))
         p.drawEllipse(inner)
 
         # draggable handle
-        r   = rect.width() / 2
+        r = rect.width() / 2
         ang = self._hue * 2 * math.pi
-        hx  = center.x() + r * math.cos(ang)
-        hy  = center.y() - r * math.sin(ang)
+        hx = center.x() + r * math.cos(ang)
+        hy = center.y() - r * math.sin(ang)
         p.setPen(QPen(QColor("#00060a"), 2))
         p.setBrush(QBrush(QColor("#ffffff")))
         p.drawEllipse(QPointF(hx, hy), 7.5, 7.5)
@@ -227,7 +252,7 @@ class HueWheel(QWidget):
     # ── fare ─────────────────────────────────────────────────────────────────
     def mousePressEvent(self, e):
         self._drag = True
-        self._hue  = self._hue_from_pos(e.position())
+        self._hue = self._hue_from_pos(e.position())
         self.update()
         self.hue_picked.emit(self.color())
 
@@ -246,11 +271,10 @@ class HueWheel(QWidget):
 class CustomizeOverlay(QWidget):
     """Floating overlay — change assistant name, user name, UI colour and voice."""
 
-    saved = pyqtSignal(str, str, str, str)   # assistant_name, user_name, ui_color, voice
+    saved = pyqtSignal(str, str, str, str)  # assistant_name, user_name, ui_color, voice
     _OW, _OH = 400, 588
 
-    def __init__(self, assistant_name="JARVIS", user_name="",
-                 ui_color=DEFAULT_UI_COLOR, voice="", parent=None):
+    def __init__(self, assistant_name="JARVIS", user_name="", ui_color=DEFAULT_UI_COLOR, voice="", parent=None):
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet(f"""
@@ -265,23 +289,25 @@ class CustomizeOverlay(QWidget):
         lay.setSpacing(8)
 
         def _lbl(txt, fs=9, bold=False, color=C.PRI, align=Qt.AlignmentFlag.AlignCenter):
-            w = QLabel(txt); w.setAlignment(align)
-            w.setFont(QFont("Montserrat", fs,
-                            QFont.Weight.Bold if bold else QFont.Weight.Normal))
+            w = QLabel(txt)
+            w.setAlignment(align)
+            w.setFont(QFont("Montserrat", fs, QFont.Weight.Bold if bold else QFont.Weight.Normal))
             w.setStyleSheet(f"color: {color}; background: transparent;")
             return w
 
-        _fs = (f"QLineEdit {{ background: #000d12; color: {C.TEXT}; "
-               f"border: 1px solid {C.BORDER}; border-radius: 3px; padding: 4px 8px; }}"
-               f"QLineEdit:focus {{ border: 1px solid {C.PRI}; }}")
+        _fs = (
+            f"QLineEdit {{ background: #000d12; color: {C.TEXT}; "
+            f"border: 1px solid {C.BORDER}; border-radius: 3px; padding: 4px 8px; }}"
+            f"QLineEdit:focus {{ border: 1px solid {C.PRI}; }}"
+        )
 
         lay.addWidget(_lbl("⚙  CUSTOMISE ASSISTANT", 12, True))
-        sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
         sep.setStyleSheet(f"color: {C.BORDER}; margin: 2px 0;")
         lay.addWidget(sep)
 
-        lay.addWidget(_lbl("ASSISTANT NAME", 8, color=C.TEXT_DIM,
-                            align=Qt.AlignmentFlag.AlignLeft))
+        lay.addWidget(_lbl("ASSISTANT NAME", 8, color=C.TEXT_DIM, align=Qt.AlignmentFlag.AlignLeft))
         self._name_input = QLineEdit(assistant_name)
         self._name_input.setFont(QFont("Montserrat", 10))
         self._name_input.setFixedHeight(32)
@@ -289,8 +315,14 @@ class CustomizeOverlay(QWidget):
         lay.addWidget(self._name_input)
 
         lay.addSpacing(4)
-        lay.addWidget(_lbl("YOUR NAME  (leave blank for default sir / efendim)", 8,
-                            color=C.TEXT_DIM, align=Qt.AlignmentFlag.AlignLeft))
+        lay.addWidget(
+            _lbl(
+                "YOUR NAME  (leave blank for default sir / efendim)",
+                8,
+                color=C.TEXT_DIM,
+                align=Qt.AlignmentFlag.AlignLeft,
+            )
+        )
         self._user_input = QLineEdit(user_name)
         self._user_input.setPlaceholderText("e.g.  Tony   (leave blank for auto)")
         self._user_input.setFont(QFont("Montserrat", 10))
@@ -302,14 +334,15 @@ class CustomizeOverlay(QWidget):
         # Names are language-neutral proper nouns, so the row reads the same in
         # every locale. Selecting one and applying rebuilds the Live session.
         from memory.config_manager import AVAILABLE_VOICES, DEFAULT_VOICE
+
         lay.addSpacing(4)
-        lay.addWidget(_lbl("ASSISTANT VOICE", 8, color=C.TEXT_DIM,
-                            align=Qt.AlignmentFlag.AlignLeft))
-        self._sel_voice   = (voice or DEFAULT_VOICE)
+        lay.addWidget(_lbl("ASSISTANT VOICE", 8, color=C.TEXT_DIM, align=Qt.AlignmentFlag.AlignLeft))
+        self._sel_voice = voice or DEFAULT_VOICE
         if self._sel_voice not in AVAILABLE_VOICES:
             self._sel_voice = DEFAULT_VOICE
         self._voice_btns: dict[str, QPushButton] = {}
-        voice_row = QHBoxLayout(); voice_row.setSpacing(4)
+        voice_row = QHBoxLayout()
+        voice_row.setSpacing(4)
         for _v in AVAILABLE_VOICES:
             b = QPushButton(_v)
             b.setCheckable(True)
@@ -325,8 +358,7 @@ class CustomizeOverlay(QWidget):
         # ── UI colour — colour wheel ─────────────────────────────────────────
         lay.addSpacing(4)
         clr_hdr = QHBoxLayout()
-        clr_hdr.addWidget(_lbl("UI COLOUR  —  drag the handle", 8,
-                               color=C.TEXT_DIM, align=Qt.AlignmentFlag.AlignLeft))
+        clr_hdr.addWidget(_lbl("UI COLOUR  —  drag the handle", 8, color=C.TEXT_DIM, align=Qt.AlignmentFlag.AlignLeft))
         clr_hdr.addStretch()
         df_btn = QPushButton("DEFAULT")
         df_btn.setFixedSize(64, 20)
@@ -344,12 +376,14 @@ class CustomizeOverlay(QWidget):
         lay.addLayout(clr_hdr)
 
         self._initial_color = (ui_color or DEFAULT_UI_COLOR).strip().lower()
-        self._sel_color     = self._initial_color
-        self.on_preview     = None   # callable(hex) — live preview; MainWindow wires it
+        self._sel_color = self._initial_color
+        self.on_preview = None  # callable(hex) — live preview; MainWindow wires it
 
         self._wheel = HueWheel(self._sel_color)
         wheel_row = QHBoxLayout()
-        wheel_row.addStretch(); wheel_row.addWidget(self._wheel); wheel_row.addStretch()
+        wheel_row.addStretch()
+        wheel_row.addWidget(self._wheel)
+        wheel_row.addStretch()
         lay.addLayout(wheel_row)
         self._wheel.hue_picked.connect(self._on_wheel_pick)
         self._wheel.hue_committed.connect(self._on_wheel_commit)
@@ -363,7 +397,8 @@ class CustomizeOverlay(QWidget):
         lay.addWidget(self._hex_input)
 
         lay.addSpacing(6)
-        btn_row = QHBoxLayout(); btn_row.setSpacing(8)
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
 
         save_btn = QPushButton("▸  APPLY CHANGES")
         save_btn.setFixedHeight(34)
@@ -402,7 +437,7 @@ class CustomizeOverlay(QWidget):
     def _refresh_voice_btns(self):
         """Highlight the selected voice pill; dim the rest."""
         for name, b in self._voice_btns.items():
-            on = (name == self._sel_voice)
+            on = name == self._sel_voice
             b.setChecked(on)
             if on:
                 b.setStyleSheet(f"""
@@ -486,7 +521,8 @@ class PluginManagerOverlay(QWidget):
         hdr.setFont(QFont("Montserrat", 12, QFont.Weight.Bold))
         hdr.setStyleSheet(f"color: {C.PRI}; background: transparent;")
         lay.addWidget(hdr)
-        sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
         sep.setStyleSheet(f"color: {C.BORDER}; margin: 2px 0;")
         lay.addWidget(sep)
 
@@ -516,7 +552,8 @@ class PluginManagerOverlay(QWidget):
         self.adjustSize()
 
     def _build_row(self, p: dict) -> QHBoxLayout:
-        row = QHBoxLayout(); row.setSpacing(6)
+        row = QHBoxLayout()
+        row.setSpacing(6)
 
         label_text = p["name"] if p["valid"] else f"{p['name']}  (⚠ {p['file']})"
         lbl = QLabel(label_text)
@@ -567,6 +604,7 @@ class PluginManagerOverlay(QWidget):
 
     def _toggle(self, name: str, btn: QPushButton):
         from memory.config_manager import get_plugin_enabled, save_plugin_enabled
+
         new_val = not get_plugin_enabled(name)
         save_plugin_enabled(name, new_val)
         self._style_toggle(btn, new_val)
@@ -641,7 +679,8 @@ class ConfirmBanner(_HudOverlay):
             dtl.setStyleSheet(f"color: {C.TEXT_MED}; background: transparent;")
             lay.addWidget(dtl)
 
-        row = QHBoxLayout(); row.setSpacing(8)
+        row = QHBoxLayout()
+        row.setSpacing(8)
 
         yes = QPushButton("CONFIRM")
         yes.setIcon(get_uicon("shield-exclamation", color=C.ACC, size=15))
@@ -684,7 +723,7 @@ class AudioDeviceOverlay(_HudOverlay):
     is plugged in. 'JARVIS can't hear me' is usually 'JARVIS is listening to the
     webcam'."""
 
-    picked = pyqtSignal()      # emitted after Apply, when something changed
+    picked = pyqtSignal()  # emitted after Apply, when something changed
 
     # THESE EXIST BECAUSE QTimer.singleShot FROM A WORKER THREAD NEVER FIRES.
     #
@@ -699,8 +738,8 @@ class AudioDeviceOverlay(_HudOverlay):
     # object's thread, which for a widget is the GUI thread. Both carry only
     # plain values — never a widget — because the widgets belong to the GUI
     # thread and the worker must not touch them even to pass them along.
-    _level_seen = pyqtSignal(int)          # 0-100, while recording
-    _test_result = pyqtSignal(str, bool)   # sentence, was it good
+    _level_seen = pyqtSignal(int)  # 0-100, while recording
+    _test_result = pyqtSignal(str, bool)  # sentence, was it good
 
     _OW = 460
 
@@ -728,7 +767,8 @@ class AudioDeviceOverlay(_HudOverlay):
         hdr.setStyleSheet(f"color: {C.PRI}; background: transparent;")
         lay.addWidget(hdr)
 
-        sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
         sep.setStyleSheet(f"color: {C.BORDER}; margin: 2px 0;")
         lay.addWidget(sep)
 
@@ -784,7 +824,8 @@ class AudioDeviceOverlay(_HudOverlay):
             # So the button is here, beside the dropdown, in the panel somebody
             # opens when JARVIS cannot hear them. It replaces a loose
             # `ses_testi.py` in the project root that nobody would ever find.
-            btn_row = QHBoxLayout(); btn_row.setSpacing(6)
+            btn_row = QHBoxLayout()
+            btn_row.setSpacing(6)
             btn_row.addWidget(box, 1)
             test = QPushButton("TEST")
             test.setFixedSize(64, 30)
@@ -806,7 +847,8 @@ class AudioDeviceOverlay(_HudOverlay):
             meter.setStyleSheet(
                 f"QProgressBar {{ background: #000d12; border: 1px solid {C.BORDER}; "
                 f"border-radius: 3px; }}"
-                f"QProgressBar::chunk {{ background: {C.PRI}; border-radius: 2px; }}")
+                f"QProgressBar::chunk {{ background: {C.PRI}; border-radius: 2px; }}"
+            )
             meter.hide()
             lay.addWidget(meter)
 
@@ -817,22 +859,20 @@ class AudioDeviceOverlay(_HudOverlay):
             lay.addWidget(result)
 
             test.clicked.connect(
-                lambda _=False, k=kind, b=box, t=test, r=result, m=meter:
-                    self._run_test(k, b, t, r, m))
+                lambda _=False, k=kind, b=box, t=test, r=result, m=meter: self._run_test(k, b, t, r, m)
+            )
             return box
 
         # Which row is being tested right now. One at a time — the button is
         # disabled for the duration — so a single slot is enough, and it keeps
         # widgets off the signal payload.
-        self._active = None                # (button, label, meter)
+        self._active = None  # (button, label, meter)
         self._level_seen.connect(self._on_level)
         self._test_result.connect(self._on_result)
 
-        self._in_box  = _row("MICROPHONE — what JARVIS hears you with",
-                             "input", get_input_device())
+        self._in_box = _row("MICROPHONE — what JARVIS hears you with", "input", get_input_device())
         lay.addSpacing(4)
-        self._out_box = _row("SPEAKERS — what JARVIS talks through",
-                             "output", get_output_device())
+        self._out_box = _row("SPEAKERS — what JARVIS talks through", "output", get_output_device())
 
         # ── Bluetooth Audio Profile & Quality Advisory ───────────────────────
         self._profile_lbl = QLabel("")
@@ -846,10 +886,15 @@ class AudioDeviceOverlay(_HudOverlay):
 
         # ── Bluetooth Options & Audio Routing Controls ───────────────────────
         from memory.config_manager import (
-            get_audio_routing_mode, save_audio_routing_mode,
-            ROUTING_MODE_AUTO_HYBRID, ROUTING_MODE_BUILTIN_ONLY, ROUTING_MODE_BLUETOOTH_ONLY,
-            get_audio_input_mode, get_allow_bluetooth_mic,
+            get_audio_routing_mode,
+            save_audio_routing_mode,
+            ROUTING_MODE_AUTO_HYBRID,
+            ROUTING_MODE_BUILTIN_ONLY,
+            ROUTING_MODE_BLUETOOTH_ONLY,
+            get_audio_input_mode,
+            get_allow_bluetooth_mic,
         )
+
         rcap = QLabel("AUDIO ROUTING ARCHITECTURE")
         rcap.setFont(QFont("Montserrat", 8, QFont.Weight.Bold))
         rcap.setStyleSheet(f"color: {C.PRI}; background: transparent; margin-top: 4px;")
@@ -869,7 +914,9 @@ class AudioDeviceOverlay(_HudOverlay):
         self._routing_box.currentIndexChanged.connect(lambda _i: self._update_profile_info())
         lay.addWidget(self._routing_box)
 
-        hint = QLabel("💡 Hybrid mode: Sleeps using laptop microphone so OPPO Buds 2 stay in high-fidelity A2DP stereo music. On wake word, dynamically switches to OPPO mic for conversation, then automatically restores stereo.")
+        hint = QLabel(
+            "💡 Hybrid mode: Sleeps using laptop microphone so OPPO Buds 2 stay in high-fidelity A2DP stereo music. On wake word, dynamically switches to OPPO mic for conversation, then automatically restores stereo."
+        )
         hint.setWordWrap(True)
         hint.setFont(QFont("Montserrat", 7))
         hint.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent; margin-top: 2px;")
@@ -884,6 +931,7 @@ class AudioDeviceOverlay(_HudOverlay):
         _vol_now = None
         try:
             from core.audio_devices import get_output_volume
+
             # The SELECTED output, not the system default. Somebody puts the
             # assistant on their speakers and keeps everything else in their
             # headphones; a slider labelled with one device that moves the
@@ -899,7 +947,8 @@ class AudioDeviceOverlay(_HudOverlay):
             lay.addSpacing(4)
             lay.addWidget(vcap)
 
-            vrow = QHBoxLayout(); vrow.setSpacing(8)
+            vrow = QHBoxLayout()
+            vrow.setSpacing(8)
             self._vol = QSlider(Qt.Orientation.Horizontal)
             self._vol.setRange(0, 100)
             self._vol.setValue(int(_vol_now))
@@ -910,7 +959,8 @@ class AudioDeviceOverlay(_HudOverlay):
                 f"QSlider::sub-page:horizontal {{ background: {C.PRI_DIM}; "
                 f"border-radius: 2px; }}"
                 f"QSlider::handle:horizontal {{ background: {C.PRI}; width: 10px; "
-                f"margin: -5px 0; border-radius: 5px; }}")
+                f"margin: -5px 0; border-radius: 5px; }}"
+            )
             self._vol_lbl = QLabel(f"{int(_vol_now)}%")
             self._vol_lbl.setFont(QFont("Montserrat", 8))
             self._vol_lbl.setFixedWidth(40)
@@ -923,11 +973,9 @@ class AudioDeviceOverlay(_HudOverlay):
             # COM call into the audio endpoint. sliderReleased fires once, when
             # the user has decided — the label still follows the handle so the
             # number moves while they drag.
-            self._vol.valueChanged.connect(
-                lambda v: self._vol_lbl.setText(f"{v}%"))
+            self._vol.valueChanged.connect(lambda v: self._vol_lbl.setText(f"{v}%"))
             self._vol.sliderReleased.connect(self._apply_volume)
-            self._out_box.currentIndexChanged.connect(
-                lambda _i: self._volume_follows_device())
+            self._out_box.currentIndexChanged.connect(lambda _i: self._volume_follows_device())
 
         note = QLabel("Applying reconnects the session. Your conversation is kept.")
         note.setWordWrap(True)
@@ -936,7 +984,8 @@ class AudioDeviceOverlay(_HudOverlay):
         lay.addSpacing(6)
         lay.addWidget(note)
 
-        row = QHBoxLayout(); row.setSpacing(8)
+        row = QHBoxLayout()
+        row.setSpacing(8)
         ok = QPushButton("▸  APPLY")
         ok.setFixedHeight(32)
         ok.setFont(QFont("Montserrat", 9, QFont.Weight.Bold))
@@ -971,14 +1020,15 @@ class AudioDeviceOverlay(_HudOverlay):
         it.
         """
         import threading
+
         value = self._vol.value()
         device = self._out_box.currentData() or ""
 
         def _work():
             from core import audio_devices
+
             if not audio_devices.set_output_volume(value, device):
-                print(f"[Audio] the volume of '{device}' could not be set "
-                      f"to {value}%")
+                print(f"[Audio] the volume of '{device}' could not be set to {value}%")
 
         threading.Thread(target=_work, daemon=True, name="audio-volume").start()
 
@@ -993,6 +1043,7 @@ class AudioDeviceOverlay(_HudOverlay):
             return
         try:
             from core.audio_devices import get_output_volume
+
             now = get_output_volume(self._out_box.currentData() or "")
         except Exception:
             now = None
@@ -1027,11 +1078,10 @@ class AudioDeviceOverlay(_HudOverlay):
 
         def _work():
             from core import audio_devices
+
             try:
                 if kind == "input":
-                    res = audio_devices.measure_input(
-                        name,
-                        on_level=lambda f: self._level_seen.emit(int(f * 100)))
+                    res = audio_devices.measure_input(name, on_level=lambda f: self._level_seen.emit(int(f * 100)))
                     text = f"peak {res['peak']}  —  {res['verdict']}"
                 else:
                     res = audio_devices.play_tone(name)
@@ -1057,8 +1107,7 @@ class AudioDeviceOverlay(_HudOverlay):
         if meter is not None:
             meter.setValue(0)
             meter.hide()
-        label.setStyleSheet(
-            f"color: {C.PRI if good else C.TEXT_DIM}; background: transparent;")
+        label.setStyleSheet(f"color: {C.PRI if good else C.TEXT_DIM}; background: transparent;")
         label.setText(text)
 
     def _update_profile_info(self):
@@ -1066,6 +1115,7 @@ class AudioDeviceOverlay(_HudOverlay):
         out_name = self._out_box.currentData() or ""
         try:
             from core.audio_devices import is_bluetooth_device
+
             in_bt = is_bluetooth_device(in_name)
             out_bt = is_bluetooth_device(out_name)
         except Exception:
@@ -1074,7 +1124,9 @@ class AudioDeviceOverlay(_HudOverlay):
 
         rmode = self._routing_box.currentData() if hasattr(self, "_routing_box") else ""
         if rmode == "auto_hybrid":
-            self._profile_lbl.setStyleSheet(f"color: {C.GREEN}; background: #001a14; border: 1px solid {C.GREEN_D}; border-radius: 3px; padding: 4px;")
+            self._profile_lbl.setStyleSheet(
+                f"color: {C.GREEN}; background: #001a14; border: 1px solid {C.GREEN_D}; border-radius: 3px; padding: 4px;"
+            )
             self._profile_lbl.setText(
                 "✓ Automatic Hybrid active: While JARVIS sleeps, wake-word detection listens on your laptop mic so "
                 "OPPO Buds 2 play high-fidelity A2DP stereo music. On wake word, it switches to the OPPO mic for Gemini Live, "
@@ -1082,13 +1134,17 @@ class AudioDeviceOverlay(_HudOverlay):
             )
             self._profile_lbl.show()
         elif rmode == "built_in_only" or (not in_bt and out_bt):
-            self._profile_lbl.setStyleSheet(f"color: {C.PRI}; background: #001a18; border: 1px solid {C.PRI_DIM}; border-radius: 3px; padding: 4px;")
+            self._profile_lbl.setStyleSheet(
+                f"color: {C.PRI}; background: #001a18; border: 1px solid {C.PRI_DIM}; border-radius: 3px; padding: 4px;"
+            )
             self._profile_lbl.setText(
                 "✓ Laptop microphone active: OPPO Buds 2 remain in continuous high-fidelity A2DP stereo playback."
             )
             self._profile_lbl.show()
         elif in_bt:
-            self._profile_lbl.setStyleSheet("color: #ffaa33; background: #201500; border: 1px solid #664400; border-radius: 3px; padding: 4px;")
+            self._profile_lbl.setStyleSheet(
+                "color: #ffaa33; background: #201500; border: 1px solid #664400; border-radius: 3px; padding: 4px;"
+            )
             self._profile_lbl.setText(
                 "⚠️ Bluetooth mic active: Windows keeps earphones in Hands-Free (HFP) call mode. "
                 "Playback is mono and music may sound muffled. Switch to Automatic Hybrid to restore stereo."
@@ -1099,10 +1155,13 @@ class AudioDeviceOverlay(_HudOverlay):
 
     def _apply(self):
         from memory.config_manager import (
-            save_input_device, save_output_device,
-            save_audio_input_mode, save_allow_bluetooth_mic,
+            save_input_device,
+            save_output_device,
+            save_audio_input_mode,
+            save_allow_bluetooth_mic,
         )
-        new_in  = self._in_box.currentData()  or ""
+
+        new_in = self._in_box.currentData() or ""
         new_out = self._out_box.currentData() or ""
         save_input_device(new_in)
         save_output_device(new_out)
@@ -1204,8 +1263,7 @@ class MemoryOverlay(_HudOverlay):
         if p is None:
             self.update()
             return
-        self.move(max(0, (p.width()  - self.width())  // 2),
-                  max(0, (p.height() - self.height()) // 2))
+        self.move(max(0, (p.width() - self.width()) // 2), max(0, (p.height() - self.height()) // 2))
         p.update(before.united(self.geometry()))
         self.update()
 
@@ -1220,15 +1278,18 @@ class MemoryOverlay(_HudOverlay):
         hdr.setStyleSheet(f"color: {C.PRI}; background: transparent;")
         self._lay.addWidget(hdr)
 
-        sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
         sep.setStyleSheet(f"color: {C.BORDER}; margin: 2px 0;")
         self._lay.addWidget(sep)
 
         rows = all_entries_for_ui()
 
-        cap = QLabel(f"{len(rows)} stored facts — newest first. "
-                     f"Nothing here is sent anywhere; it lives in "
-                     f"memory/long_term.json on this machine.")
+        cap = QLabel(
+            f"{len(rows)} stored facts — newest first. "
+            f"Nothing here is sent anywhere; it lives in "
+            f"memory/long_term.json on this machine."
+        )
         cap.setWordWrap(True)
         cap.setFont(QFont("Montserrat", 7))
         cap.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
@@ -1246,18 +1307,19 @@ class MemoryOverlay(_HudOverlay):
             scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
             scroll.setFixedHeight(min(420, 34 * len(rows) + 10))
             scroll.setStyleSheet(
-                f"QScrollArea {{ border: 1px solid {C.BORDER}; border-radius: 3px; "
-                f"background: transparent; }}"
+                f"QScrollArea {{ border: 1px solid {C.BORDER}; border-radius: 3px; background: transparent; }}"
             )
             inner = QWidget()
-            ilay  = QVBoxLayout(inner)
+            ilay = QVBoxLayout(inner)
             ilay.setContentsMargins(6, 6, 6, 6)
             ilay.setSpacing(3)
 
             for r in rows:
-                line = QHBoxLayout(); line.setSpacing(6)
-                txt = QLabel(f"<b>{r['key'].replace('_', ' ')}</b> "
-                             f"<span style='color:{C.TEXT_MED}'>— {r['value']}</span>")
+                line = QHBoxLayout()
+                line.setSpacing(6)
+                txt = QLabel(
+                    f"<b>{r['key'].replace('_', ' ')}</b> <span style='color:{C.TEXT_MED}'>— {r['value']}</span>"
+                )
                 txt.setWordWrap(True)
                 txt.setFont(QFont("Montserrat", 8))
                 txt.setStyleSheet(f"color: {C.TEXT}; background: transparent;")
@@ -1278,8 +1340,7 @@ class MemoryOverlay(_HudOverlay):
                         border: 1px solid {C.BORDER}; border-radius: 3px; }}
                     QPushButton:hover {{ color: {C.RED}; border-color: {C.RED}; }}
                 """)
-                rm.clicked.connect(
-                    lambda _=False, c=r["category"], k=r["key"]: self._forget(c, k))
+                rm.clicked.connect(lambda _=False, c=r["category"], k=r["key"]: self._forget(c, k))
                 line.addWidget(rm)
 
                 holder = QWidget()
@@ -1310,11 +1371,10 @@ class MemoryOverlay(_HudOverlay):
 
     def _forget(self, category: str, key: str):
         from memory.memory_manager import forget
+
         forget(key, category)
         # Rebuild on the NEXT event-loop turn, not inside this click handler.
         # The rebuild destroys the very ✕ button that emitted this signal, and
         # Qt is entitled to touch the sender after a slot returns; tearing it
         # down mid-emission is how a widget ends up half-alive on screen.
         QTimer.singleShot(0, self._rebuild)
-
-

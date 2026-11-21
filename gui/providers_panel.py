@@ -14,11 +14,41 @@ import threading
 import time
 from pathlib import Path
 from gui.base import *
-from gui.base import _WIN_HIDE, _base_dir, BASE_DIR, CONFIG_DIR, API_FILE, _read_full_config, _DEFAULT_W, _DEFAULT_H, _MIN_W, _MIN_H, _LEFT_W, _RIGHT_W, _OS, _ResizeEdge, _detect_resize_edge, _cursor_for_edge, _FramelessWindowResizeMixin, _SysMetrics, _metrics, _nvml_gpu_windows, _load_app_fonts, keena_font, HAVE_VIDEO, HoloAvatar, get_uicon, QGraphicsVideoItem, QAudioOutput, QMediaPlayer
+from gui.base import (
+    _WIN_HIDE,
+    _base_dir,
+    BASE_DIR,
+    CONFIG_DIR,
+    API_FILE,
+    _read_full_config,
+    _DEFAULT_W,
+    _DEFAULT_H,
+    _MIN_W,
+    _MIN_H,
+    _LEFT_W,
+    _RIGHT_W,
+    _OS,
+    _ResizeEdge,
+    _detect_resize_edge,
+    _cursor_for_edge,
+    _FramelessWindowResizeMixin,
+    _SysMetrics,
+    _metrics,
+    _nvml_gpu_windows,
+    _load_app_fonts,
+    keena_font,
+    HAVE_VIDEO,
+    HoloAvatar,
+    get_uicon,
+    QGraphicsVideoItem,
+    QAudioOutput,
+    QMediaPlayer,
+)
 from gui.theme import *
 from gui.theme import _RESIZE_MARGIN, _NO_SCROLLBAR_STYLE, _HUE_LINKED, _PALETTE_DEFAULTS, _lerp_color
 
 from gui.overlays import _HudOverlay
+
 
 class _ScrollSafeCombo(QComboBox):
     """A dropdown that does not change when you scroll past it.
@@ -85,7 +115,7 @@ class ProvidersOverlay(_HudOverlay):
         look broken.
     """
 
-    changed = pyqtSignal()          # emitted on APPLY when the engine moved
+    changed = pyqtSignal()  # emitted on APPLY when the engine moved
     # Emitted from a worker thread when something the machine had to be asked
     # for — the installed voices — has arrived. A signal rather than a direct
     # call because the worker must not touch a widget.
@@ -93,12 +123,12 @@ class ProvidersOverlay(_HudOverlay):
     # (provider id, [(value, label), ...]) from a worker that went and asked an
     # endpoint what it offers.
     _models_ready = pyqtSignal(str, list)
-    _OW = 760                       # the window's own minimum is 820
+    _OW = 760  # the window's own minimum is 820
 
     # Which provider fills each slot, and what the slot is FOR — in the words
     # somebody configuring it would use, not the words the code uses.
     _SLOTS = (
-        ("stt", "①", "HEARING",  "turns what you say into words"),
+        ("stt", "①", "HEARING", "turns what you say into words"),
         ("llm", "②", "THINKING", "understands, decides, uses your tools"),
         ("tts", "③", "SPEAKING", "reads the answer out loud"),
     )
@@ -106,10 +136,14 @@ class ProvidersOverlay(_HudOverlay):
     def __init__(self, parent=None):
         super().__init__(parent)
         # Imported HERE, on the click — never at startup. See the class docstring.
-        from memory.config_manager import (get_coding_provider, get_pipeline,
-                                           get_provider_config,
-                                           get_provider_mode, get_sidecar_first,
-                                           get_sidecar_provider)
+        from memory.config_manager import (
+            get_coding_provider,
+            get_pipeline,
+            get_provider_config,
+            get_provider_mode,
+            get_sidecar_first,
+            get_sidecar_provider,
+        )
         from providers import registry
 
         self._registry = registry
@@ -130,16 +164,15 @@ class ProvidersOverlay(_HudOverlay):
         for _kind in ("tts", "stt", "llm"):
             for _decl in registry.discover(_kind):
                 try:
-                    _mod = __import__(f"providers.{_decl['_module']}",
-                                      fromlist=["prefetch"])
+                    _mod = __import__(f"providers.{_decl['_module']}", fromlist=["prefetch"])
                     _pf = getattr(_mod, "prefetch", None)
                     if _pf:
                         _pf(self._live_ready.emit)
                 except Exception:
                     pass
-        self._edits: dict[str, dict] = {}       # provider id -> {key: (widget, Field)}
-        self._status: dict[str, QLabel] = {}    # provider id -> status line
-        self._more: dict[str, bool] = {}        # provider id -> advanced shown
+        self._edits: dict[str, dict] = {}  # provider id -> {key: (widget, Field)}
+        self._status: dict[str, QLabel] = {}  # provider id -> status line
+        self._more: dict[str, bool] = {}  # provider id -> advanced shown
         # Fields deliberately not drawn — the catalog already answered them, or
         # they are behind MORE. Tracked rather than asked of Qt: see _fields_into.
         self._hidden: dict[str, set] = {}
@@ -163,8 +196,7 @@ class ProvidersOverlay(_HudOverlay):
         title.setStyleSheet(f"color: {C.PRI}; background: transparent;")
         outer.addWidget(title)
 
-        sub = QLabel("Choose what powers the conversation. "
-                     "Gemini is the default and needs nothing set up here.")
+        sub = QLabel("Choose what powers the conversation. Gemini is the default and needs nothing set up here.")
         sub.setWordWrap(True)
         sub.setFont(QFont("Montserrat", 8))
         sub.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
@@ -175,18 +207,21 @@ class ProvidersOverlay(_HudOverlay):
         # decision on the panel that changes everything below it, and both
         # answers deserve to be readable at the same time.
         self._mode = get_provider_mode()
-        cards = QHBoxLayout(); cards.setSpacing(10)
+        cards = QHBoxLayout()
+        cards.setSpacing(10)
         self._card_gemini = self._mode_card(
             "☁  GEMINI LIVE",
             "One connection carries your voice, its voice, the transcript and "
             "the tools together. The fastest option — about half a second to "
             "the first word.",
-            "gemini")
+            "gemini",
+        )
         self._card_local = self._mode_card(
             "🖥  MY OWN SETUP",
             "Your choice of hearing, thinking and speaking. Can run entirely on "
             "this computer, with nothing leaving it. Slower: 1.5 to 4 seconds.",
-            "pipeline")
+            "pipeline",
+        )
         cards.addWidget(self._card_gemini)
         cards.addWidget(self._card_local)
         outer.addLayout(cards)
@@ -202,7 +237,8 @@ class ProvidersOverlay(_HudOverlay):
             "QScrollBar:vertical, QScrollBar:horizontal { background: transparent; width: 0px; height: 0px; margin: 0; border: none; }"
             "QScrollBar::handle:vertical, QScrollBar::handle:horizontal { background: transparent; width: 0px; height: 0px; }"
             "QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; border: none; }"
-            "QScrollBar::add-page, QScrollBar::sub-page { background: none; }")
+            "QScrollBar::add-page, QScrollBar::sub-page { background: none; }"
+        )
         self._scroll.setMinimumHeight(230)
         self._scroll.setMaximumHeight(360)
         outer.addWidget(self._scroll, 1)
@@ -224,8 +260,7 @@ class ProvidersOverlay(_HudOverlay):
         # Every value below is a service id — "openai_compat@minimax" — so the
         # fallback, the coding model and ② THINKING can each be a different
         # service with settings of its own.
-        self._pipe = {slot: self._normalise(sid, slot)
-                      for slot, sid in dict(get_pipeline()).items()}
+        self._pipe = {slot: self._normalise(sid, slot) for slot, sid in dict(get_pipeline()).items()}
         self._sidecar = self._normalise(get_sidecar_provider(), "llm")
         self._coding = self._normalise(get_coding_provider(), "llm")
         self._sidecar_first = get_sidecar_first()
@@ -233,7 +268,8 @@ class ProvidersOverlay(_HudOverlay):
 
         outer.addWidget(self._footer)
 
-        row = QHBoxLayout(); row.setSpacing(8)
+        row = QHBoxLayout()
+        row.setSpacing(8)
         apply_btn = QPushButton("▸  SAVE  &&  APPLY")
         apply_btn.setFixedHeight(34)
         apply_btn.setFont(QFont("Montserrat", 9, QFont.Weight.Bold))
@@ -279,7 +315,7 @@ class ProvidersOverlay(_HudOverlay):
             card.setStyleSheet(f"""
                 QPushButton {{
                     text-align: left; padding: 10px 12px;
-                    background: {C.PRI_GHO if on else 'transparent'};
+                    background: {C.PRI_GHO if on else "transparent"};
                     color: {C.TEXT if on else C.TEXT_DIM};
                     border: 1px solid {C.PRI_DIM if on else C.BORDER};
                     border-radius: 5px;
@@ -382,8 +418,11 @@ class ProvidersOverlay(_HudOverlay):
             box.setCurrentIndex(j)
         elif keep:
             box.setCurrentText(keep)
-        self._say(pid, f"{len(items)} model{'s' if len(items) != 1 else ''} "
-                       f"found on this server — pick one above.", C.TEXT_DIM)
+        self._say(
+            pid,
+            f"{len(items)} model{'s' if len(items) != 1 else ''} found on this server — pick one above.",
+            C.TEXT_DIM,
+        )
 
     def _set_mode(self, value: str) -> None:
         if value == self._mode:
@@ -398,8 +437,7 @@ class ProvidersOverlay(_HudOverlay):
         """A bordered section. Grouping is the difference between three
         decisions and eleven controls."""
         w = QWidget()
-        w.setStyleSheet(f"background: {C.PANEL}; border: 1px solid {C.BORDER}; "
-                        f"border-radius: 5px;")
+        w.setStyleSheet(f"background: {C.PANEL}; border: 1px solid {C.BORDER}; border-radius: 5px;")
         lay = QVBoxLayout(w)
         lay.setContentsMargins(12, 10, 12, 11)
         lay.setSpacing(5)
@@ -407,14 +445,11 @@ class ProvidersOverlay(_HudOverlay):
             lay.addWidget(tw)
         return w, lay
 
-    def _label(self, text: str, size: int = 8, colour: str = None,
-               bold: bool = False) -> QLabel:
+    def _label(self, text: str, size: int = 8, colour: str = None, bold: bool = False) -> QLabel:
         lb = QLabel(text)
         lb.setWordWrap(True)
-        lb.setFont(QFont("Montserrat", size,
-                         QFont.Weight.Bold if bold else QFont.Weight.Normal))
-        lb.setStyleSheet(f"color: {colour or C.TEXT_MED}; background: transparent; "
-                         f"border: none;")
+        lb.setFont(QFont("Montserrat", size, QFont.Weight.Bold if bold else QFont.Weight.Normal))
+        lb.setStyleSheet(f"color: {colour or C.TEXT_MED}; background: transparent; border: none;")
         return lb
 
     def _combo(self) -> QComboBox:
@@ -428,7 +463,8 @@ class ProvidersOverlay(_HudOverlay):
             f"QComboBox::drop-down {{ border: none; width: 18px; }}"
             f"QComboBox QAbstractItemView {{ background: {C.DARK}; color: {C.TEXT}; "
             f"selection-background-color: {C.PRI_GHO}; "
-            f"border: 1px solid {C.BORDER_B}; padding: 2px; }}")
+            f"border: 1px solid {C.BORDER_B}; padding: 2px; }}"
+        )
         return box
 
     def _line(self, text: str = "") -> QLineEdit:
@@ -438,7 +474,8 @@ class ProvidersOverlay(_HudOverlay):
         w.setStyleSheet(
             f"QLineEdit {{ background: {C.DARK}; color: {C.TEXT}; "
             f"border: 1px solid {C.BORDER}; border-radius: 3px; padding: 2px 9px; }}"
-            f"QLineEdit:focus {{ border-color: {C.PRI_DIM}; }}")
+            f"QLineEdit:focus {{ border-color: {C.PRI_DIM}; }}"
+        )
         return w
 
     def _btn(self, text: str, slot, colour: str = None) -> QPushButton:
@@ -464,8 +501,8 @@ class ProvidersOverlay(_HudOverlay):
         out = []
         for decl in self._registry.discover(kind):
             entries = decl.get("catalog") or (
-                {"id": decl["id"], "label": decl["label"],
-                 "note": decl.get("hint", ""), "local": None, "values": {}},)
+                {"id": decl["id"], "label": decl["label"], "note": decl.get("hint", ""), "local": None, "values": {}},
+            )
             for e in entries:
                 out.append((decl["id"], e["id"], e, decl))
         return out
@@ -488,8 +525,7 @@ class ProvidersOverlay(_HudOverlay):
             return ""
         cfg = self._get_cfg(pid)
         saved = str(cfg.get("catalog") or "").strip()
-        entries = [(eid, entry) for _p, eid, entry, _d in self._catalog(kind)
-                   if _p == pid]
+        entries = [(eid, entry) for _p, eid, entry, _d in self._catalog(kind) if _p == pid]
         if saved and any(eid == saved for eid, _e in entries):
             return saved
 
@@ -498,10 +534,13 @@ class ProvidersOverlay(_HudOverlay):
         for eid, entry in entries:
             vals = entry.get("values") or {}
             if not vals:
-                best = best or eid            # a catch-all like "Something else"
+                best = best or eid  # a catch-all like "Something else"
                 continue
-            if all(str(cfg.get(k, "")).rstrip("/") == str(v).rstrip("/")
-                   for k, v in vals.items() if k in ("base_url", "backend")):
+            if all(
+                str(cfg.get(k, "")).rstrip("/") == str(v).rstrip("/")
+                for k, v in vals.items()
+                if k in ("base_url", "backend")
+            ):
                 return eid
         return best or (entries[0][0] if len(entries) == 1 else "")
 
@@ -535,6 +574,7 @@ class ProvidersOverlay(_HudOverlay):
         new = self._sid(base, eid)
         if new != sid and not self._get_cfg(new) and self._get_cfg(sid):
             from memory.config_manager import save_provider_config
+
             save_provider_config(new, dict(self._get_cfg(sid), catalog=eid))
         return new
 
@@ -563,12 +603,12 @@ class ProvidersOverlay(_HudOverlay):
         follows saves whatever they hold, and the redraw must not write one
         service's fields into another's settings."""
         from memory.config_manager import save_provider_config
+
         pid, eid = self._parts(sid, kind)
         stored = self._get_cfg(sid)
         for _p, _e, entry, _d in self._catalog(kind):
             if _p == pid and _e == eid:
-                values = {k: v for k, v in (entry.get("values") or {}).items()
-                          if k == "base_url" or k not in stored}
+                values = {k: v for k, v in (entry.get("values") or {}).items() if k == "base_url" or k not in stored}
                 values["catalog"] = eid
                 save_provider_config(sid, values)
                 break
@@ -604,13 +644,22 @@ class ProvidersOverlay(_HudOverlay):
                 self._body_lay.addWidget(self._slot_box(slot, num, name, what))
         else:
             w, lay = self._box([])
-            lay.addWidget(self._label(
-                "Nothing to set up. Your voice goes to Gemini and comes back as "
-                "speech over one connection, with the transcript and every tool "
-                "call on the same wire.", 8, C.TEXT_DIM))
-            lay.addWidget(self._label(
-                "Pick MY OWN SETUP above to run it on your own machine, or "
-                "through another company's model.", 7, C.TEXT_DIM))
+            lay.addWidget(
+                self._label(
+                    "Nothing to set up. Your voice goes to Gemini and comes back as "
+                    "speech over one connection, with the transcript and every tool "
+                    "call on the same wire.",
+                    8,
+                    C.TEXT_DIM,
+                )
+            )
+            lay.addWidget(
+                self._label(
+                    "Pick MY OWN SETUP above to run it on your own machine, or through another company's model.",
+                    7,
+                    C.TEXT_DIM,
+                )
+            )
             self._body_lay.addWidget(w)
 
         self._body_lay.addWidget(self._sidecar_box_widget())
@@ -638,8 +687,7 @@ class ProvidersOverlay(_HudOverlay):
         box = self._service_combo(slot, ("— not set —", ""), fmt)
         sid = self._pipe.get(slot, "")
         self._select(box, sid)
-        box.currentIndexChanged.connect(
-            lambda _i, s=slot, b=box: self._slot_changed(s, b))
+        box.currentIndexChanged.connect(lambda _i, s=slot, b=box: self._slot_changed(s, b))
         if sid:
             QTimer.singleShot(0, lambda p=sid: self._prepare(p))
         lay.addWidget(box)
@@ -648,8 +696,7 @@ class ProvidersOverlay(_HudOverlay):
             self._fields_into(lay, slot, sid)
             # If a list was already fetched, use it; if not, go and get one.
             if self._model_cache.get(sid):
-                QTimer.singleShot(0, lambda p=sid: self._on_models_ready(
-                    p, self._model_cache[p]))
+                QTimer.singleShot(0, lambda p=sid: self._on_models_ready(p, self._model_cache[p]))
             else:
                 QTimer.singleShot(0, lambda p=sid: self._fetch_models(p))
         return w
@@ -678,8 +725,7 @@ class ProvidersOverlay(_HudOverlay):
         if decl is None:
             return
         stored = dict(self._get_cfg(pid))
-        entry = next((e for p, i, e, _ in self._catalog(slot)
-                      if p == base and i == eid), {})
+        entry = next((e for p, i, e, _ in self._catalog(slot) if p == base and i == eid), {})
         is_local = entry.get("local") is True
         entry_values = entry.get("values") or {}
         # An entry that MENTIONS the address has answered it — including
@@ -697,9 +743,9 @@ class ProvidersOverlay(_HudOverlay):
         # returned True for every field and the form came up completely empty.
         # Which of these a field lands in is a decision made here, so it is kept
         # here rather than inferred from Qt afterwards.
-        shown: dict = {}        # drawn now
-        carried: dict = {}      # kept for saving, never drawn — answered by the catalog
-        advanced: list = []     # drawn only behind MORE
+        shown: dict = {}  # drawn now
+        carried: dict = {}  # kept for saving, never drawn — answered by the catalog
+        advanced: list = []  # drawn only behind MORE
 
         for f in decl.get("needs", ()):
             if not isinstance(f, Field):
@@ -709,8 +755,7 @@ class ProvidersOverlay(_HudOverlay):
             # more thing to break; a key a local server never asks for is a box
             # that makes people think they need an account.
             if f.key == "base_url" and not custom:
-                carried[f.key] = (self._line(
-                    str(stored.get(f.key, f.default) or "")), f)
+                carried[f.key] = (self._line(str(stored.get(f.key, f.default) or "")), f)
                 continue
             if f.key == "api_key" and is_local:
                 carried[f.key] = (self._line(str(stored.get(f.key, "") or "")), f)
@@ -720,12 +765,12 @@ class ProvidersOverlay(_HudOverlay):
             # "Local servers usually need none" under MiniMax and OpenAI, which
             # refuse every request without one.
             if f.key == "api_key" and entry.get("local") is False:
-                f = replace(f, required=True,
-                            hint=f"Needed — create one in your {entry['label']} account")
+                f = replace(f, required=True, hint=f"Needed — create one in your {entry['label']} account")
             if f.key == "backend":
-                carried[f.key] = (self._line(
-                    str(entry.get("values", {}).get("backend")
-                        or stored.get(f.key, f.default) or "")), f)
+                carried[f.key] = (
+                    self._line(str(entry.get("values", {}).get("backend") or stored.get(f.key, f.default) or "")),
+                    f,
+                )
                 continue
             w = self._make_widget(pid, f, stored.get(f.key, f.default))
             if f.advanced:
@@ -734,8 +779,7 @@ class ProvidersOverlay(_HudOverlay):
                 shown[f.key] = (w, f)
 
         for _key, (w, f) in shown.items():
-            lay.addWidget(self._label(
-                f.label + ("" if f.required else "   (optional)"), 7, C.TEXT_DIM))
+            lay.addWidget(self._label(f.label + ("" if f.required else "   (optional)"), 7, C.TEXT_DIM))
             lay.addWidget(w)
             # A text box already shows its hint as placeholder text. Adding the
             # label as well printed every hint twice, which is how the panel
@@ -751,7 +795,8 @@ class ProvidersOverlay(_HudOverlay):
         status = self._label("", 7, C.TEXT_DIM)
         self._status[pid] = status
 
-        brow = QHBoxLayout(); brow.setSpacing(6)
+        brow = QHBoxLayout()
+        brow.setSpacing(6)
         brow.addWidget(self._btn("TEST", lambda _=0, p=pid: self._test(p), C.PRI))
         # Not "LIST" any more: the list arrives on its own when a service is
         # chosen. This is the button for when it did not — the server was
@@ -759,12 +804,11 @@ class ProvidersOverlay(_HudOverlay):
         if any(k in shown for k in ("model", "voice_id", "voice")):
             brow.addWidget(self._btn("↻ REFRESH", lambda _=0, p=pid: self._list(p)))
         if advanced:
-            brow.addWidget(self._btn(
-                ("⌃ LESS" if self._more.get(pid) else "⌄ MORE"),
-                lambda _=0, p=pid: self._toggle_more(p)))
+            brow.addWidget(
+                self._btn(("⌃ LESS" if self._more.get(pid) else "⌄ MORE"), lambda _=0, p=pid: self._toggle_more(p))
+            )
         if not decl.get("_available", True) and decl.get("install"):
-            brow.addWidget(self._btn(f"INSTALL {decl['install']}",
-                                     lambda _=0, p=pid: self._install(p), C.ACC2))
+            brow.addWidget(self._btn(f"INSTALL {decl['install']}", lambda _=0, p=pid: self._install(p), C.ACC2))
         brow.addStretch(1)
         holder = QWidget()
         holder.setStyleSheet("background: transparent; border: none;")
@@ -828,12 +872,16 @@ class ProvidersOverlay(_HudOverlay):
     def _sidecar_box_widget(self) -> QWidget:
         head = self._label("⚡  BACKGROUND REQUESTS", 9, C.PRI, bold=True)
         w, lay = self._box([head])
-        lay.addWidget(self._label(
-            "Reading a document, looking at your screen, writing code — the "
-            "assistant's own requests, not the conversation. These use Gemini's "
-            "text quota, which runs out before the voice does. Sending them "
-            "somewhere else keeps them working, and changes nothing you hear.",
-            7, C.TEXT_DIM))
+        lay.addWidget(
+            self._label(
+                "Reading a document, looking at your screen, writing code — the "
+                "assistant's own requests, not the conversation. These use Gemini's "
+                "text quota, which runs out before the voice does. Sending them "
+                "somewhere else keeps them working, and changes nothing you hear.",
+                7,
+                C.TEXT_DIM,
+            )
+        )
 
         # Read the stored choice BEFORE the box exists. The first version asked
         # the combo — and at this point that is the empty box being built, so
@@ -841,20 +889,17 @@ class ProvidersOverlay(_HudOverlay):
         sid = self._sidecar
 
         def fmt(entry, _decl):
-            mark = "🖥" if entry.get("local") else (
-                "☁" if entry.get("local") is False else "  ")
+            mark = "🖥" if entry.get("local") else ("☁" if entry.get("local") is False else "  ")
             return f"{mark}  Fall back to {entry['label']}"
 
-        self._sidecar_combo = self._service_combo(
-            "llm", ("Gemini only  —  the way it has always been", ""), fmt)
+        self._sidecar_combo = self._service_combo("llm", ("Gemini only  —  the way it has always been", ""), fmt)
         self._select(self._sidecar_combo, sid)
         self._sidecar_combo.currentIndexChanged.connect(self._sidecar_changed)
         lay.addWidget(self._sidecar_combo)
 
         self._first_combo = self._combo()
         self._first_combo.addItem("Try Gemini first  —  faster", "after")
-        self._first_combo.addItem(
-            "Try the other one first  —  keeps more on your machine", "before")
+        self._first_combo.addItem("Try the other one first  —  keeps more on your machine", "before")
         self._first_combo.setCurrentIndex(1 if self._sidecar_first else 0)
         lay.addWidget(self._first_combo)
 
@@ -863,14 +908,17 @@ class ProvidersOverlay(_HudOverlay):
         # ② section, so a service picked here gets its own form, right here.
         if sid:
             if self._mode == "pipeline" and sid == self._pipe.get("llm"):
-                lay.addWidget(self._label(
-                    "Uses the model you chose for ② THINKING.", 7, C.TEXT_DIM))
+                lay.addWidget(self._label("Uses the model you chose for ② THINKING.", 7, C.TEXT_DIM))
             else:
                 self._fields_into(lay, "llm", sid)
         else:
-            lay.addWidget(self._label(
-                "Left as it is, these keep using Gemini and stop working when "
-                "its text quota runs out.", 7, C.TEXT_DIM))
+            lay.addWidget(
+                self._label(
+                    "Left as it is, these keep using Gemini and stop working when its text quota runs out.",
+                    7,
+                    C.TEXT_DIM,
+                )
+            )
         return w
 
     def _coding_box_widget(self) -> QWidget:
@@ -883,21 +931,23 @@ class ProvidersOverlay(_HudOverlay):
         project instead of nothing."""
         head = self._label("🛠  CODING", 9, C.PRI, bold=True)
         w, lay = self._box([head])
-        lay.addWidget(self._label(
-            "The model that plans, writes and fixes projects when you ask the "
-            "assistant to build something. Saved to Desktop/JarvisProjects.",
-            7, C.TEXT_DIM))
+        lay.addWidget(
+            self._label(
+                "The model that plans, writes and fixes projects when you ask the "
+                "assistant to build something. Saved to Desktop/JarvisProjects.",
+                7,
+                C.TEXT_DIM,
+            )
+        )
 
         sid = self._coding
 
         def fmt(entry, _decl):
-            mark = "🖥" if entry.get("local") else (
-                "☁" if entry.get("local") is False else "  ")
+            mark = "🖥" if entry.get("local") else ("☁" if entry.get("local") is False else "  ")
             star = "   ★ recommended" if entry.get("id") == "minimax" else ""
             return f"{mark}  Code with {entry['label']}{star}"
 
-        self._coding_combo = self._service_combo(
-            "llm", ("Same as background requests", ""), fmt)
+        self._coding_combo = self._service_combo("llm", ("Same as background requests", ""), fmt)
         # The sponsor's model sits directly under the default, where it is the
         # first real choice anybody sees — not buried twelfth in the list.
         for i in range(self._coding_combo.count()):
@@ -912,15 +962,11 @@ class ProvidersOverlay(_HudOverlay):
         lay.addWidget(self._coding_combo)
 
         if not sid:
-            lay.addWidget(self._label(
-                "Code is written by whatever answers background requests above.",
-                7, C.TEXT_DIM))
+            lay.addWidget(self._label("Code is written by whatever answers background requests above.", 7, C.TEXT_DIM))
         elif sid == self._sidecar:
-            lay.addWidget(self._label(
-                "Uses the settings under BACKGROUND REQUESTS.", 7, C.TEXT_DIM))
+            lay.addWidget(self._label("Uses the settings under BACKGROUND REQUESTS.", 7, C.TEXT_DIM))
         elif self._mode == "pipeline" and sid == self._pipe.get("llm"):
-            lay.addWidget(self._label(
-                "Uses the model you chose for ② THINKING.", 7, C.TEXT_DIM))
+            lay.addWidget(self._label("Uses the model you chose for ② THINKING.", 7, C.TEXT_DIM))
         else:
             self._fields_into(lay, "llm", sid)
         return w
@@ -945,23 +991,20 @@ class ProvidersOverlay(_HudOverlay):
 
     def _update_footer(self) -> None:
         if self._mode != "pipeline":
-            self._footer.setText(
-                "Gemini Live. Nothing on this panel changes the conversation.")
+            self._footer.setText("Gemini Live. Nothing on this panel changes the conversation.")
             return
-        missing = [name for slot, _n, name, _w in self._SLOTS
-                   if not self._pipe.get(slot)]
+        missing = [name for slot, _n, name, _w in self._SLOTS if not self._pipe.get(slot)]
         if "THINKING" in missing:
             self._footer.setText(
-                "⚠  ② THINKING is not set — without it the assistant falls back "
-                "to Gemini Live and says so in the log.")
+                "⚠  ② THINKING is not set — without it the assistant falls back to Gemini Live and says so in the log."
+            )
         elif missing:
             words = " and ".join(f"{m.lower()}" for m in missing)
             self._footer.setText(
-                f"Only {words} is missing — it will run, but you will type "
-                f"instead of speak, or read instead of listen.")
+                f"Only {words} is missing — it will run, but you will type instead of speak, or read instead of listen."
+            )
         else:
-            self._footer.setText(
-                "All three set. SAVE & APPLY reconnects; the conversation is kept.")
+            self._footer.setText("All three set. SAVE & APPLY reconnects; the conversation is kept.")
 
     # ── actions ──────────────────────────────────────────────────────────────
     def _live_choices(self, pid: str, key: str) -> tuple:
@@ -979,8 +1022,7 @@ class ProvidersOverlay(_HudOverlay):
         stored = self._get_cfg(pid)
         for key, (w, _f) in self._edits.get(pid, {}).items():
             if isinstance(w, QComboBox):
-                value = (w.currentText().strip() if w.isEditable()
-                         else (w.currentData() or ""))
+                value = w.currentText().strip() if w.isEditable() else (w.currentData() or "")
             else:
                 value = w.text().strip()
             # A field nobody can see must never blank out a setting that has
@@ -1001,6 +1043,7 @@ class ProvidersOverlay(_HudOverlay):
         Without it, changing the speech engine wiped an API key somebody had
         just entered into the box above."""
         from memory.config_manager import save_provider_config
+
         for pid in list(self._edits):
             try:
                 save_provider_config(pid, self._values(pid))
@@ -1038,13 +1081,14 @@ class ProvidersOverlay(_HudOverlay):
         seen = (getattr(inst, "caps", {}) or {}).get("vision")
         if ok and seen is not None:
             from memory.config_manager import save_provider_config
+
             save_provider_config(pid, {"vision": "1" if seen else ""})
             entry = self._edits.get(pid, {}).get("vision")
             if entry is not None and isinstance(entry[0], QComboBox):
                 entry[0].setCurrentIndex(1 if seen else 0)
 
     def _list(self, pid: str) -> None:
-        values = self._values(pid)          # before processEvents — see _test
+        values = self._values(pid)  # before processEvents — see _test
         self._say(pid, "reading…", C.TEXT_DIM)
         QApplication.processEvents()
         try:
@@ -1062,8 +1106,7 @@ class ProvidersOverlay(_HudOverlay):
 
         entry = self._edits.get(pid, {}).get(key)
         if entry is None or not items:
-            self._say(pid, f"✓  {len(items)} found." if items else "None found.",
-                      C.GREEN if items else C.TEXT_DIM)
+            self._say(pid, f"✓  {len(items)} found." if items else "None found.", C.GREEN if items else C.TEXT_DIM)
             return
         box = entry[0]
         if isinstance(box, QComboBox):
@@ -1074,8 +1117,7 @@ class ProvidersOverlay(_HudOverlay):
             j = box.findData(keep)
             box.setCurrentIndex(j if j >= 0 else 0)
         else:
-            self._say(pid, f"✓  {len(items)} available: "
-                           f"{', '.join(str(v) for v, _ in items[:8])}", C.GREEN)
+            self._say(pid, f"✓  {len(items)} available: {', '.join(str(v) for v, _ in items[:8])}", C.GREEN)
             return
         self._say(pid, f"✓  {len(items)} available — pick one above.", C.GREEN)
 
@@ -1096,15 +1138,18 @@ class ProvidersOverlay(_HudOverlay):
             try:
                 r = subprocess.run(
                     [_sys.executable, "-m", "pip", "install", pkg],
-                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=900)
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    timeout=900,
+                )
                 good = r.returncode == 0
                 tail = r.stdout.decode("utf-8", "replace").strip().splitlines()
-                msg = ("✓  installed — close and reopen this panel"
-                       if good else (tail[-1][:150] if tail else "pip failed"))
+                msg = (
+                    "✓  installed — close and reopen this panel" if good else (tail[-1][:150] if tail else "pip failed")
+                )
             except Exception as e:
                 good, msg = False, f"{type(e).__name__}: {str(e)[:120]}"
-            QTimer.singleShot(0, lambda: self._say(pid, msg,
-                                                   C.GREEN if good else C.RED))
+            QTimer.singleShot(0, lambda: self._say(pid, msg, C.GREEN if good else C.RED))
 
         threading.Thread(target=work, daemon=True).start()
 
@@ -1116,9 +1161,11 @@ class ProvidersOverlay(_HudOverlay):
 
         save_providers(
             mode=self._mode,
-            pipeline={"stt": self._pipe.get("stt", ""),
-                      "llm": self._pipe.get("llm", ""),
-                      "tts": self._pipe.get("tts", "")},
+            pipeline={
+                "stt": self._pipe.get("stt", ""),
+                "llm": self._pipe.get("llm", ""),
+                "tts": self._pipe.get("tts", ""),
+            },
             creds=creds,
             sidecar=self._sidecar,
             sidecar_first=self._first_combo.currentData() == "before",
@@ -1150,11 +1197,8 @@ class ProvidersOverlay(_HudOverlay):
     @staticmethod
     def _engine_fingerprint() -> str:
         """Everything the conversation engine is built from, as one string."""
-        from memory.config_manager import (get_pipeline, get_provider_config,
-                                           get_provider_mode)
+        from memory.config_manager import get_pipeline, get_provider_config, get_provider_mode
+
         mode, pipe = get_provider_mode(), dict(get_pipeline())
-        used = {sid: get_provider_config(sid) for sid in pipe.values() if sid} \
-            if mode == "pipeline" else {}
+        used = {sid: get_provider_config(sid) for sid in pipe.values() if sid} if mode == "pipeline" else {}
         return json.dumps([mode, pipe, used], sort_keys=True, default=str)
-
-

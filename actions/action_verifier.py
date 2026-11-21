@@ -12,6 +12,7 @@ Verification strategies:
   4. Coordinate / Visual transition verification: checks cursor position or visual changes.
   5. Browser State verification: verifies page URL, DOM state, or title change.
 """
+
 from __future__ import annotations
 
 import logging
@@ -116,6 +117,7 @@ class ActionVerifier:
         # IMPORTANT: A process existing without a ready window is PARTIAL / started, NOT verified done!
         try:
             import psutil
+
             for p in psutil.process_iter(["name", "pid"]):
                 pname = (p.info.get("name") or "").lower()
                 if target in pname:
@@ -257,4 +259,3 @@ def get_action_verifier() -> ActionVerifier:
     if _DEFAULT_ACTION_VERIFIER is None:
         _DEFAULT_ACTION_VERIFIER = ActionVerifier()
     return _DEFAULT_ACTION_VERIFIER
-

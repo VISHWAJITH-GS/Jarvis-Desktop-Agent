@@ -78,6 +78,7 @@ _PLACEHOLDERS = (
     "default message",
 )
 
+
 def run(parameters: dict, player=None, session_memory=None) -> str:
     p = parameters or {}
     action = (p.get("action") or "").lower().strip()
@@ -88,6 +89,7 @@ def run(parameters: dict, player=None, session_memory=None) -> str:
     # If action indicates reading, delegate directly
     if action in ("read", "read_chat", "read_latest", "summarize"):
         from plugins import whatsapp_reader
+
         return whatsapp_reader.run(parameters, player=player, session_memory=session_memory)
 
     if not contact:
@@ -119,4 +121,3 @@ def run(parameters: dict, player=None, session_memory=None) -> str:
         return f"I have sent the message to {contact}: {msg_preview}"
     else:
         return f"Failed to send the message to {contact}: {err}"
-

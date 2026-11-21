@@ -2,6 +2,7 @@
 tests/test_unified_architecture.py — Automated Tests for Unified Tool Execution Architecture,
 Result Normalization Contract, Security Permissions, and Intelligent Memory.
 """
+
 from __future__ import annotations
 
 import inspect
@@ -33,8 +34,10 @@ class UnifiedArchitectureTestCase(unittest.TestCase):
             sig = inspect.signature(rec.handler)
             has_params = "parameters" in sig.parameters
             has_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
-            self.assertTrue(has_params or has_var_kw or len(sig.parameters) > 0,
-                            f"Handler for {rec.name} has unusable signature: {sig}")
+            self.assertTrue(
+                has_params or has_var_kw or len(sig.parameters) > 0,
+                f"Handler for {rec.name} has unusable signature: {sig}",
+            )
 
     def test_action_result_contract_statuses(self):
         """Verify ActionResult enforces standard status values."""
@@ -71,7 +74,9 @@ class UnifiedArchitectureTestCase(unittest.TestCase):
         self.assertFalse(r3.success)
 
         # 4. Dictionary result
-        r4 = outcome.normalize_result({"status": "done", "action": "spotify_control", "verified": True, "success": True, "track": "Beat It"})
+        r4 = outcome.normalize_result(
+            {"status": "done", "action": "spotify_control", "verified": True, "success": True, "track": "Beat It"}
+        )
         self.assertEqual(r4.status, outcome.STATUS_DONE)
         self.assertEqual(r4.data.get("track"), "Beat It")
 

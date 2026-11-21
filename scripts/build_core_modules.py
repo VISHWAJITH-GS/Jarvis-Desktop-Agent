@@ -1,10 +1,12 @@
 """
 scripts/build_core_modules.py — Extracts main.py into modular core/ modules.
 """
+
 from __future__ import annotations
 
 import os
 import sys
+
 
 def main():
     print("Extracting main.py into core/ modules...")
@@ -1243,6 +1245,7 @@ class LiveMonitorsMixin:
 
     # Let's inspect the methods in JarvisLive and build core/live_session.py
     print(f"Extracted JarvisLive source slice: {len(jl_code.splitlines())} lines")
+
 
 if __name__ == "__main__":
     main()

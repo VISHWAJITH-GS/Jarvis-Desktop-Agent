@@ -5,6 +5,7 @@ Provides decoupled event publishing and subscribing between worker threads
 (tools, actions, plugins, audio loops) and the Qt Main Thread.
 Follows AGENTS.md rules: Worker threads NEVER create or touch Qt widgets directly.
 """
+
 from __future__ import annotations
 
 import logging
@@ -16,6 +17,7 @@ logger = logging.getLogger("ui.event_bus")
 
 class UIEventBus:
     """Thread-safe event pub-sub bus."""
+
     _instance: Optional[UIEventBus] = None
     _lock = threading.Lock()
 

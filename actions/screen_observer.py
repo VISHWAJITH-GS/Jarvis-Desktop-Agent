@@ -10,6 +10,7 @@ Produces rich, structured snapshot observations of the Windows desktop:
   - Current browser URL when a supported browser window is active
   - Timestamp & trigger reason
 """
+
 from __future__ import annotations
 
 import logging
@@ -80,6 +81,7 @@ class ScreenObservation:
 
         from core import outcome
         from core.permissions import set_untrusted_context
+
         set_untrusted_context(True)
         return outcome.untrusted("screen", "\n".join(lines))
 
@@ -96,6 +98,7 @@ class ScreenObserver:
         """Attempt to extract active browser URL if browser is in foreground."""
         try:
             from actions import browser_control
+
             # Check if active session page exists
             if hasattr(browser_control, "_get_active_url"):
                 url = browser_control._get_active_url()
@@ -107,6 +110,7 @@ class ScreenObserver:
         # Try to read address bar from UIA for Edge/Chrome
         try:
             from actions import windows_uia
+
             active = self.display_manager.get_active_window_info()
             proc = (active.get("process_name") or "").lower()
             if "chrome" in proc or "msedge" in proc or "brave" in proc:
@@ -189,11 +193,9 @@ def get_screen_observer() -> ScreenObserver:
 
 try:
     from core import platform_hooks
+
     platform_hooks.register_hook(
-        "observe_screen",
-        lambda: get_screen_observer().capture_observation(trigger_reason="orchestrator_observe")
+        "observe_screen", lambda: get_screen_observer().capture_observation(trigger_reason="orchestrator_observe")
     )
 except Exception:
     pass
-
-

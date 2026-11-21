@@ -8,6 +8,7 @@ Exposes:
 - steer_task: supply mid-flight guidance notes for the next round
 - stop_task: cancel or request early report finish
 """
+
 from __future__ import annotations
 
 import time
@@ -156,7 +157,10 @@ TOOLS = [
             "properties": {
                 "prompt": {"type": "STRING", "description": "Goal or instructions for the background task"},
                 "title": {"type": "STRING", "description": "Short human-readable title for the task"},
-                "time_budget_sec": {"type": "NUMBER", "description": "Maximum seconds allowed before synthesizing report (default 300)"},
+                "time_budget_sec": {
+                    "type": "NUMBER",
+                    "description": "Maximum seconds allowed before synthesizing report (default 300)",
+                },
                 "round_budget": {"type": "INTEGER", "description": "Maximum reasoning rounds allowed (default 10)"},
             },
             "required": ["prompt"],
@@ -169,9 +173,7 @@ TOOLS = [
         "description": "List all active, queued, or recently completed background tasks.",
         "parameters": {
             "type": "OBJECT",
-            "properties": {
-                "status": {"type": "STRING", "description": "Filter by status: 'active', 'done', 'all'"}
-            },
+            "properties": {"status": {"type": "STRING", "description": "Filter by status: 'active', 'done', 'all'"}},
         },
         "handler": list_tasks,
         "permission": "read_only",
@@ -181,9 +183,7 @@ TOOLS = [
         "description": "Check the progress, findings, and result of a specific background task by ID.",
         "parameters": {
             "type": "OBJECT",
-            "properties": {
-                "task_id": {"type": "STRING", "description": "The unique ID of the background task"}
-            },
+            "properties": {"task_id": {"type": "STRING", "description": "The unique ID of the background task"}},
             "required": ["task_id"],
         },
         "handler": task_status,
@@ -210,7 +210,10 @@ TOOLS = [
             "type": "OBJECT",
             "properties": {
                 "task_id": {"type": "STRING", "description": "The unique ID of the task to stop"},
-                "finish": {"type": "BOOLEAN", "description": "If true, finish early and write final report; if false, cancel immediately"},
+                "finish": {
+                    "type": "BOOLEAN",
+                    "description": "If true, finish early and write final report; if false, cancel immediately",
+                },
             },
             "required": ["task_id"],
         },

@@ -137,6 +137,7 @@ def _transport_works(idx: int, kind: str, api_key) -> bool:
     ok = False
     try:
         import sounddevice as sd
+
         rate = _RATES.get(kind, 16000)
         secs = _PROBE_SECONDS.get(kind, 0.5)
 
@@ -147,18 +148,20 @@ def _transport_works(idx: int, kind: str, api_key) -> bool:
         if kind == "output":
             # main.py writes with stream.write() — a real sink is rate-limited
             # by the hardware clock, a fake one swallows the buffer instantly.
-            st = sd.RawOutputStream(samplerate=rate, channels=1, dtype="int16",
-                                    blocksize=1024, device=idx)
+            st = sd.RawOutputStream(samplerate=rate, channels=1, dtype="int16", blocksize=1024, device=idx)
             st.start()
             t0 = time.monotonic()
-            st.write(bytes(int(rate * secs) * 2))   # silence — inaudible
+            st.write(bytes(int(rate * secs) * 2))  # silence — inaudible
             elapsed = time.monotonic() - t0
-            st.stop(); st.close()
+            st.stop()
+            st.close()
             ok = elapsed > secs * 0.5
             if not ok:
-                print(f"[Audio] output: host API reports success but moves no "
-                      f"audio ({elapsed*1000:.0f} ms for {secs*1000:.0f} ms) "
-                      f"— skipping it")
+                print(
+                    f"[Audio] output: host API reports success but moves no "
+                    f"audio ({elapsed * 1000:.0f} ms for {secs * 1000:.0f} ms) "
+                    f"— skipping it"
+                )
         else:
             # main.py reads through a callback — count what arrives.
             frames = [0]
@@ -166,11 +169,11 @@ def _transport_works(idx: int, kind: str, api_key) -> bool:
             def _cb(indata, n, *_a):
                 frames[0] += n
 
-            st = sd.InputStream(samplerate=rate, channels=1, dtype="int16",
-                                blocksize=1024, device=idx, callback=_cb)
+            st = sd.InputStream(samplerate=rate, channels=1, dtype="int16", blocksize=1024, device=idx, callback=_cb)
             st.start()
             time.sleep(secs)
-            st.stop(); st.close()
+            st.stop()
+            st.close()
             ok = frames[0] > rate * secs * 0.3
             # If a strict frame threshold failed (e.g. Bluetooth device taking a moment to wake up),
             # but the stream opened without error and delivered frames or opened clean, accept it as fallback.
@@ -200,6 +203,7 @@ def _display_name(name: str, devices) -> str:
         if len(other) > len(best) and other.startswith(name):
             best = other
     return best
+
 
 # The rates the app's Gemini pipeline uses. Hardware devices that cannot open
 # natively at these exact rates (common for Bluetooth A2DP/HFP & WASAPI at
@@ -321,7 +325,7 @@ def configure(input_rate: int, output_rate: int) -> None:
     Drops any cached list: which devices are usable depends on the rate, so a
     list built under the old rates would be stale."""
     global _cache
-    _RATES["input"]  = int(input_rate)
+    _RATES["input"] = int(input_rate)
     _RATES["output"] = int(output_rate)
     with _cache_lock:
         _cache = None
@@ -334,16 +338,22 @@ def _usable(idx: int, kind: str) -> bool:
     guarantee the endpoint works (including Bluetooth devices running at 44.1/48 kHz)."""
     return find_supported_rate(idx, kind, _RATES.get(kind, 16000)) is not None
 
+
 # Aliases for "the default device" and internal routing endpoints. Matched
 # case-insensitively as substrings against the device name.
 _PSEUDO_DEVICES = (
-    "sound mapper",        # Windows MME
-    "primary sound",       # Windows DirectSound ("Primary Sound Capture Driver")
-    "sysdefault",          # ALSA
-    "default",             # ALSA / PulseAudio alias
-    "dmix", "dsnoop",      # ALSA software mixing plugins
-    "surround",            # ALSA channel-layout permutations of one card
-    "samplerate", "speexrate", "upmix", "vdownmix", "null",
+    "sound mapper",  # Windows MME
+    "primary sound",  # Windows DirectSound ("Primary Sound Capture Driver")
+    "sysdefault",  # ALSA
+    "default",  # ALSA / PulseAudio alias
+    "dmix",
+    "dsnoop",  # ALSA software mixing plugins
+    "surround",  # ALSA channel-layout permutations of one card
+    "samplerate",
+    "speexrate",
+    "upmix",
+    "vdownmix",
+    "null",
 )
 
 
@@ -409,9 +419,7 @@ def _query() -> dict[str, list[str]]:
                 out[kind] = [_display_name(n, devices) for _i, n in found]
                 break
             if out[kind]:
-                print(f"[Audio] {kind}: using "
-                      f"{_chosen_api[kind] or 'any host API'} "
-                      f"({len(out[kind])} devices)")
+                print(f"[Audio] {kind}: using {_chosen_api[kind] or 'any host API'} ({len(out[kind])} devices)")
         return out
 
     except Exception as e:
@@ -422,13 +430,14 @@ def _query() -> dict[str, list[str]]:
 def prefetch() -> None:
     """Warm the cache on a background thread. Called once at startup so the
     settings drawer never pays for enumeration on the Qt thread."""
+
     def _work():
         global _cache
         result = _query()
         with _cache_lock:
             _cache = result
-        print(f"[Audio] {len(result['input'])} input / "
-              f"{len(result['output'])} output devices found")
+        print(f"[Audio] {len(result['input'])} input / {len(result['output'])} output devices found")
+
     threading.Thread(target=_work, daemon=True, name="audio-devices").start()
 
 
@@ -447,6 +456,7 @@ def reset_portaudio_if_idle() -> bool:
             return False
         try:
             import sounddevice as sd
+
             sd._terminate()
             sd._initialize()
             return True
@@ -503,6 +513,7 @@ def get_device_capabilities(kind: str, refresh: bool = False) -> list[dict]:
     results: list[dict] = []
     try:
         import sounddevice as sd
+
         devices = list(sd.query_devices())
         apis = [a.get("name", "") for a in sd.query_hostapis()]
     except Exception:
@@ -513,17 +524,19 @@ def get_device_capabilities(kind: str, refresh: bool = False) -> list[dict]:
         info = devices[idx] if (idx is not None and 0 <= idx < len(devices)) else {}
         h_idx = info.get("hostapi", -1)
         api_name = apis[h_idx] if 0 <= h_idx < len(apis) else "Unknown"
-        results.append({
-            "name": name,
-            "index": idx,
-            "host_api": api_name,
-            "max_input_channels": int(info.get("max_input_channels", 0)),
-            "max_output_channels": int(info.get("max_output_channels", 0)),
-            "default_samplerate": int(round(float(info.get("default_samplerate") or 0))),
-            "supported_samplerate": rate,
-            "is_bluetooth": is_bluetooth_device(name),
-            "usable": idx is not None and rate is not None,
-        })
+        results.append(
+            {
+                "name": name,
+                "index": idx,
+                "host_api": api_name,
+                "max_input_channels": int(info.get("max_input_channels", 0)),
+                "max_output_channels": int(info.get("max_output_channels", 0)),
+                "default_samplerate": int(round(float(info.get("default_samplerate") or 0))),
+                "supported_samplerate": rate,
+                "is_bluetooth": is_bluetooth_device(name),
+                "usable": idx is not None and rate is not None,
+            }
+        )
     return results
 
 
@@ -546,9 +559,9 @@ def match_device_name(query: str, kind: str, refresh: bool = False) -> Optional[
     # Handle natural phrases for built-in laptop mic / speakers
     if any(k in low for k in ("laptop", "built-in", "built in", "internal", "integrated", "pc speaker", "computer")):
         non_bt = [
-            d for d in available
-            if not is_bluetooth_device(d)
-            and not any(ex in d.lower() for ex in EXCLUDED_INPUT_KEYWORDS)
+            d
+            for d in available
+            if not is_bluetooth_device(d) and not any(ex in d.lower() for ex in EXCLUDED_INPUT_KEYWORDS)
         ]
         if non_bt:
             for pref in ("array", "realtek", "speaker", "microphone", "internal", "integrated"):
@@ -573,7 +586,9 @@ def match_device_name(query: str, kind: str, refresh: bool = False) -> Optional[
     if any(k in low for k in ("earphone", "earbud", "headphone", "headset", "bud", "bluetooth")):
         for d in available:
             dl = d.lower()
-            if is_bluetooth_device(d) or any(w in dl for w in ("bud", "enco", "oppo", "headphone", "headset", "bluetooth")):
+            if is_bluetooth_device(d) or any(
+                w in dl for w in ("bud", "enco", "oppo", "headphone", "headset", "bluetooth")
+            ):
                 return d
 
     # Token overlap fallback
@@ -616,7 +631,7 @@ def resolve_with_rate(name: str, kind: str) -> tuple[Optional[int], Optional[int
         except Exception:
             apis = []
 
-        want_in = (kind == "input")
+        want_in = kind == "input"
         chan_key = "max_input_channels" if want_in else "max_output_channels"
 
         def _candidates(api_filter):
@@ -635,9 +650,7 @@ def resolve_with_rate(name: str, kind: str) -> tuple[Optional[int], Optional[int
         pref_platform = _PREFERRED_APIS.get(platform.system(), {})
         pref_raw = pref_platform.get(kind, ()) if isinstance(pref_platform, dict) else pref_platform
         preferred: tuple = tuple(pref_raw) if isinstance(pref_raw, (tuple, list)) else ()
-        orders = ([chosen] if chosen is not None else []) \
-            + [a for a in preferred if a != chosen] \
-            + [None]
+        orders = ([chosen] if chosen is not None else []) + [a for a in preferred if a != chosen] + [None]
 
         wanted_fold = _fold(wanted)
 
@@ -650,9 +663,7 @@ def resolve_with_rate(name: str, kind: str) -> tuple[Optional[int], Optional[int
                     if rate is not None:
                         return idx, rate
                     continue
-                if partial is None and (
-                    dev_name.startswith(wanted[:24]) or wanted.startswith(dev_name[:24])
-                ):
+                if partial is None and (dev_name.startswith(wanted[:24]) or wanted.startswith(dev_name[:24])):
                     rate = find_supported_rate(idx, kind, target_rate)
                     if rate is not None:
                         partial = (idx, rate)
@@ -743,7 +754,7 @@ def measure_input(name: str, seconds: float = 3.0, on_level=None) -> dict:
         rate = _RATES.get("input", 16000)
 
         def _cb(indata, _frames, _t, _status):
-            block = int(np.abs(np.frombuffer(indata, dtype="int16")).max())                 if len(indata) else 0
+            block = int(np.abs(np.frombuffer(indata, dtype="int16")).max()) if len(indata) else 0
             if block > peak_seen[0]:
                 peak_seen[0] = block
             if on_level is not None:
@@ -752,27 +763,26 @@ def measure_input(name: str, seconds: float = 3.0, on_level=None) -> dict:
                 except Exception:
                     pass
 
-        stream = sd.RawInputStream(samplerate=rate, channels=1, dtype="int16",
-                                   blocksize=int(rate / 20), device=idx,
-                                   callback=_cb)
+        stream = sd.RawInputStream(
+            samplerate=rate, channels=1, dtype="int16", blocksize=int(rate / 20), device=idx, callback=_cb
+        )
         with stream:
             time.sleep(max(0.5, float(seconds)))
         peak = peak_seen[0]
     except Exception as e:
-        return {"ok": False, "peak": 0, "level": 0.0,
-                "verdict": f"This microphone could not be opened: {e}"}
+        return {"ok": False, "peak": 0, "level": 0.0, "verdict": f"This microphone could not be opened: {e}"}
 
     if peak < _SILENT_PEAK:
-        verdict = ("Nothing arrived. The microphone is muted, its level is at "
-                   "zero, or this is not the device you are speaking into.")
+        verdict = (
+            "Nothing arrived. The microphone is muted, its level is at "
+            "zero, or this is not the device you are speaking into."
+        )
     elif peak < _QUIET_PEAK:
-        verdict = ("Very quiet. Speech recognition will struggle — raise the "
-                   "input level in the system sound settings.")
+        verdict = "Very quiet. Speech recognition will struggle — raise the input level in the system sound settings."
     else:
         verdict = "Working. Your voice is coming through clearly."
 
-    return {"ok": peak >= _QUIET_PEAK, "peak": peak,
-            "level": min(1.0, peak / 12000.0), "verdict": verdict}
+    return {"ok": peak >= _QUIET_PEAK, "peak": peak, "level": min(1.0, peak / 12000.0), "verdict": verdict}
 
 
 _bt_detection_cache: dict[str, tuple[bool, float]] = {}
@@ -796,6 +806,7 @@ def _detect_bluetooth_via_endpoint_metadata(name: str) -> bool | None:
         return None
     try:
         from pycaw.pycaw import AudioUtilities
+
         wanted = _fold(name)
         wanted_raw = name.strip()
         if not wanted and not wanted_raw:
@@ -818,7 +829,10 @@ def _detect_bluetooth_via_endpoint_metadata(name: str) -> bool | None:
                 for _k, v in props.items():
                     if isinstance(v, str):
                         v_u = v.upper()
-                        if any(b in v_u for b in ("BTHENUM", "BTHHFENUM", "BTH\\", "BTHLE\\", "MICROSOFT_BLUETOOTH", "BTHA2DPSRC")):
+                        if any(
+                            b in v_u
+                            for b in ("BTHENUM", "BTHHFENUM", "BTH\\", "BTHLE\\", "MICROSOFT_BLUETOOTH", "BTHA2DPSRC")
+                        ):
                             return True
                         if "HDAUDIO\\" in v_u or v_u == "HDAUDIO" or "USB\\" in v_u or v_u == "USB":
                             return False
@@ -872,10 +886,7 @@ def is_bluetooth_device(name: str) -> bool:
         res = False
     else:
         # High-confidence Bluetooth indicators (excluding generic 'wireless' or 'headset' which match USB peripherals)
-        bt_keywords = (
-            "bluetooth", "bth", "hands-free", "airpods",
-            "freebuds", "galaxy buds", "pixel buds"
-        )
+        bt_keywords = ("bluetooth", "bth", "hands-free", "airpods", "freebuds", "galaxy buds", "pixel buds")
         res = any(k in low for k in bt_keywords)
 
     with _bt_detection_lock:
@@ -892,6 +903,7 @@ def is_output_bluetooth(output_name: str) -> bool:
     if _platform_is() == "Windows":
         try:
             from pycaw.pycaw import AudioUtilities
+
             spk = AudioUtilities.GetSpeakers()
             if spk is not None:
                 fname = getattr(spk, "FriendlyName", "")
@@ -900,7 +912,6 @@ def is_output_bluetooth(output_name: str) -> bool:
         except Exception:
             pass
     return False
-
 
 
 # ── Re-export WASAPI / CoreAudio endpoint helpers from core.audio_endpoints ──
@@ -915,6 +926,7 @@ from core.audio_endpoints import (
     get_output_volume,
     set_output_volume,
 )
+
 
 def select_best_input(
     requested_input: str,
@@ -977,16 +989,14 @@ def select_best_input(
         return any(k in low for k in EXCLUDED_INPUT_KEYWORDS)
 
     # Exclude loopback / virtual endpoints (Stereo Mix, Loopback, Virtual, VB-Cable, OBS, Steam Streaming)
-    candidates = [
-        dev for dev in available_inputs
-        if not is_bluetooth_device(dev) and not _is_virtual_or_loopback(dev)
-    ]
+    candidates = [dev for dev in available_inputs if not is_bluetooth_device(dev) and not _is_virtual_or_loopback(dev)]
 
     # If no non-virtual, non-BT mic exists, fall back to any non-BT input
     if not candidates:
         candidates = [dev for dev in available_inputs if not is_bluetooth_device(dev)]
 
     if candidates:
+
         def _rank(dev_name: str) -> tuple[int, int, str]:
             low = dev_name.lower()
             # Prefer WASAPI capture endpoints (0 = WASAPI, 1 = other)
@@ -1047,7 +1057,7 @@ def get_device_status(name: str, kind: str) -> dict:
 
     is_bt = is_bluetooth_device(wanted)
     idx = resolve(wanted, kind)
-    connected = (idx is not None)
+    connected = idx is not None
 
     warning = None
     profile = "Built-in / USB"
@@ -1096,8 +1106,7 @@ def find_builtin_microphone(configured_name: Optional[str] = None) -> Optional[s
     # Direct search across available inputs
     available = list_devices("input")
     candidates = [
-        d for d in available
-        if not is_bluetooth_device(d) and not any(k in d.lower() for k in EXCLUDED_INPUT_KEYWORDS)
+        d for d in available if not is_bluetooth_device(d) and not any(k in d.lower() for k in EXCLUDED_INPUT_KEYWORDS)
     ]
     if candidates:
         for pref in ("array", "realtek", "conexant", "intel", "internal", "integrated", "microphone"):
@@ -1186,10 +1195,11 @@ def detect_a2dp_status(output_name: str, input_stream_open: bool = False) -> dic
 
     try:
         import sounddevice as sd
+
         info = sd.query_devices(idx)
         channels = int(info.get("max_output_channels", 2))
         rate = float(info.get("default_samplerate", 44100.0))
-        is_stereo = (channels >= 2 and rate >= 44100.0)
+        is_stereo = channels >= 2 and rate >= 44100.0
         return {
             "is_bluetooth": True,
             "a2dp_active": is_stereo,
@@ -1273,4 +1283,3 @@ def play_tone(name: str, seconds: float = 0.6) -> dict:
 # These delegate to actions/computer_settings, which already owns the
 # per-platform volume plumbing and had a real bug in it (see
 # _win_endpoint_volume there). One implementation, not two.
-

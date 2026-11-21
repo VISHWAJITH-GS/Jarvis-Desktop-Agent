@@ -32,8 +32,12 @@ def get_audio_diagnostics() -> Dict[str, Any]:
     resolved_in_idx = audio_devices.resolve(cfg_input, "input")
     resolved_out_idx = audio_devices.resolve(cfg_output, "output")
 
-    in_dev_info = all_devs[resolved_in_idx] if resolved_in_idx is not None and 0 <= resolved_in_idx < len(all_devs) else None
-    out_dev_info = all_devs[resolved_out_idx] if resolved_out_idx is not None and 0 <= resolved_out_idx < len(all_devs) else None
+    in_dev_info = (
+        all_devs[resolved_in_idx] if resolved_in_idx is not None and 0 <= resolved_in_idx < len(all_devs) else None
+    )
+    out_dev_info = (
+        all_devs[resolved_out_idx] if resolved_out_idx is not None and 0 <= resolved_out_idx < len(all_devs) else None
+    )
 
     # Query CoreAudio endpoints via pycaw where available
     core_audio_endpoints = []
@@ -41,18 +45,21 @@ def get_audio_diagnostics() -> Dict[str, Any]:
     active_out_endpoint_id = None
     try:
         from pycaw.pycaw import AudioUtilities
+
         for d in AudioUtilities.GetAllDevices():
             try:
                 state_str = str(getattr(d, "state", "Unknown"))
                 name = getattr(d, "FriendlyName", "Unknown")
                 dev_id = getattr(d, "id", "Unknown")
-                is_active = ("Active" in state_str)
-                core_audio_endpoints.append({
-                    "name": name,
-                    "id": dev_id,
-                    "state": state_str,
-                    "is_active": is_active,
-                })
+                is_active = "Active" in state_str
+                core_audio_endpoints.append(
+                    {
+                        "name": name,
+                        "id": dev_id,
+                        "state": state_str,
+                        "is_active": is_active,
+                    }
+                )
                 # Check if matches configured names
                 if cfg_output and cfg_output.lower() in name.lower() and is_active:
                     active_out_endpoint_id = dev_id
@@ -177,4 +184,3 @@ def generate_diagnostic_report() -> str:
 
 if __name__ == "__main__":
     print(generate_diagnostic_report())
-

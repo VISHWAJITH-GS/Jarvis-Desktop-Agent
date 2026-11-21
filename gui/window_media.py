@@ -14,7 +14,36 @@ import threading
 import time
 from pathlib import Path
 from gui.base import *
-from gui.base import _WIN_HIDE, _base_dir, BASE_DIR, CONFIG_DIR, API_FILE, _read_full_config, _DEFAULT_W, _DEFAULT_H, _MIN_W, _MIN_H, _LEFT_W, _RIGHT_W, _OS, _ResizeEdge, _detect_resize_edge, _cursor_for_edge, _FramelessWindowResizeMixin, _SysMetrics, _metrics, _nvml_gpu_windows, _load_app_fonts, keena_font, HAVE_VIDEO, HoloAvatar, get_uicon, QGraphicsVideoItem, QAudioOutput, QMediaPlayer
+from gui.base import (
+    _WIN_HIDE,
+    _base_dir,
+    BASE_DIR,
+    CONFIG_DIR,
+    API_FILE,
+    _read_full_config,
+    _DEFAULT_W,
+    _DEFAULT_H,
+    _MIN_W,
+    _MIN_H,
+    _LEFT_W,
+    _RIGHT_W,
+    _OS,
+    _ResizeEdge,
+    _detect_resize_edge,
+    _cursor_for_edge,
+    _FramelessWindowResizeMixin,
+    _SysMetrics,
+    _metrics,
+    _nvml_gpu_windows,
+    _load_app_fonts,
+    keena_font,
+    HAVE_VIDEO,
+    HoloAvatar,
+    get_uicon,
+    QGraphicsVideoItem,
+    QAudioOutput,
+    QMediaPlayer,
+)
 from gui.theme import *
 from gui.theme import _RESIZE_MARGIN, _NO_SCROLLBAR_STYLE, _HUE_LINKED, _PALETTE_DEFAULTS, _lerp_color
 
@@ -27,12 +56,14 @@ from gui.docks import *
 from gui.display_windows import *
 from gui.telemetry_and_displays import *
 
+
 class WindowMediaMixin:
     """Video playback and desktop shortcut management for MainWindow."""
-    def _on_video_open(self, source: str, title: str, muted: bool,
-                       audio_source: str = "") -> None:
+
+    def _on_video_open(self, source: str, title: str, muted: bool, audio_source: str = "") -> None:
         try:
             import os, webbrowser
+
             s = str(source or "")
             if os.path.exists(s):
                 os.startfile(s)
@@ -52,8 +83,7 @@ class WindowMediaMixin:
             if native.isEmpty():
                 return
             view = self._video_widget.viewport().size()
-            scale = min(view.width() / native.width(),
-                        view.height() / native.height())
+            scale = min(view.width() / native.width(), view.height() / native.height())
             w, h = native.width() * scale, native.height() * scale
             self._video_item.setSize(QSizeF(w, h))
             self._video_scene.setSceneRect(0, 0, w, h)
@@ -71,7 +101,7 @@ class WindowMediaMixin:
         self._video_split = False
         self._video_on = False
         self._hud_cam_stack.setCurrentIndex(0)
-        self._sync_mic_for_video()      # gives the microphone back
+        self._sync_mic_for_video()  # gives the microphone back
 
     def _set_video_muted(self, muted: bool) -> None:
         """Silence whichever output is carrying the sound for this video."""
@@ -103,12 +133,12 @@ class WindowMediaMixin:
         muted, and pressing the mute key during a video hands the decision back
         to them for good.
         """
-        sound_on = bool(self._video_on and self._video_sound_out
-                        and not self._video_sound_out.isMuted())
+        sound_on = bool(self._video_on and self._video_sound_out and not self._video_sound_out.isMuted())
         if sound_on and not self._muted:
             self._video_auto_muted = True
-            self._set_muted(True, "The video's sound is on — silence it, close "
-                                  "it, or press F4 to talk. Typing still works.")
+            self._set_muted(
+                True, "The video's sound is on — silence it, close it, or press F4 to talk. Typing still works."
+            )
         elif not sound_on and self._video_auto_muted:
             self._video_auto_muted = False
             self._set_muted(False, "The video is quiet again.")
@@ -176,31 +206,29 @@ class WindowMediaMixin:
         except ImportError:
             return False
 
-        CYAN   = (0, 212, 255)
-        DIM    = (0, 100, 140)
-        DARK   = (0, 6, 10)
-        GLOW   = (0, 160, 200)
-        WHITE  = (220, 240, 255)
+        CYAN = (0, 212, 255)
+        DIM = (0, 100, 140)
+        DARK = (0, 6, 10)
+        GLOW = (0, 160, 200)
+        WHITE = (220, 240, 255)
 
         def _render(sz: int) -> PIL.Image.Image:
-            S  = sz * 4                     # draw at 4× then downscale
+            S = sz * 4  # draw at 4× then downscale
             img = PIL.Image.new("RGBA", (S, S), (0, 0, 0, 0))
-            d   = PIL.ImageDraw.Draw(img)
+            d = PIL.ImageDraw.Draw(img)
             cx = cy = S // 2
 
             # ── filled background circle ──────────────────────────────────
             R = S // 2 - 2
-            d.ellipse([cx-R, cy-R, cx+R, cy+R], fill=(*DARK, 255))
+            d.ellipse([cx - R, cy - R, cx + R, cy + R], fill=(*DARK, 255))
 
             # ── outer border ring ─────────────────────────────────────────
             lw = max(2, S // 40)
-            d.ellipse([cx-R, cy-R, cx+R, cy+R],
-                      outline=(*CYAN, 220), width=lw)
+            d.ellipse([cx - R, cy - R, cx + R, cy + R], outline=(*CYAN, 220), width=lw)
 
             # ── mid decorative ring ───────────────────────────────────────
             R2 = int(R * 0.72)
-            d.ellipse([cx-R2, cy-R2, cx+R2, cy+R2],
-                      outline=(*DIM, 180), width=max(1, lw // 2))
+            d.ellipse([cx - R2, cy - R2, cx + R2, cy + R2], outline=(*DIM, 180), width=max(1, lw // 2))
 
             # ── 6 radial spokes (hex bolt) ────────────────────────────────
             R_inner = int(R * 0.30)
@@ -218,37 +246,34 @@ class WindowMediaMixin:
             for i in range(6):
                 angle = math.radians(i * 60)
                 for dr in range(lw * 2):
-                    rx = (R - lw - dr)
+                    rx = R - lw - dr
                     d.point(
-                        [cx + int(rx * math.cos(angle)),
-                         cy + int(rx * math.sin(angle))],
+                        [cx + int(rx * math.cos(angle)), cy + int(rx * math.sin(angle))],
                         fill=(*WHITE, 220),
                     )
 
             # ── inner glowing ring ────────────────────────────────────────
             Ri = int(R * 0.26)
-            d.ellipse([cx-Ri, cy-Ri, cx+Ri, cy+Ri],
-                      outline=(*CYAN, 255), width=max(2, lw))
+            d.ellipse([cx - Ri, cy - Ri, cx + Ri, cy + Ri], outline=(*CYAN, 255), width=max(2, lw))
 
             # ── bright glow soft blur applied before core ─────────────────
             # (draw a slightly larger cyan circle on a separate layer)
             glow_layer = PIL.Image.new("RGBA", (S, S), (0, 0, 0, 0))
             gd = PIL.ImageDraw.Draw(glow_layer)
             Rc = int(R * 0.13)
-            gd.ellipse([cx-Rc*2, cy-Rc*2, cx+Rc*2, cy+Rc*2],
-                       fill=(*CYAN, 110))
+            gd.ellipse([cx - Rc * 2, cy - Rc * 2, cx + Rc * 2, cy + Rc * 2], fill=(*CYAN, 110))
             glow_layer = glow_layer.filter(PIL.ImageFilter.GaussianBlur(S // 14))
             img = PIL.Image.alpha_composite(img, glow_layer)
-            d   = PIL.ImageDraw.Draw(img)
+            d = PIL.ImageDraw.Draw(img)
 
             # ── core dot ──────────────────────────────────────────────────
-            d.ellipse([cx-Rc, cy-Rc, cx+Rc, cy+Rc], fill=(*WHITE, 255))
+            d.ellipse([cx - Rc, cy - Rc, cx + Rc, cy + Rc], fill=(*WHITE, 255))
 
             # ── downscale to target size ──────────────────────────────────
             return img.resize((sz, sz), PIL.Image.LANCZOS)
 
         try:
-            sizes  = [256, 128, 64, 48, 32, 16]
+            sizes = [256, 128, 64, 48, 32, 16]
             frames = [_render(s) for s in sizes]
             frames[0].save(
                 out_path,
@@ -262,8 +287,7 @@ class WindowMediaMixin:
             return False
 
     @staticmethod
-    def _create_lnk_windows(lnk: str, target: str, args: str,
-                             work_dir: str, icon_loc: str) -> None:
+    def _create_lnk_windows(lnk: str, target: str, args: str, work_dir: str, icon_loc: str) -> None:
         """
         Create a Windows .lnk shortcut WITHOUT launching PowerShell or cmd.
         Tries win32com (pywin32) first; falls back to wscript.exe + VBScript.
@@ -271,14 +295,15 @@ class WindowMediaMixin:
         """
         # ── Option 1: pywin32 (pure Python COM, zero subprocess) ──────────
         try:
-            from win32com.client import Dispatch   # type: ignore
+            from win32com.client import Dispatch  # type: ignore
+
             sh = Dispatch("WScript.Shell")
             sc = sh.CreateShortCut(lnk)
-            sc.TargetPath       = target
-            sc.Arguments        = f'"{args}"'
+            sc.TargetPath = target
+            sc.Arguments = f'"{args}"'
             sc.WorkingDirectory = work_dir
-            sc.Description      = "J.A.R.V.I.S AI Assistant"
-            sc.IconLocation     = icon_loc
+            sc.Description = "J.A.R.V.I.S AI Assistant"
+            sc.IconLocation = icon_loc
             sc.save()
             return
         except ImportError:
@@ -286,17 +311,20 @@ class WindowMediaMixin:
 
         # ── Option 2: wscript.exe + VBScript (always available on Windows,
         #    GUI-mode executable — never opens a console window) ────────────
-        vbs = "\n".join([
-            'Set ws = CreateObject("WScript.Shell")',
-            f'Set sc = ws.CreateShortcut("{lnk}")',
-            f'sc.TargetPath = "{target}"',
-            f'sc.Arguments = Chr(34) & "{args}" & Chr(34)',
-            f'sc.WorkingDirectory = "{work_dir}"',
-            'sc.Description = "J.A.R.V.I.S AI Assistant"',
-            f'sc.IconLocation = "{icon_loc}"',
-            'sc.Save',
-        ])
+        vbs = "\n".join(
+            [
+                'Set ws = CreateObject("WScript.Shell")',
+                f'Set sc = ws.CreateShortcut("{lnk}")',
+                f'sc.TargetPath = "{target}"',
+                f'sc.Arguments = Chr(34) & "{args}" & Chr(34)',
+                f'sc.WorkingDirectory = "{work_dir}"',
+                'sc.Description = "J.A.R.V.I.S AI Assistant"',
+                f'sc.IconLocation = "{icon_loc}"',
+                "sc.Save",
+            ]
+        )
         import tempfile
+
         fd, tmp = tempfile.mkstemp(suffix=".vbs")
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
@@ -334,18 +362,19 @@ class WindowMediaMixin:
                 from ctypes import wintypes
 
                 class _GUID(ctypes.Structure):
-                    _fields_ = [("Data1", wintypes.DWORD),
-                                ("Data2", wintypes.WORD),
-                                ("Data3", wintypes.WORD),
-                                ("Data4", ctypes.c_ubyte * 8)]
+                    _fields_ = [
+                        ("Data1", wintypes.DWORD),
+                        ("Data2", wintypes.WORD),
+                        ("Data3", wintypes.WORD),
+                        ("Data4", ctypes.c_ubyte * 8),
+                    ]
 
                 # FOLDERID_Desktop {B4BFCC3A-DB2C-424C-B029-7FE99A87C641}
-                fid = _GUID(0xB4BFCC3A, 0xDB2C, 0x424C,
-                            (ctypes.c_ubyte * 8)(0xB0, 0x29, 0x7F, 0xE9,
-                                                 0x9A, 0x87, 0xC6, 0x41))
+                fid = _GUID(
+                    0xB4BFCC3A, 0xDB2C, 0x424C, (ctypes.c_ubyte * 8)(0xB0, 0x29, 0x7F, 0xE9, 0x9A, 0x87, 0xC6, 0x41)
+                )
                 buf = ctypes.c_wchar_p()
-                if ctypes.windll.shell32.SHGetKnownFolderPath(
-                        ctypes.byref(fid), 0, None, ctypes.byref(buf)) == 0:
+                if ctypes.windll.shell32.SHGetKnownFolderPath(ctypes.byref(fid), 0, None, ctypes.byref(buf)) == 0:
                     p = Path(buf.value)
                     ctypes.windll.ole32.CoTaskMemFree(buf)
                     if p.is_dir():
@@ -356,10 +385,12 @@ class WindowMediaMixin:
             # ── 2) Registry: User Shell Folders (may contain %VARS%) ──────
             try:
                 import winreg
+
                 with winreg.OpenKey(
-                        winreg.HKEY_CURRENT_USER,
-                        r"Software\Microsoft\Windows\CurrentVersion"
-                        r"\Explorer\User Shell Folders") as key:
+                    winreg.HKEY_CURRENT_USER,
+                    r"Software\Microsoft\Windows\CurrentVersion"
+                    r"\Explorer\User Shell Folders",
+                ) as key:
                     val, _t = winreg.QueryValueEx(key, "Desktop")
                 p = Path(os.path.expandvars(val))
                 if p.is_dir():
@@ -370,8 +401,14 @@ class WindowMediaMixin:
         elif _os == "Linux":
             # ── xdg-user-dir honours localized names (~/Masaüstü, …) ──────
             try:
-                out = subprocess.run(["xdg-user-dir", "DESKTOP"],
-                                     capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5)
+                out = subprocess.run(
+                    ["xdg-user-dir", "DESKTOP"],
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=5,
+                )
                 p = Path(out.stdout.strip())
                 if out.stdout.strip() and p != home and p.is_dir():
                     return p
@@ -399,8 +436,9 @@ class WindowMediaMixin:
         Never opens a terminal, console, or PowerShell window on any platform.
         """
         import stat as _stat
-        script  = BASE_DIR / "main.py"
-        python  = Path(sys.executable)
+
+        script = BASE_DIR / "main.py"
+        python = Path(sys.executable)
         desktop = self._get_desktop_dir()
 
         # Arc-reactor icon (.ico — also exported as .png for Linux/macOS)
@@ -413,16 +451,15 @@ class WindowMediaMixin:
 
             # ── Windows ───────────────────────────────────────────────────────
             if _os == "Windows":
-                pythonw  = python.parent / "pythonw.exe"
-                target   = str(pythonw if pythonw.exists() else python)
-                lnk      = str(desktop / "J.A.R.V.I.S.lnk")
+                pythonw = python.parent / "pythonw.exe"
+                target = str(pythonw if pythonw.exists() else python)
+                lnk = str(desktop / "J.A.R.V.I.S.lnk")
                 icon_loc = str(ico_path) if ico_path.exists() else f"{target},0"
-                self._create_lnk_windows(lnk, target, str(script),
-                                         str(script.parent), icon_loc)
+                self._create_lnk_windows(lnk, target, str(script), str(script.parent), icon_loc)
 
             # ── macOS — proper .app bundle (no Terminal window) ───────────────
             elif _os == "Darwin":
-                app     = desktop / "J.A.R.V.I.S.app"
+                app = desktop / "J.A.R.V.I.S.app"
                 mac_dir = app / "Contents" / "MacOS"
                 res_dir = app / "Contents" / "Resources"
                 mac_dir.mkdir(parents=True, exist_ok=True)
@@ -431,13 +468,8 @@ class WindowMediaMixin:
                 # Launcher executable (bash — runs as background process,
                 # macOS does NOT open Terminal for executables inside .app bundles)
                 launcher = mac_dir / "JARVIS"
-                launcher.write_text(
-                    "#!/usr/bin/env bash\n"
-                    f'cd "{script.parent}"\n'
-                    f'exec "{python}" "{script}"\n'
-                )
-                launcher.chmod(launcher.stat().st_mode
-                               | _stat.S_IEXEC | _stat.S_IXGRP | _stat.S_IXOTH)
+                launcher.write_text(f'#!/usr/bin/env bash\ncd "{script.parent}"\nexec "{python}" "{script}"\n')
+                launcher.chmod(launcher.stat().st_mode | _stat.S_IEXEC | _stat.S_IXGRP | _stat.S_IXOTH)
 
                 # Minimal Info.plist (required for .app recognition)
                 (app / "Contents" / "Info.plist").write_text(
@@ -445,18 +477,19 @@ class WindowMediaMixin:
                     '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" '
                     '"http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
                     '<plist version="1.0"><dict>\n'
-                    '  <key>CFBundleExecutable</key><string>JARVIS</string>\n'
-                    '  <key>CFBundleIdentifier</key>'
-                    '<string>com.jarvis.assistant</string>\n'
-                    '  <key>CFBundleName</key><string>J.A.R.V.I.S</string>\n'
-                    '  <key>CFBundlePackageType</key><string>APPL</string>\n'
-                    '  <key>CFBundleVersion</key><string>1.0</string>\n'
-                    '</dict></plist>\n'
+                    "  <key>CFBundleExecutable</key><string>JARVIS</string>\n"
+                    "  <key>CFBundleIdentifier</key>"
+                    "<string>com.jarvis.assistant</string>\n"
+                    "  <key>CFBundleName</key><string>J.A.R.V.I.S</string>\n"
+                    "  <key>CFBundlePackageType</key><string>APPL</string>\n"
+                    "  <key>CFBundleVersion</key><string>1.0</string>\n"
+                    "</dict></plist>\n"
                 )
 
                 # Optional: copy icon as .icns (skip silently if Pillow is missing)
                 try:
                     import PIL.Image
+
                     icns = res_dir / "AppIcon.icns"
                     PIL.Image.open(ico_path).save(icns, format="ICNS")
                     # Inject icon reference into plist
@@ -464,9 +497,8 @@ class WindowMediaMixin:
                     txt = plist.read_text()
                     plist.write_text(
                         txt.replace(
-                            '</dict></plist>',
-                            '  <key>CFBundleIconFile</key>'
-                            '<string>AppIcon</string>\n</dict></plist>\n',
+                            "</dict></plist>",
+                            "  <key>CFBundleIconFile</key><string>AppIcon</string>\n</dict></plist>\n",
                         )
                     )
                 except Exception:
@@ -479,9 +511,8 @@ class WindowMediaMixin:
                 if not png_path.exists() and ico_path.exists():
                     try:
                         import PIL.Image
-                        PIL.Image.open(ico_path).resize(
-                            (256, 256), PIL.Image.LANCZOS
-                        ).save(png_path, format="PNG")
+
+                        PIL.Image.open(ico_path).resize((256, 256), PIL.Image.LANCZOS).save(png_path, format="PNG")
                     except Exception:
                         png_path = ico_path  # fallback to .ico
 
@@ -494,12 +525,10 @@ class WindowMediaMixin:
                     f"Path={script.parent}\n"
                     "Type=Application\n"
                     "Terminal=false\n"
-                    "Categories=Utility;\n"
-                    + icon_line
+                    "Categories=Utility;\n" + icon_line
                 )
                 desk.chmod(desk.stat().st_mode | 0o755)
 
             self._log.append_log("SYS: Desktop shortcut created.")
         except Exception as e:
             self._log.append_log(f"ERR: Shortcut failed — {e}")
-

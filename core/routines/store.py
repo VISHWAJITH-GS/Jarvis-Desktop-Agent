@@ -5,6 +5,7 @@ Supports schedules: once, daily, weekly, monthly, every N minutes, at startup, a
 Actions: speak, tool, task.
 Tracks exact-time flags for quiet hours exemption.
 """
+
 from __future__ import annotations
 
 from contextlib import contextmanager
@@ -119,7 +120,8 @@ class RoutineStore:
         now_str = datetime.now().isoformat()
         r.updated_at = now_str
         with self._lock, self._connection() as conn:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT INTO routines (
                     id, title, schedule_type, schedule_config, action_type,
                     action_config, is_exact_time, state, next_run_at, last_run_at,
@@ -136,20 +138,22 @@ class RoutineStore:
                     next_run_at=excluded.next_run_at,
                     last_run_at=excluded.last_run_at,
                     updated_at=excluded.updated_at;
-            """, (
-                r.id,
-                r.title,
-                r.schedule_type,
-                json.dumps(r.schedule_config),
-                r.action_type,
-                json.dumps(r.action_config),
-                1 if r.is_exact_time else 0,
-                r.state,
-                r.next_run_at,
-                r.last_run_at,
-                r.created_at,
-                r.updated_at,
-            ))
+            """,
+                (
+                    r.id,
+                    r.title,
+                    r.schedule_type,
+                    json.dumps(r.schedule_config),
+                    r.action_type,
+                    json.dumps(r.action_config),
+                    1 if r.is_exact_time else 0,
+                    r.state,
+                    r.next_run_at,
+                    r.last_run_at,
+                    r.created_at,
+                    r.updated_at,
+                ),
+            )
 
     def get_routine(self, routine_id: str) -> Optional[RoutineRecord]:
         """Fetch routine by ID."""
@@ -182,18 +186,23 @@ class RoutineStore:
             )
             return [self._row_to_record(r) for r in cur.fetchall()]
 
-    def update_run_status(self, routine_id: str, last_run_at: str, next_run_at: Optional[str], state: str = "active") -> bool:
+    def update_run_status(
+        self, routine_id: str, last_run_at: str, next_run_at: Optional[str], state: str = "active"
+    ) -> bool:
         """Update last run timestamp and set the next scheduled run."""
         now_str = datetime.now().isoformat()
         with self._lock, self._connection() as conn:
-            cur = conn.execute("""
+            cur = conn.execute(
+                """
                 UPDATE routines SET
                     last_run_at = ?,
                     next_run_at = ?,
                     state = ?,
                     updated_at = ?
                 WHERE id = ?;
-            """, (last_run_at, next_run_at, state, now_str, routine_id))
+            """,
+                (last_run_at, next_run_at, state, now_str, routine_id),
+            )
             return cur.rowcount > 0
 
     def delete_routine(self, routine_id: str) -> bool:

@@ -20,10 +20,18 @@ class TestVolumeControl(unittest.TestCase):
         self.assertIn("status=done", res_high)
 
     def test_volume_up_down_actions(self):
-        with patch("actions.windows_control.get_volume", return_value=40), \
-             patch("actions.windows_control.set_volume") as mock_set:
-            mock_set.return_value = {"success": True, "action": "set_volume", "volume": 50, "verified": True, "message": "Volume set to 50%."}
-            
+        with (
+            patch("actions.windows_control.get_volume", return_value=40),
+            patch("actions.windows_control.set_volume") as mock_set,
+        ):
+            mock_set.return_value = {
+                "success": True,
+                "action": "set_volume",
+                "volume": 50,
+                "verified": True,
+                "message": "Volume set to 50%.",
+            }
+
             # volume_up defaults to +10
             wc.windows_control({"action": "volume_up"})
             mock_set.assert_called_with(50)
@@ -49,10 +57,12 @@ class TestVolumeControl(unittest.TestCase):
 class TestConfirmationWindowState(unittest.TestCase):
     def setUp(self):
         from PyQt6.QtWidgets import QApplication
+
         self.app = QApplication.instance() or QApplication(sys.argv)
 
     def test_confirmation_unminimizes_and_restores(self):
         from ui import MainWindow
+
         win = MainWindow("assets/face.gif")
 
         # Scenario 1: Window was minimized to taskbar
@@ -75,7 +85,7 @@ class TestConfirmationWindowState(unittest.TestCase):
         win._is_minimized_top = False
         win._show_confirm_banner("Permission Needed", "Connect Bluetooth device?")
         self.assertTrue(win.isMaximized(), "Open window should be displayed in maximized way")
-        
+
         # When hidden, it restores
         win._hide_confirm_banner()
         self.assertFalse(win.isMaximized(), "Should restore back to normal once confirmed/cancelled")

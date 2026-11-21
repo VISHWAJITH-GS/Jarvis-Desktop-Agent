@@ -16,10 +16,11 @@ class TestDevAgentVSCode(unittest.TestCase):
         mock_proc = MagicMock()
         mock_proc.poll.return_value = None  # process is running happily
 
-        with patch("shutil.which", return_value="C:\\Program Files\\Microsoft VS Code\\bin\\code.cmd") as mock_which, \
-             patch("subprocess.Popen", return_value=mock_proc) as mock_popen, \
-             patch("time.sleep"):
-
+        with (
+            patch("shutil.which", return_value="C:\\Program Files\\Microsoft VS Code\\bin\\code.cmd") as mock_which,
+            patch("subprocess.Popen", return_value=mock_proc) as mock_popen,
+            patch("time.sleep"),
+        ):
             test_dir = Path("D:/test_project")
             success = dev_agent._open_vscode(test_dir)
 

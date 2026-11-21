@@ -1,9 +1,11 @@
 """
 scripts/split_main.py — Modularize main.py into core/ modules.
 """
+
 from __future__ import annotations
 import os
 import sys
+
 
 def main():
     with open("main.py", "r", encoding="utf-8") as f:
@@ -195,6 +197,7 @@ def _keep_context_of(exc: BaseException) -> bool:
         f.write(runtime_env_content)
 
     print("Wrote core/runtime_env.py")
+
 
 if __name__ == "__main__":
     main()

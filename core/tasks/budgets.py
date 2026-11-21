@@ -5,6 +5,7 @@ Design reference: Mark LVII (CC BY-NC 4.0).
 Enforces hard bounds on background task duration and reasoning iterations,
 triggering final report synthesis when budgets expire.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass

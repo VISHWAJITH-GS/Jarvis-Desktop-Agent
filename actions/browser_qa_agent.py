@@ -16,6 +16,7 @@ Performs complete autonomous browser-based testing of local or remote web applic
   5. Comprehensive Reporting:
      - Saves structured JSON and styled HTML reports with screenshots in `reports/`.
 """
+
 from __future__ import annotations
 
 import datetime
@@ -39,6 +40,7 @@ logger = logging.getLogger(__name__)
 
 try:
     from memory.config_manager import get_user_data_dir
+
     REPORTS_DIR = get_user_data_dir() / "reports"
 except Exception:
     REPORTS_DIR = Path.home() / ".jarvis" / "reports"
@@ -135,12 +137,12 @@ class BrowserQAAgent:
 Analyze the following webpage structure and generate a comprehensive automated test plan.
 
 WEBSITE URL: {url}
-PAGE TITLE: {dom_info.get('title', '')}
-DISCOVERED HEADINGS: {json.dumps(dom_info.get('headings', [])[:5])}
-DISCOVERED BUTTONS: {json.dumps(dom_info.get('buttons', [])[:10])}
-DISCOVERED INPUTS: {json.dumps(dom_info.get('inputs', [])[:10])}
-DISCOVERED LINKS: {json.dumps(dom_info.get('links', [])[:10])}
-DISCOVERED FORMS: {json.dumps(dom_info.get('forms', [])[:5])}
+PAGE TITLE: {dom_info.get("title", "")}
+DISCOVERED HEADINGS: {json.dumps(dom_info.get("headings", [])[:5])}
+DISCOVERED BUTTONS: {json.dumps(dom_info.get("buttons", [])[:10])}
+DISCOVERED INPUTS: {json.dumps(dom_info.get("inputs", [])[:10])}
+DISCOVERED LINKS: {json.dumps(dom_info.get("links", [])[:10])}
+DISCOVERED FORMS: {json.dumps(dom_info.get("forms", [])[:5])}
 
 INSTRUCTIONS:
 1. Formulate 2 to 4 essential test scenarios (e.g. Navigation check, Form interaction, Button click, Search or input verification).
@@ -181,21 +183,21 @@ INSTRUCTIONS:
             {
                 "test_name": "Page Structure & Title Verification",
                 "description": "Verifies that the page loads with a valid title and interactive elements.",
-                "steps": [
-                    {"action": "assert", "expected": dom_info.get("title", "") or "body"}
-                ]
+                "steps": [{"action": "assert", "expected": dom_info.get("title", "") or "body"}],
             }
         ]
         if dom_info.get("buttons"):
             b_name = dom_info["buttons"][0].get("text") or "button"
-            fallback.append({
-                "test_name": f"Button Interaction Check ({b_name})",
-                "description": f"Verifies clicking the primary '{b_name}' button.",
-                "steps": [
-                    {"action": "click", "name": b_name, "role": "button"},
-                    {"action": "assert", "expected": "body"}
-                ]
-            })
+            fallback.append(
+                {
+                    "test_name": f"Button Interaction Check ({b_name})",
+                    "description": f"Verifies clicking the primary '{b_name}' button.",
+                    "steps": [
+                        {"action": "click", "name": b_name, "role": "button"},
+                        {"action": "assert", "expected": "body"},
+                    ],
+                }
+            )
         return fallback
 
     def execute_test_suite(
@@ -298,7 +300,9 @@ INSTRUCTIONS:
                         label = step.get("label") or step.get("name") or step.get("target")
                         placeholder = step.get("placeholder")
                         selector = step.get("selector")
-                        res = self.browser_manager.fill(value=val, label=label, placeholder=placeholder, selector=selector)
+                        res = self.browser_manager.fill(
+                            value=val, label=label, placeholder=placeholder, selector=selector
+                        )
                         if not res.success:
                             passed = False
                             err_msg = res.error or res.message
@@ -388,7 +392,9 @@ INSTRUCTIONS:
         report_html_file.write_text(html_content, encoding="utf-8")
 
         if player and hasattr(player, "write_log"):
-            player.write_log(f"📊 [QA AGENT] QA complete! Passed: {passed_count}/{len(test_results)}. Report: {report_html_file.name}")
+            player.write_log(
+                f"📊 [QA AGENT] QA complete! Passed: {passed_count}/{len(test_results)}. Report: {report_html_file.name}"
+            )
 
         return qa_rep
 
@@ -401,7 +407,11 @@ INSTRUCTIONS:
                 else '<span style="color:#ef4444;font-weight:bold;">FAIL</span>'
             )
             err_cell = f"<pre style='color:#ef4444;margin:0;'>{r.error}</pre>" if r.error else "None"
-            img_cell = f"<a href='{os.path.basename(r.screenshot_path)}' target='_blank'>Screenshot</a>" if r.screenshot_path else "None"
+            img_cell = (
+                f"<a href='{os.path.basename(r.screenshot_path)}' target='_blank'>Screenshot</a>"
+                if r.screenshot_path
+                else "None"
+            )
             rows.append(
                 f"<tr><td>{r.test_name}</td><td>{status_badge}</td><td>{r.steps_executed}</td><td>{r.duration_ms:.0f}ms</td><td>{err_cell}</td><td>{img_cell}</td></tr>"
             )
@@ -443,7 +453,7 @@ INSTRUCTIONS:
         <tr><th>Test Scenario</th><th>Status</th><th>Steps</th><th>Duration</th><th>Error</th><th>Screenshot</th></tr>
       </thead>
       <tbody>
-        {''.join(rows)}
+        {"".join(rows)}
       </tbody>
     </table>
   </div>

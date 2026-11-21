@@ -22,6 +22,7 @@ WHERE THE SETTINGS LIVE
     look. `memory/config_manager.py` owns the reading and writing; this module
     only shapes what goes in.
 """
+
 from __future__ import annotations
 
 import importlib
@@ -39,9 +40,9 @@ _MODULES: dict[str, tuple[str, ...]] = {
     "engine": ("engine_pipeline",),
 }
 
-_declarations: dict[str, dict] = {}     # id -> PROVIDER, for modules imported so far
-_instances: dict[str, Any] = {}         # id -> built provider, keyed by config
-_failed: dict[str, str] = {}            # module name -> why it would not import
+_declarations: dict[str, dict] = {}  # id -> PROVIDER, for modules imported so far
+_instances: dict[str, Any] = {}  # id -> built provider, keyed by config
+_failed: dict[str, str] = {}  # module name -> why it would not import
 
 
 def _load(module_name: str) -> Optional[dict]:
@@ -73,18 +74,16 @@ def discover(kind: str = "") -> list[dict]:
     reason the wake-word check was moved off the UI thread: a drawer that opens
     in a measured 2.1 seconds is a drawer people think is broken.
     """
-    names = (_MODULES.get(kind, ()) if kind
-             else tuple(n for group in _MODULES.values() for n in group))
+    names = _MODULES.get(kind, ()) if kind else tuple(n for group in _MODULES.values() for n in group)
     out = []
     for n in names:
-        found = next((d for d in _declarations.values() if d.get("_module") == n),
-                     None)
+        found = next((d for d in _declarations.values() if d.get("_module") == n), None)
         out.append(found or _load(n))
     return [d for d in out if d]
 
 
 def split_id(provider_id: str) -> tuple[str, str]:
-    """"openai_compat@minimax" -> ("openai_compat", "minimax").
+    """ "openai_compat@minimax" -> ("openai_compat", "minimax").
 
     The part after "@" names one service in the provider's catalog, which has
     settings of its own — see config_manager._upgrade_ids. An id without one is
@@ -185,14 +184,15 @@ def missing_fields(provider_id: str, cfg: dict) -> list[str]:
     decl = get_declaration(provider_id)
     if decl is None:
         return []
-    out = [f.label for f in decl.get("needs", ())
-           if isinstance(f, Field) and f.required
-           and not str(cfg.get(f.key, "")).strip()]
+    out = [
+        f.label
+        for f in decl.get("needs", ())
+        if isinstance(f, Field) and f.required and not str(cfg.get(f.key, "")).strip()
+    ]
     # The key is optional for the provider — local servers take none — and is
     # not optional for a hosted service, which refuses every request without
     # one. Reporting it here keeps a keyless MiniMax off the ladder instead of
     # spending a round trip on a 401 each time.
-    if (catalog_entry(provider_id).get("local") is False
-            and not str(cfg.get("api_key", "")).strip()):
+    if catalog_entry(provider_id).get("local") is False and not str(cfg.get("api_key", "")).strip():
         out.append("API key")
     return out

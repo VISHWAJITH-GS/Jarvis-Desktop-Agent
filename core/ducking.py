@@ -22,12 +22,12 @@ from typing import Dict, List, Optional, Set
 logger = logging.getLogger(__name__)
 
 # Constants
-DEFAULT_DUCK_RATIO = 0.25      # 25% of current application volume
-FADE_DOWN_SECONDS = 0.15       # 150 ms
-FADE_UP_SECONDS = 0.40         # 400 ms
+DEFAULT_DUCK_RATIO = 0.25  # 25% of current application volume
+FADE_DOWN_SECONDS = 0.15  # 150 ms
+FADE_UP_SECONDS = 0.40  # 400 ms
 DEBOUNCE_PAUSE_SECONDS = 0.60  # 600 ms hold across inter-sentence pauses
-SPEECH_MIN_DURATION = 0.10     # 100 ms minimum speech before engaging duck
-MAX_DUCK_DURATION = 60.0       # 60 second watchdog timeout
+SPEECH_MIN_DURATION = 0.10  # 100 ms minimum speech before engaging duck
+MAX_DUCK_DURATION = 60.0  # 60 second watchdog timeout
 
 _STATE_DIR = Path.home() / ".jarvis"
 _STATE_FILE = _STATE_DIR / "ducking_state.json"
@@ -487,7 +487,10 @@ class AudioDucker:
 
                         # Safety check: if user adjusted volume during duck, do not overwrite!
                         if abs(cur_vol - ducked_vol) > 0.06:
-                            logger.debug("[AudioDucker] User manually adjusted volume for %s; skipping restore.", info.get("name"))
+                            logger.debug(
+                                "[AudioDucker] User manually adjusted volume for %s; skipping restore.",
+                                info.get("name"),
+                            )
                             continue
 
                         fade_targets.append((sav, cur_vol, orig_vol))
@@ -560,6 +563,7 @@ class AudioDucker:
         pids = {os.getpid()}
         try:
             import psutil
+
             parent = psutil.Process(os.getpid())
             for child in parent.children(recursive=True):
                 pids.add(child.pid)
@@ -590,6 +594,7 @@ class AudioDucker:
     def _init_com(self) -> None:
         try:
             import comtypes
+
             comtypes.CoInitialize()
         except Exception:
             pass
@@ -597,6 +602,7 @@ class AudioDucker:
     def _uninit_com(self) -> None:
         try:
             import comtypes
+
             comtypes.CoUninitialize()
         except Exception:
             pass

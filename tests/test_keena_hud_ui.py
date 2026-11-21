@@ -1,4 +1,5 @@
 import pytest
+
 pytestmark = pytest.mark.requires_hardware
 
 import sys
@@ -12,6 +13,7 @@ import ui
 from ui import JarvisUI, MainWindow, HudCanvas, HudConversationWidget, BottomChatDock, LeftSearchDock, C
 
 app = QApplication.instance() or QApplication(sys.argv)
+
 
 class TestKeenaHudTransformation(unittest.TestCase):
     def setUp(self):
@@ -346,6 +348,7 @@ class TestKeenaHudTransformation(unittest.TestCase):
     def test_15_12_hour_format_and_sound_frequency_reaction(self):
         """Verify 12-hour format time and dynamic sound frequency in listening state."""
         import time
+
         # Verify 12-hour time format with AM/PM
         t_str = time.strftime("%I:%M:%S %p")
         self.assertTrue(t_str.endswith("AM") or t_str.endswith("PM"))
@@ -361,12 +364,15 @@ class TestKeenaHudTransformation(unittest.TestCase):
     def test_16_multi_display_window_manager(self):
         """Verify opening, naming, focusing to center, and closing multi-display windows."""
         from actions.display_window import display_window
+
         mock_player = MagicMock()
         mock_player.open_display.side_effect = lambda ctype, src, title: 1 if "image" in ctype else 2
         mock_player.focus_display.return_value = True
 
         # Test show_image in new display with existing local file
-        res1 = display_window({"action": "show_image", "path_or_url": "main.py", "title": "Test Image"}, player=mock_player)
+        res1 = display_window(
+            {"action": "show_image", "path_or_url": "main.py", "title": "Test Image"}, player=mock_player
+        )
         self.assertIn("Display 1", res1)
         mock_player.open_display.assert_called_with("image", "main.py", "Test Image")
 
@@ -554,15 +560,19 @@ class TestKeenaHudTransformation(unittest.TestCase):
             "summary": "New python project 'TOC_Study_Content': 3 files",
             "files": {
                 "content.py": {"action": "create", "what": "Defines variables containing static text", "state": "done"},
-                "file_writer.py": {"action": "create", "what": "Exposes function to format and write content", "state": "done"},
-                "main.py": {"action": "create", "what": "Initializes contents and invokes writer", "state": "writing"}
+                "file_writer.py": {
+                    "action": "create",
+                    "what": "Exposes function to format and write content",
+                    "state": "done",
+                },
+                "main.py": {"action": "create", "what": "Initializes contents and invokes writer", "state": "writing"},
             },
             "steps": [
                 (0.0, "Planning project structure..."),
                 (3.4, "Writing content.py..."),
                 (9.0, "Writing file_writer.py..."),
-                (13.0, "Writing main.py...")
-            ]
+                (13.0, "Writing main.py..."),
+            ],
         }
 
         # Open task progress display via _show_code_job

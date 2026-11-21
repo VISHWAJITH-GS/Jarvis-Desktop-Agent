@@ -1,6 +1,7 @@
 """
 Unit and Integration Tests for Vimium C Browser Navigation & Red UI Theme
 """
+
 import os
 import unittest
 from pathlib import Path
@@ -16,7 +17,6 @@ from actions.browser_control import TOOL as BROWSER_TOOL
 
 
 class TestVimiumCIntegration(unittest.TestCase):
-
     def test_extension_path_discovery(self):
         """Verify Vimium C extension path is discovered and contains manifest.json."""
         ext_path = get_vimium_extension_path()
@@ -88,7 +88,6 @@ class TestVimiumCIntegration(unittest.TestCase):
 
 
 class TestVimiumAsyncController(unittest.IsolatedAsyncioTestCase):
-
     async def test_scroll_keyboard_mappings(self):
         """Verify directional scrolling sends proper Vimium keyboard keys."""
         vc = VimiumCController()

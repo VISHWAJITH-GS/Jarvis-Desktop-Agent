@@ -5,6 +5,7 @@ Design reference: Mark LVII (github.com/FatihMakes/Mark-LVII, CC BY-NC 4.0).
 Provides SQLite-backed atomic persistence, multi-round reasoning, quota recovery,
 budget tracking, human confirmation gating, and prompt injection defense.
 """
+
 from __future__ import annotations
 
 from typing import Optional

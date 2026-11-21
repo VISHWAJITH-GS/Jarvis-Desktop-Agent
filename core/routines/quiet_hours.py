@@ -5,6 +5,7 @@ Rule:
 - Suppresses unprompted speech during quiet hours window (e.g., 22:00 - 07:00).
 - Exact-time reminders (is_exact_time=True) STILL FIRE during quiet hours.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -21,7 +22,7 @@ _CONFIG_KEY = "quiet_hours"
 class QuietHoursConfig:
     enabled: bool = True
     start_time: str = "22:00"  # 10:00 PM
-    end_time: str = "07:00"    # 07:00 AM
+    end_time: str = "07:00"  # 07:00 AM
 
     def parse_time(self, t_str: str) -> dtime:
         parts = t_str.strip().split(":")
@@ -32,6 +33,7 @@ class QuietHoursConfig:
 
 def get_quiet_hours_config() -> QuietHoursConfig:
     from memory.config_manager import CONFIG_FILE
+
     data: dict = {}
     if CONFIG_FILE.exists():
         try:
@@ -48,6 +50,7 @@ def get_quiet_hours_config() -> QuietHoursConfig:
 
 def save_quiet_hours_config(enabled: bool, start_time: str = "22:00", end_time: str = "07:00") -> None:
     from memory.config_manager import CONFIG_FILE, ensure_config_dir
+
     ensure_config_dir()
     data: dict = {}
     if CONFIG_FILE.exists():
@@ -82,7 +85,9 @@ def is_in_quiet_hours(now: Optional[datetime] = None, config: Optional[QuietHour
         return cur_t >= st or cur_t < et
 
 
-def should_suppress_speech(is_exact_time: bool = False, now: Optional[datetime] = None, config: Optional[QuietHoursConfig] = None) -> bool:
+def should_suppress_speech(
+    is_exact_time: bool = False, now: Optional[datetime] = None, config: Optional[QuietHoursConfig] = None
+) -> bool:
     """
     Decide whether speech should be suppressed.
     Exact-time reminders are exempted and still fire.

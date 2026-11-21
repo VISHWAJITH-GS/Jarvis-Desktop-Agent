@@ -12,6 +12,7 @@ Covers:
 8. Feature 8: LeetCode Coding Assistant (Problem Detection, Progressive Hints, Approaches, Debugging, Complexity)
 9. Architecture: Authoritative Execution and Verification Result Contract
 """
+
 from __future__ import annotations
 
 import json
@@ -125,8 +126,10 @@ class TestWhatsAppIntegration(unittest.TestCase):
         self.driver = wa.WhatsAppDriver()
 
     def test_contact_disambiguation_when_multiple_matches(self):
-        with patch.object(self.driver, "open_whatsapp", return_value=True), \
-             patch.object(self.driver, "_find_whatsapp_window", return_value=MagicMock()):
+        with (
+            patch.object(self.driver, "open_whatsapp", return_value=True),
+            patch.object(self.driver, "_find_whatsapp_window", return_value=MagicMock()),
+        ):
             with patch.object(self.driver, "uia") as mock_uia:
                 mock_uia.find_elements.side_effect = [
                     # Search box
@@ -199,8 +202,10 @@ class TestWindowsSystemSettings(unittest.TestCase):
             self.assertIn("Office_5G", res["networks"])
 
     def test_volume_adjustment_and_verification(self):
-        with patch("actions.computer_settings._win_endpoint_volume") as mock_ep, \
-             patch("actions.windows_control.get_volume", return_value=30):
+        with (
+            patch("actions.computer_settings._win_endpoint_volume") as mock_ep,
+            patch("actions.windows_control.get_volume", return_value=30),
+        ):
             mock_endpoint_obj = MagicMock()
             mock_ep.return_value = mock_endpoint_obj
             res = windows_control.set_volume(30)
@@ -235,7 +240,9 @@ class TestApplicationManagement(unittest.TestCase):
 
     def test_distinguish_running_process_from_ready_window(self):
         verifier = action_verifier.get_action_verifier()
-        with patch.object(verifier.display_manager, "get_active_window_info", return_value={"title": "", "process_name": ""}):
+        with patch.object(
+            verifier.display_manager, "get_active_window_info", return_value={"title": "", "process_name": ""}
+        ):
             with patch("psutil.process_iter") as mock_proc:
                 mock_p = MagicMock()
                 mock_p.info = {"name": "notepad.exe", "pid": 1234}
@@ -256,9 +263,11 @@ class TestApplicationManagement(unittest.TestCase):
             self.assertEqual(v_res.contract_status, "SUCCESS")
 
     def test_minimize_and_maximize_window(self):
-        with patch("actions.windows_uia.find_window_by_name") as mock_find, \
-             patch("win32gui.ShowWindow") as mock_show, \
-             patch("win32gui.IsIconic", return_value=True):
+        with (
+            patch("actions.windows_uia.find_window_by_name") as mock_find,
+            patch("win32gui.ShowWindow") as mock_show,
+            patch("win32gui.IsIconic", return_value=True),
+        ):
             mock_win = MagicMock()
             mock_win.handle = 123
             mock_win.window_text.return_value = "Spotify Free"
@@ -312,7 +321,9 @@ class TestWindowsNotificationCenter(unittest.TestCase):
         reader = notification_reader.NotificationReader()
         mock_notifs = [
             notification_reader.DesktopNotification(id="1", app_name="WhatsApp", title="Alice", body="See you at 5"),
-            notification_reader.DesktopNotification(id="2", app_name="Outlook", title="New Email", body="Project meeting"),
+            notification_reader.DesktopNotification(
+                id="2", app_name="Outlook", title="New Email", body="Project meeting"
+            ),
         ]
         with patch.object(reader, "_query_winrt_notifications", return_value=(True, mock_notifs, "")):
             # Filter by WhatsApp
@@ -324,7 +335,9 @@ class TestWindowsNotificationCenter(unittest.TestCase):
     def test_notification_summarization(self):
         reader = notification_reader.NotificationReader()
         mock_notifs = [
-            notification_reader.DesktopNotification(id="1", app_name="Slack", title="Lead Dev", body="Deployment approved"),
+            notification_reader.DesktopNotification(
+                id="1", app_name="Slack", title="Lead Dev", body="Deployment approved"
+            ),
         ]
         with patch.object(reader, "_query_winrt_notifications", return_value=(True, mock_notifs, "")):
             with patch("core.gemini.text", return_value="You have an approved deployment message on Slack."):
@@ -344,7 +357,9 @@ class TestLeetCodeCodingAssistant(unittest.TestCase):
         self.assistant.context.description = "Given an array of integers nums and an integer target, return indices of the two numbers such that they add up to target."
 
         with patch("core.gemini.text") as mock_gemini:
-            mock_gemini.return_value = "Think about using a Hash Map to store previously visited elements and their indices."
+            mock_gemini.return_value = (
+                "Think about using a Hash Map to store previously visited elements and their indices."
+            )
             res1 = self.assistant.get_hint("Two Sum")
             self.assertEqual(res1.status, outcome.STATUS_DONE)
             self.assertEqual(self.assistant.context.hint_level, 1)
@@ -353,7 +368,10 @@ class TestLeetCodeCodingAssistant(unittest.TestCase):
 
     def test_explain_complexity(self):
         self.assistant.context.problem_title = "Two Sum"
-        with patch("core.gemini.text", return_value="Time Complexity: O(n) because we traverse the list containing n elements only once. Space Complexity: O(n) for the hash map."):
+        with patch(
+            "core.gemini.text",
+            return_value="Time Complexity: O(n) because we traverse the list containing n elements only once. Space Complexity: O(n) for the hash map.",
+        ):
             res = self.assistant.explain_complexity()
             self.assertEqual(res.status, outcome.STATUS_DONE)
             self.assertIn("O(n)", res.message)
@@ -361,7 +379,10 @@ class TestLeetCodeCodingAssistant(unittest.TestCase):
     def test_debug_incorrect_solution(self):
         self.assistant.context.problem_title = "Palindrome Number"
         bad_code = "def isPalindrome(x):\n    return str(x) == str(x)"  # deliberate dummy logic
-        with patch("core.gemini.text", return_value="The logic always evaluates to True because str(x) is compared with itself rather than its reverse str(x)[::-1]. Failing test case: x = -121."):
+        with patch(
+            "core.gemini.text",
+            return_value="The logic always evaluates to True because str(x) is compared with itself rather than its reverse str(x)[::-1]. Failing test case: x = -121.",
+        ):
             res = self.assistant.debug_code(code=bad_code, language="Python3", problem_name="Palindrome Number")
             self.assertEqual(res.status, outcome.STATUS_DONE)
             self.assertIn("Failing test case", res.message)
@@ -371,7 +392,9 @@ class TestExecutionAndVerificationContract(unittest.TestCase):
     """Enforces standard structured verification dictionary on ActionResult."""
 
     def test_action_result_verification_contract(self):
-        ar = outcome.ActionResult.done(action="send_whatsapp_message", message="Message visible in intended conversation")
+        ar = outcome.ActionResult.done(
+            action="send_whatsapp_message", message="Message visible in intended conversation"
+        )
         contract = ar.to_contract_dict()
 
         self.assertEqual(contract["status"], "SUCCESS")

@@ -4,6 +4,7 @@ core/routines/migration.py — Seamless migration of legacy reminders into routi
 Scans legacy reminders.db and reminders_db.json across config and fixtures,
 converting each reminder into an exact-time RoutineRecord without loss.
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -19,7 +20,9 @@ from core.routines.store import RoutineRecord, RoutineStore
 logger = logging.getLogger(__name__)
 
 
-def migrate_legacy_reminders(store: RoutineStore, custom_json_path: Optional[Path] = None, custom_sqlite_path: Optional[Path] = None) -> int:
+def migrate_legacy_reminders(
+    store: RoutineStore, custom_json_path: Optional[Path] = None, custom_sqlite_path: Optional[Path] = None
+) -> int:
     """
     Migrate existing reminders into the unified RoutineStore.
     Idempotent: skips reminders already present in the store.
@@ -39,6 +42,7 @@ def migrate_legacy_reminders(store: RoutineStore, custom_json_path: Optional[Pat
         ]
         try:
             from memory.config_manager import get_user_data_dir
+
             candidate_json_paths.append(get_user_data_dir() / "reminders" / "reminders_db.json")
             candidate_sqlite_paths.append(get_user_data_dir() / "reminders" / "reminders.db")
         except Exception:

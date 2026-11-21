@@ -1,6 +1,7 @@
 """
 core/session_monitors.py — Background monitors, proactive engine, briefings, and phone dashboard relay.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -17,7 +18,7 @@ class LiveMonitorsMixin:
     """Background monitoring routines and dashboard synchronization."""
 
     async def _send_startup_briefing(self) -> None:
-        memory   = load_memory()
+        memory = load_memory()
         identity = memory.get("identity", {})
 
         def _val(k: str) -> str:
@@ -82,7 +83,11 @@ class LiveMonitorsMixin:
         )
         try:
             summary = await asyncio.to_thread(
-                gemini.text, prompt, gemini.SMART, None, 30_000,
+                gemini.text,
+                prompt,
+                gemini.SMART,
+                None,
+                30_000,
             )
             if summary:
                 save_session_summary(summary, "English")
@@ -177,14 +182,14 @@ class LiveMonitorsMixin:
             self._proactive.mark_triggered()
 
             try:
-                memory       = await asyncio.to_thread(load_memory)
-                lst_fn       = platform_hooks.get_hook("list_monitors")
-                monitors     = await asyncio.to_thread(lst_fn) if lst_fn else []
+                memory = await asyncio.to_thread(load_memory)
+                lst_fn = platform_hooks.get_hook("list_monitors")
+                monitors = await asyncio.to_thread(lst_fn) if lst_fn else []
                 recent_turns = self._session_log[-8:] if self._session_log else []
                 prompt = self._proactive.build_prompt(
-                    memory       = memory,
-                    monitors     = monitors or None,
-                    recent_turns = recent_turns or None,
+                    memory=memory,
+                    monitors=monitors or None,
+                    recent_turns=recent_turns or None,
                 )
                 await self.session.send_client_content(
                     turns={"role": "user", "parts": [{"text": prompt}]},
@@ -218,9 +223,7 @@ class LiveMonitorsMixin:
     async def _process_dashboard_commands(self) -> None:
         while True:
             try:
-                text = await asyncio.wait_for(
-                    self._dashboard._command_queue.get(), timeout=0.5
-                )
+                text = await asyncio.wait_for(self._dashboard._command_queue.get(), timeout=0.5)
                 if not text:
                     continue
                 for _ in range(80):

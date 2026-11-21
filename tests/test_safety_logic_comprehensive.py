@@ -34,7 +34,9 @@ import memory.config_manager as config_manager
 class TestSafetyLogicComprehensive(unittest.TestCase):
     def setUp(self):
         self.test_dir = tempfile.mkdtemp(prefix="test_safety_logic_")
-        self.p_user_dir = patch.object(config_manager, "get_user_data_dir", return_value=permissions.Path(self.test_dir))
+        self.p_user_dir = patch.object(
+            config_manager, "get_user_data_dir", return_value=permissions.Path(self.test_dir)
+        )
         self.p_user_dir.start()
 
     def tearDown(self):
@@ -63,7 +65,7 @@ class TestSafetyLogicComprehensive(unittest.TestCase):
                     parameters={"api_key": secret_key, "index": i},
                     permission_level=permissions.SENSITIVE,
                     status="granted",
-                    verified=True
+                    verified=True,
                 )
 
             # Query database directly
@@ -84,7 +86,9 @@ class TestSafetyLogicComprehensive(unittest.TestCase):
 
     def test_clear_audit_trail_protection(self):
         """Verify clear_audit_trail fails unless explicitly confirmed."""
-        permissions.log_action_audit(action="tool_x", parameters={}, permission_level=permissions.NORMAL, status="granted", verified=True)
+        permissions.log_action_audit(
+            action="tool_x", parameters={}, permission_level=permissions.NORMAL, status="granted", verified=True
+        )
         # Without confirm=True raises PermissionError
         with self.assertRaises(PermissionError):
             permissions.clear_audit_trail(confirm=False)
@@ -104,8 +108,9 @@ class TestSafetyLogicComprehensive(unittest.TestCase):
         self.assertEqual(undo.peek(), "")
 
         state = {"volume": 50}
+
         def reverse_op(prev_val):
-            return lambda: (state.update({"volume": prev_val}) or f"restored to {prev_val}")
+            return lambda: state.update({"volume": prev_val}) or f"restored to {prev_val}"
 
         for v in range(1, 15):
             undo.push_undo(f"volume -> {v}", reverse_op(v - 1))
@@ -126,6 +131,7 @@ class TestSafetyLogicComprehensive(unittest.TestCase):
     def test_undo_exception_safety(self):
         """Verify failing undo closure does not raise or corrupt stack."""
         undo.clear()
+
         def broken():
             raise RuntimeError("Hardware disconnected")
 
@@ -157,8 +163,12 @@ class TestSafetyLogicComprehensive(unittest.TestCase):
 
     def test_classify_skill_risk(self):
         """Verify skill step risk classification."""
-        step_normal = StepDefinition(step_id="s1", tool="web_search", thought="search web", parameters={"query": "python"})
-        step_destructive = StepDefinition(step_id="s2", tool="file_controller", thought="delete old folder", parameters={"path": "C:/tmp"})
+        step_normal = StepDefinition(
+            step_id="s1", tool="web_search", thought="search web", parameters={"query": "python"}
+        )
+        step_destructive = StepDefinition(
+            step_id="s2", tool="file_controller", thought="delete old folder", parameters={"path": "C:/tmp"}
+        )
 
         risk_normal = classify_skill_risk([step_normal], "Find python docs")
         self.assertEqual(risk_normal, RiskLevel.NORMAL)
@@ -175,7 +185,9 @@ class TestSafetyLogicComprehensive(unittest.TestCase):
         confirm.bind(show_mock, hide_mock, log_mock)
 
         executed = []
-        msg = confirm.request("test_key", "Reboot System", "Restarting OS", lambda: (executed.append(True) or "Rebooting"))
+        msg = confirm.request(
+            "test_key", "Reboot System", "Restarting OS", lambda: executed.append(True) or "Rebooting"
+        )
         self.assertIn("[CONFIRMATION_PENDING]", msg)
         self.assertIn("Say confirm to execute, or no to cancel.", msg)
         self.assertEqual(confirm.pending_title(), "Reboot System")
@@ -187,7 +199,7 @@ class TestSafetyLogicComprehensive(unittest.TestCase):
         self.assertEqual(len(executed), 0)
 
         # Test voice acceptance
-        confirm.request("test_key_2", "Shut Down", "Shutting down", lambda: (executed.append(True) or "Shutdown"))
+        confirm.request("test_key_2", "Shut Down", "Shutting down", lambda: executed.append(True) or "Shutdown")
         voice_res_yes = confirm.resolve_by_voice("yes please proceed")
         self.assertTrue(voice_res_yes)
 

@@ -1,4 +1,5 @@
 import pytest
+
 pytestmark = pytest.mark.requires_hardware
 
 """
@@ -171,4 +172,3 @@ class TestCDPBrowserEngine(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -23,6 +23,7 @@ Provides the complete suite of desktop perception and deterministic execution to
 
 All methods return standard ActionResult objects satisfying the Result Contract.
 """
+
 from __future__ import annotations
 
 import logging
@@ -245,6 +246,7 @@ class ComputerUseEngine:
 
         try:
             import pyautogui
+
             pyautogui.FAILSAFE = True
             pyautogui.click(x=vx, y=vy, clicks=clicks, button=button)
             time.sleep(0.2)
@@ -277,7 +279,9 @@ class ComputerUseEngine:
         res.message = f"Clicked at cursor location ({resolved.desktop_x}, {resolved.desktop_y}). {resolved.notes}"
         return res
 
-    def double_click_element(self, name: Optional[str] = None, x: Optional[int] = None, y: Optional[int] = None) -> outcome.ActionResult:
+    def double_click_element(
+        self, name: Optional[str] = None, x: Optional[int] = None, y: Optional[int] = None
+    ) -> outcome.ActionResult:
         if x is not None and y is not None:
             return self.click_coordinates(x=x, y=y, clicks=2)
         if name:
@@ -287,7 +291,9 @@ class ComputerUseEngine:
         cur_x, cur_y = self.display_manager.get_cursor_position()
         return self.click_coordinates(x=cur_x, y=cur_y, clicks=2)
 
-    def type_text(self, text: str, element_name: Optional[str] = None, press_enter: bool = False) -> outcome.ActionResult:
+    def type_text(
+        self, text: str, element_name: Optional[str] = None, press_enter: bool = False
+    ) -> outcome.ActionResult:
         t0 = time.monotonic()
         target_node = None
         if element_name:
@@ -300,6 +306,7 @@ class ComputerUseEngine:
         try:
             import pyautogui
             import pyperclip
+
             pyperclip.copy(text)
             pyautogui.hotkey("ctrl", "v")
             time.sleep(0.1)
@@ -331,6 +338,7 @@ class ComputerUseEngine:
         t0 = time.monotonic()
         try:
             import pyautogui
+
             if modifiers:
                 pyautogui.hotkey(*modifiers, key.lower())
             else:
@@ -359,6 +367,7 @@ class ComputerUseEngine:
         t0 = time.monotonic()
         try:
             import pyautogui
+
             clicks = -amount if direction.lower() == "down" else amount
             pyautogui.scroll(clicks)
             return outcome.ActionResult(
@@ -385,6 +394,7 @@ class ComputerUseEngine:
         t0 = time.monotonic()
         try:
             import pyautogui
+
             pyautogui.moveTo(start_x, start_y)
             time.sleep(0.1)
             pyautogui.dragTo(end_x, end_y, duration=0.6, button="left")
@@ -464,6 +474,7 @@ class ComputerUseEngine:
     def open_application(self, app_name: str, arguments: Optional[str] = None) -> outcome.ActionResult:
         t0 = time.monotonic()
         from actions import open_app
+
         raw_res = open_app.open_app({"app_name": app_name, "args": arguments} if arguments else {"app_name": app_name})
         norm = outcome.normalize_result(raw_res, action_name="open_application")
         # Check verification
@@ -494,7 +505,9 @@ class ComputerUseEngine:
             action="list_running_applications",
             success=True,
             verified=True,
-            message=f"Currently open applications ({len(app_names)}): {', '.join(app_names[:10])}" if app_names else "No active application windows detected.",
+            message=f"Currently open applications ({len(app_names)}): {', '.join(app_names[:10])}"
+            if app_names
+            else "No active application windows detected.",
             data={"windows": wins, "count": len(wins)},
             duration_ms=(time.monotonic() - t0) * 1000,
         )
@@ -677,6 +690,7 @@ TOOL = {
 def _visual_grounding_click(target: str):
     try:
         from actions import target_resolver
+
         tr = target_resolver.get_target_resolver()
         res_target, _ = tr.resolve_target(target, prefer_visual=True)
         if res_target:
@@ -691,11 +705,10 @@ def _visual_grounding_click(target: str):
 
 try:
     from core import platform_hooks
+
     platform_hooks.register_hook("click_element", lambda **kw: get_computer_use_engine().click_element(**kw))
     platform_hooks.register_hook("click_cursor_position", lambda: get_computer_use_engine().click_cursor_position())
     platform_hooks.register_hook("type_text", lambda text="": get_computer_use_engine().type_text(text=text))
     platform_hooks.register_hook("visual_grounding_click", _visual_grounding_click)
 except Exception:
     pass
-
-

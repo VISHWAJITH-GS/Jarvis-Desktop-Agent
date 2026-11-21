@@ -1,5 +1,6 @@
 from __future__ import annotations
 import pytest
+
 pytestmark = pytest.mark.requires_hardware
 
 """
@@ -36,7 +37,6 @@ from core.skill_learning.skill_security import is_sensitive_control, sanitize_in
 
 
 class TestDesktopAndBrowserQA(unittest.TestCase):
-
     def setUp(self):
         self.display_manager = get_display_manager()
         self.ui_tree_manager = get_ui_tree_manager()
@@ -61,6 +61,7 @@ class TestDesktopAndBrowserQA(unittest.TestCase):
 
         # Test coordinate validation in negative coordinate region
         from actions import windows_uia
+
         with patch("actions.windows_uia.get_screen_metrics") as mock_metrics:
             mock_metrics.return_value = {
                 "virtual_x": -1920,
@@ -153,16 +154,12 @@ class TestDesktopAndBrowserQA(unittest.TestCase):
             self.assertEqual(chosen.automation_id, "btn_submit_modal")
 
             # 2. Resolve by Parent Container
-            chosen_p, _ = self.ui_tree_manager.resolve_target_element(
-                name="Submit", parent_name="MainDialog"
-            )
+            chosen_p, _ = self.ui_tree_manager.resolve_target_element(name="Submit", parent_name="MainDialog")
             self.assertIsNotNone(chosen_p)
             self.assertEqual(chosen_p.parent_name, "MainDialog")
 
             # 3. Resolve by Coordinate Proximity (near 820, 610)
-            chosen_prox, _ = self.ui_tree_manager.resolve_target_element(
-                name="Submit", preferred_coords=(820, 610)
-            )
+            chosen_prox, _ = self.ui_tree_manager.resolve_target_element(name="Submit", preferred_coords=(820, 610))
             self.assertIsNotNone(chosen_prox)
             self.assertEqual(chosen_prox.automation_id, "btn_submit_modal")
 
@@ -292,7 +289,9 @@ class TestDesktopAndBrowserQA(unittest.TestCase):
             version="1.0.0",
             status=SkillStatus.APPROVED.value,
             steps=[
-                StepDefinition(step_id=1, thought="Open site", tool="browser_navigate", parameters={"url": "http://localhost:3000"}),
+                StepDefinition(
+                    step_id=1, thought="Open site", tool="browser_navigate", parameters={"url": "http://localhost:3000"}
+                ),
                 StepDefinition(step_id=2, thought="Click login", tool="browser_click", parameters={"name": "Login"}),
             ],
             parameters=[ParameterDefinition(name="url", type="url", default="http://localhost:3000")],
@@ -342,7 +341,7 @@ class TestDesktopAndBrowserQA(unittest.TestCase):
         # Input value sanitization
         masked = sanitize_input_value({"control_type": "Edit", "name": "Password"}, "MySecretP@ssword123")
         self.assertEqual(masked, "[REDACTED_SENSITIVE_CREDENTIAL]")
-        
+
         # General credential text sanitization
         scrubbed = sanitize_text_and_credentials("user password is supersecret123 on system")
         self.assertNotIn("supersecret123", scrubbed)

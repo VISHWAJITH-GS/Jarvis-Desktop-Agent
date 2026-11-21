@@ -9,6 +9,7 @@ Supports:
   4. Reading latest incoming messages and specific contact chat history
   5. Conversation summarization via Gemini
 """
+
 from __future__ import annotations
 
 import os
@@ -70,6 +71,7 @@ class WhatsAppDriver:
         self.uia = None
         try:
             from actions import windows_uia
+
             if windows_uia.is_available():
                 self.uia = windows_uia
         except Exception:
@@ -123,6 +125,7 @@ class WhatsAppDriver:
         if not launched:
             try:
                 from actions import open_app
+
                 open_app.open_app({"app_name": "WhatsApp"})
                 launched = True
             except Exception:
@@ -212,7 +215,11 @@ class WhatsAppDriver:
             return False, f"Contact '{contact_name}' was not found in WhatsApp.", []
 
         if len(candidates) > 1:
-            return False, f"Found multiple contacts matching '{contact_name}': {', '.join(candidates[:4])}. Which one would you like to message?", candidates
+            return (
+                False,
+                f"Found multiple contacts matching '{contact_name}': {', '.join(candidates[:4])}. Which one would you like to message?",
+                candidates,
+            )
 
         # Select top search result only when exactly 1 candidate exists
         if _PYAUTOGUI:
@@ -314,7 +321,9 @@ class WhatsAppDriver:
 
         return True, evidence or "Message sent successfully."
 
-    def read_chat_messages(self, contact_name: Optional[str] = None, limit: int = 5) -> Tuple[bool, List[Dict[str, str]], str]:
+    def read_chat_messages(
+        self, contact_name: Optional[str] = None, limit: int = 5
+    ) -> Tuple[bool, List[Dict[str, str]], str]:
         """
         Read recent incoming and outgoing messages from the chat with contact.
         Returns: (success, list_of_messages, error_message)
@@ -343,7 +352,7 @@ class WhatsAppDriver:
             chat_elements = self.uia.find_elements("", control_type="ListItem", window=scope_win, exact=False)
             items = chat_elements.get("matches", []) if chat_elements.get("status") == "success" else []
 
-            for item in items[-max(limit, 10):]:
+            for item in items[-max(limit, 10) :]:
                 name = item.get("name", "").strip()
                 if not name or len(name) < 2:
                     continue
@@ -352,11 +361,13 @@ class WhatsAppDriver:
                 sender = contact_name or "Contact"
                 if "you:" in name.lower() or "outgoing" in name.lower():
                     sender = "You"
-                messages.append({
-                    "sender": sender,
-                    "text": name,
-                    "time": "Recent",
-                })
+                messages.append(
+                    {
+                        "sender": sender,
+                        "text": name,
+                        "time": "Recent",
+                    }
+                )
         except Exception as e:
             return False, [], f"Could not extract messages: {e}"
 
@@ -401,7 +412,10 @@ class WhatsAppDriver:
 
         # Fallback summary
         last_msg = msgs[-1]["text"]
-        return True, f"The recent conversation with {contact_name} consists of {len(msgs)} messages. The last message was: '{last_msg}'."
+        return (
+            True,
+            f"The recent conversation with {contact_name} consists of {len(msgs)} messages. The last message was: '{last_msg}'.",
+        )
 
 
 def get():

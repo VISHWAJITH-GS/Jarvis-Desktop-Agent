@@ -20,17 +20,17 @@ class TestFlaticonUIconsAndFonts(unittest.TestCase):
     def test_all_user_specified_icons_present(self):
         """Verify all 11 user-specified Flaticon UIcons render valid QIcons."""
         expected_icons = [
-            "minus",                # fi-rr-minus
-            "check-circle",         # fi-rr-check-circle
-            "shield-exclamation",   # fi-rr-shield-exclamation
-            "shield",               # fi-rr-shield
-            "settings",             # fi-rr-settings
-            "sun",                  # fi-rr-sun
-            "circle-microphone",    # fi-ss-circle-microphone
-            "angle-small-down",     # fi-sc-angle-small-down
-            "angle-small-up",       # fi-rr-angle-small-up
-            "search",               # fi-rr-search
-            "database",             # fi-rr-database
+            "minus",  # fi-rr-minus
+            "check-circle",  # fi-rr-check-circle
+            "shield-exclamation",  # fi-rr-shield-exclamation
+            "shield",  # fi-rr-shield
+            "settings",  # fi-rr-settings
+            "sun",  # fi-rr-sun
+            "circle-microphone",  # fi-ss-circle-microphone
+            "angle-small-down",  # fi-sc-angle-small-down
+            "angle-small-up",  # fi-rr-angle-small-up
+            "search",  # fi-rr-search
+            "database",  # fi-rr-database
         ]
         for icon_name in expected_icons:
             with self.subTest(icon=icon_name):

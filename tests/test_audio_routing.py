@@ -34,6 +34,7 @@ class TestAudioRoutingAndBluetooth(unittest.TestCase):
         """Verify that DirectSound output devices are strictly rejected to prevent silent sink."""
         # Find any directsound output device if available
         import sounddevice as sd
+
         apis = [a.get("name", "").lower() for a in sd.query_hostapis()]
         for idx, dev in enumerate(sd.query_devices()):
             if dev.get("max_output_channels", 0) > 0:
@@ -71,6 +72,7 @@ class TestAudioRoutingAndBluetooth(unittest.TestCase):
     def test_device_resolution_and_mme_selection_for_speakers(self):
         """Verify that output devices resolve to working MME indices and not silent sinks."""
         import sounddevice as sd
+
         apis = [a.get("name", "").lower() for a in sd.query_hostapis()]
 
         # Resolve Realtek speakers
@@ -116,11 +118,17 @@ class TestAudioRoutingAndBluetooth(unittest.TestCase):
 
     def test_bluetooth_output_default_input_auto_selects_non_bt_mic(self):
         """Bluetooth output + System Default input in auto mode -> a non-Bluetooth input is chosen."""
-        with patch.object(audio_devices, "is_output_bluetooth", return_value=True), \
-             patch.object(audio_devices, "list_devices", return_value=[
-                 "Headset (OPPO Enco Buds2)",
-                 "Microphone Array (Realtek(R) Audio)",
-             ]):
+        with (
+            patch.object(audio_devices, "is_output_bluetooth", return_value=True),
+            patch.object(
+                audio_devices,
+                "list_devices",
+                return_value=[
+                    "Headset (OPPO Enco Buds2)",
+                    "Microphone Array (Realtek(R) Audio)",
+                ],
+            ),
+        ):
             decision = audio_devices.select_best_input(
                 requested_input="",
                 output_name="Headphones (OPPO Enco Buds2)",
@@ -134,11 +142,17 @@ class TestAudioRoutingAndBluetooth(unittest.TestCase):
 
     def test_bluetooth_mic_never_chosen_in_auto_mode_unless_allowed(self):
         """Bluetooth mic never chosen in auto mode; chosen only when allow_bluetooth_mic is true."""
-        with patch.object(audio_devices, "is_output_bluetooth", return_value=True), \
-             patch.object(audio_devices, "list_devices", return_value=[
-                 "Headset (OPPO Enco Buds2)",
-                 "Microphone Array (Realtek(R) Audio)",
-             ]):
+        with (
+            patch.object(audio_devices, "is_output_bluetooth", return_value=True),
+            patch.object(
+                audio_devices,
+                "list_devices",
+                return_value=[
+                    "Headset (OPPO Enco Buds2)",
+                    "Microphone Array (Realtek(R) Audio)",
+                ],
+            ),
+        ):
             # 1. In auto mode with allow_bluetooth_mic=False -> overrides BT mic with non-BT mic
             dec_auto = audio_devices.select_best_input(
                 requested_input="Headset (OPPO Enco Buds2)",
@@ -175,10 +189,10 @@ class TestAudioRoutingAndBluetooth(unittest.TestCase):
 
     def test_fallback_path_when_no_non_bluetooth_mic_exists(self):
         """Fallback path when no non-Bluetooth mic exists falls back and warns."""
-        with patch.object(audio_devices, "is_output_bluetooth", return_value=True), \
-             patch.object(audio_devices, "list_devices", return_value=[
-                 "Headset (OPPO Enco Buds2)"
-             ]):
+        with (
+            patch.object(audio_devices, "is_output_bluetooth", return_value=True),
+            patch.object(audio_devices, "list_devices", return_value=["Headset (OPPO Enco Buds2)"]),
+        ):
             decision = audio_devices.select_best_input(
                 requested_input="",
                 output_name="Headphones (OPPO Enco Buds2)",
@@ -216,10 +230,11 @@ class TestAudioRoutingAndBluetooth(unittest.TestCase):
                 return 20
             return None
 
-        with patch.object(audio_devices, "list_devices", return_value=all_inputs), \
-             patch.object(audio_devices, "is_bluetooth_device", side_effect=mock_is_bt), \
-             patch.object(audio_devices, "resolve", side_effect=mock_resolve):
-
+        with (
+            patch.object(audio_devices, "list_devices", return_value=all_inputs),
+            patch.object(audio_devices, "is_bluetooth_device", side_effect=mock_is_bt),
+            patch.object(audio_devices, "resolve", side_effect=mock_resolve),
+        ):
             # Helper identical to main.py
             def _try_open_candidates(primary_dev, primary_name):
                 try:
@@ -229,7 +244,8 @@ class TestAudioRoutingAndBluetooth(unittest.TestCase):
                     pass
 
                 non_bt = [
-                    d for d in audio_devices.list_devices("input")
+                    d
+                    for d in audio_devices.list_devices("input")
                     if not audio_devices.is_bluetooth_device(d)
                     and not any(k in d.lower() for k in excl)
                     and d != primary_name
@@ -260,9 +276,11 @@ class TestAudioRoutingAndBluetooth(unittest.TestCase):
             opened_devices.append(dev_idx)
             raise RuntimeError("Hardware failure")
 
-        with patch.object(audio_devices, "list_devices", return_value=["Primary Mic"]), \
-             patch.object(audio_devices, "is_bluetooth_device", return_value=False), \
-             patch.object(audio_devices, "resolve", return_value=None):
+        with (
+            patch.object(audio_devices, "list_devices", return_value=["Primary Mic"]),
+            patch.object(audio_devices, "is_bluetooth_device", return_value=False),
+            patch.object(audio_devices, "resolve", return_value=None),
+        ):
 
             def _try_open_candidates(primary_dev, primary_name):
                 try:
@@ -287,9 +305,11 @@ class TestAudioRoutingAndBluetooth(unittest.TestCase):
             "Loopback Audio Device",
             "Microphone (Realtek(R) Audio)",
         ]
-        with patch.object(audio_devices, "is_output_bluetooth", return_value=True), \
-             patch.object(audio_devices, "list_devices", return_value=available), \
-             patch.object(audio_devices, "is_bluetooth_device", return_value=False):
+        with (
+            patch.object(audio_devices, "is_output_bluetooth", return_value=True),
+            patch.object(audio_devices, "list_devices", return_value=available),
+            patch.object(audio_devices, "is_bluetooth_device", return_value=False),
+        ):
             decision = audio_devices.select_best_input(
                 requested_input="",
                 output_name="Bluetooth Headset",
@@ -304,9 +324,11 @@ class TestAudioRoutingAndBluetooth(unittest.TestCase):
             "Microphone (Realtek Audio) [DirectSound]",
             "Microphone (Realtek Audio) [WASAPI]",
         ]
-        with patch.object(audio_devices, "is_output_bluetooth", return_value=True), \
-             patch.object(audio_devices, "list_devices", return_value=available), \
-             patch.object(audio_devices, "is_bluetooth_device", return_value=False):
+        with (
+            patch.object(audio_devices, "is_output_bluetooth", return_value=True),
+            patch.object(audio_devices, "list_devices", return_value=available),
+            patch.object(audio_devices, "is_bluetooth_device", return_value=False),
+        ):
             decision = audio_devices.select_best_input(
                 requested_input="",
                 output_name="Bluetooth Headset",
@@ -317,6 +339,7 @@ class TestAudioRoutingAndBluetooth(unittest.TestCase):
 
     def test_exact_endpoint_id_and_no_prefix_matching(self):
         """Exact endpoint-ID and name matching avoids prefix false matches."""
+
         class MockEndpoint:
             def __init__(self, dev_id, friendly_name, bus_prop):
                 self.id = dev_id
@@ -326,8 +349,10 @@ class TestAudioRoutingAndBluetooth(unittest.TestCase):
         dev_usb = MockEndpoint("{0.0.1}.{usb-mic-123}", "Microphone", "USB\\VID_123")
         dev_bt = MockEndpoint("{0.0.1}.{bt-mic-456}", "Microphone Hands-Free", "BTHENUM\\{xyz}")
 
-        with patch("pycaw.pycaw.AudioUtilities.GetAllDevices", return_value=[dev_usb, dev_bt]), \
-             patch.object(audio_devices, "_platform_is", return_value="Windows"):
+        with (
+            patch("pycaw.pycaw.AudioUtilities.GetAllDevices", return_value=[dev_usb, dev_bt]),
+            patch.object(audio_devices, "_platform_is", return_value="Windows"),
+        ):
             audio_devices.invalidate_cache()
             with audio_devices._bt_detection_lock:
                 audio_devices._bt_detection_cache.clear()
@@ -378,19 +403,23 @@ class TestAudioRoutingAndBluetooth(unittest.TestCase):
 
         # Import the method from main.py
         import main
+
         jarvis_inst = FakeJarvis()
 
         # Simulate endpoints changing from Laptop Speakers to Bluetooth Headphones
         step = [0]
+
         def mock_get_default(kind="output"):
             if step[0] == 0:
                 return ("{0.0.0.123}", "Speakers (Realtek Audio)")
             else:
                 return ("{0.0.0.456}", "Headphones (OPPO Enco Buds2)")
 
-        with patch.object(audio_devices, "get_current_default_endpoint", side_effect=mock_get_default), \
-             patch.object(audio_devices, "get_connected_endpoints_snapshot", return_value={"item1"}), \
-             patch.object(audio_devices, "invalidate_cache") as mock_inval:
+        with (
+            patch.object(audio_devices, "get_current_default_endpoint", side_effect=mock_get_default),
+            patch.object(audio_devices, "get_connected_endpoints_snapshot", return_value={"item1"}),
+            patch.object(audio_devices, "invalidate_cache") as mock_inval,
+        ):
 
             async def _run_test():
                 watcher_task = asyncio.create_task(main.JarvisLive._watch_audio_device_changes(jarvis_inst))
@@ -440,4 +469,3 @@ class TestAudioRoutingAndBluetooth(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

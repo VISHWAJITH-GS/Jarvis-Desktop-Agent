@@ -4,6 +4,7 @@ core/tasks/control.py — External control surface: steer, cancel, and confirmat
 Design reference: Mark LVII (CC BY-NC 4.0).
 Provides thread-safe steering and interruption controls for in-flight tasks.
 """
+
 from __future__ import annotations
 
 from typing import Any, Dict, Optional

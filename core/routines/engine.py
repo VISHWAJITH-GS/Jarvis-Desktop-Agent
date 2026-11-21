@@ -11,6 +11,7 @@ Actions:
 - tool (invokes ActionRegistry tool)
 - task (launches background TaskEngine task)
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timedelta
@@ -185,6 +186,7 @@ class RoutineEngine:
             if tool_name:
                 try:
                     from core.action_loader import get_default_registry
+
                     reg = get_default_registry()
                     reg.execute(tool_name, params, ctx={"player": self.player})
                 except Exception as e:
@@ -194,6 +196,7 @@ class RoutineEngine:
             prompt = r.action_config.get("task_prompt", r.title)
             try:
                 from core.tasks import get_task_engine
+
                 engine = get_task_engine()
                 engine.start()
                 engine.queue_task(

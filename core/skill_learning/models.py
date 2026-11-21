@@ -7,6 +7,7 @@ Defines all structured types for:
 - Declarative skill definitions, parameters, steps, and verification rules
 - Security risk levels & approval lifecycle statuses
 """
+
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
@@ -33,6 +34,7 @@ class RiskLevel(str, Enum):
 @dataclass
 class UIEvent:
     """Captured user action during demonstration."""
+
     timestamp: float
     event_type: str  # click | double_click | type_text | hotkey | window_activate | browser_navigate | file_dialog | state_change
     app_name: str
@@ -59,6 +61,7 @@ class UIEvent:
 @dataclass
 class UIState:
     """Snapshot of active window and accessible controls."""
+
     timestamp: float
     app_name: str
     window_title: str
@@ -79,6 +82,7 @@ class UIState:
 @dataclass
 class ParameterDefinition:
     """Dynamic parameter extracted from demonstration."""
+
     name: str
     type: str = "string"  # string | number | boolean | file_path | url
     description: str = ""
@@ -97,6 +101,7 @@ class ParameterDefinition:
 @dataclass
 class VerificationCondition:
     """Expected post-condition for validating a skill step."""
+
     type: str  # window_title_contains | element_visible | element_value_equals | file_exists | process_running | custom_rule
     target: str = ""
     expected_value: str = ""
@@ -113,9 +118,12 @@ class VerificationCondition:
 @dataclass
 class StepDefinition:
     """Single atomic step in a declarative skill workflow."""
+
     step_id: int
     thought: str
-    tool: str  # Name of registered tool: open_app, windows_uia, computer_control, browser_control, file_controller, etc.
+    tool: (
+        str  # Name of registered tool: open_app, windows_uia, computer_control, browser_control, file_controller, etc.
+    )
     parameters: dict = field(default_factory=dict)
     selector: Optional[dict] = None
     verification: Optional[VerificationCondition] = None
@@ -139,6 +147,7 @@ class StepDefinition:
 @dataclass
 class SkillDefinition:
     """Authoritative declarative definition of a learned desktop skill."""
+
     id: str  # Slug, e.g. "claude_document_analysis"
     name: str
     description: str
@@ -167,21 +176,16 @@ class SkillDefinition:
     def from_dict(cls, data: dict) -> SkillDefinition:
         d = dict(data)
         if d.get("parameters"):
-            d["parameters"] = [
-                ParameterDefinition.from_dict(p) if isinstance(p, dict) else p
-                for p in d["parameters"]
-            ]
+            d["parameters"] = [ParameterDefinition.from_dict(p) if isinstance(p, dict) else p for p in d["parameters"]]
         if d.get("steps"):
-            d["steps"] = [
-                StepDefinition.from_dict(s) if isinstance(s, dict) else s
-                for s in d["steps"]
-            ]
+            d["steps"] = [StepDefinition.from_dict(s) if isinstance(s, dict) else s for s in d["steps"]]
         return cls(**d)
 
 
 @dataclass
 class LearningSession:
     """Active demonstration recording session."""
+
     session_id: str
     goal: str
     status: str = "idle"  # idle | recording | paused | analyzing | review_ready | completed | cancelled
@@ -201,4 +205,3 @@ class LearningSession:
             "validation_report": self.validation_report,
         }
         return d
-

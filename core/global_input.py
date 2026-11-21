@@ -84,11 +84,7 @@ for _f in range(1, 13):
 
 def _normalize_chord_tokens(chord_def: str | list | tuple) -> List[str]:
     if isinstance(chord_def, str):
-        return [
-            k.strip().lower()
-            for k in chord_def.replace("+", " ").replace("-", " ").split()
-            if k.strip()
-        ]
+        return [k.strip().lower() for k in chord_def.replace("+", " ").replace("-", " ").split() if k.strip()]
     return [str(k).strip().lower() for k in chord_def if str(k).strip()]
 
 
@@ -134,6 +130,7 @@ def _format_keyboard_chord(chord_def: str | list | tuple) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 # Global Input Controller
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class GlobalInputController:
     """
@@ -313,6 +310,7 @@ class GlobalInputController:
         if kb_handles:
             try:
                 import keyboard  # type: ignore
+
                 for h in kb_handles:
                     try:
                         keyboard.remove_hotkey(h)

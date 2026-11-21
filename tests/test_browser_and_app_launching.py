@@ -7,6 +7,7 @@ Tests:
 3. IDLE launch resolution: resolves to pythonw -m idlelib without shell injection.
 4. VS Code and Notepad resolution.
 """
+
 import os
 import unittest
 from unittest.mock import MagicMock, patch
@@ -15,7 +16,6 @@ from actions.open_app import _launch_windows, _resolve_windows_known_app
 
 
 class TestBrowserAndAppLaunching(unittest.TestCase):
-
     def test_chrome_resolution_and_cdp_flags(self):
         """Requesting 'chrome' must resolve to Google Chrome executable and include CDP port 9222."""
         with patch("os.path.exists") as mock_exists:
@@ -54,7 +54,10 @@ class TestBrowserAndAppLaunching(unittest.TestCase):
     def test_launch_windows_invokes_chrome_directly(self, mock_popen):
         """_launch_windows('Google Chrome') must call subprocess.Popen with chrome arguments without shell."""
         with patch("actions.open_app._resolve_windows_known_app") as mock_resolve:
-            mock_resolve.return_value = (["C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"], ["--remote-debugging-port=9222"])
+            mock_resolve.return_value = (
+                ["C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"],
+                ["--remote-debugging-port=9222"],
+            )
 
             launched = _launch_windows("Google Chrome")
             self.assertTrue(launched)

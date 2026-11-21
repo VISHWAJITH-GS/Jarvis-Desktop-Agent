@@ -5,6 +5,7 @@ Enforces:
 - `core/` must NEVER import from `actions/`
 - `core/` must NEVER import from `gui/` or `ui`
 """
+
 from __future__ import annotations
 
 import ast
@@ -36,7 +37,9 @@ class TestImportBoundaries(unittest.TestCase):
                             rel_path = py_file.relative_to(repo_root)
                             violations.append(f"{rel_path}:{node.lineno} imports '{alias.name}'")
                 elif isinstance(node, ast.ImportFrom):
-                    if node.module and any(node.module == p or node.module.startswith(f"{p}.") for p in forbidden_prefixes):
+                    if node.module and any(
+                        node.module == p or node.module.startswith(f"{p}.") for p in forbidden_prefixes
+                    ):
                         rel_path = py_file.relative_to(repo_root)
                         violations.append(f"{rel_path}:{node.lineno} imports from '{node.module}'")
 

@@ -4,6 +4,7 @@ core/platform_hooks.py — Inversion-of-Control Hook Registry for Desktop & Syst
 Enforces strict architectural boundaries: `core/` never imports from `actions/` or `gui/`.
 Instead, actions register their platform-specific handlers with this registry.
 """
+
 from __future__ import annotations
 
 from typing import Any, Callable, Dict, Optional
@@ -45,10 +46,12 @@ def call_hook(name: str, *args: Any, default: Any = None, **kwargs: Any) -> Any:
 def get_active_window_title() -> str:
     """Return the foreground window title via standard Win32 API."""
     import platform
+
     if platform.system() != "Windows":
         return ""
     try:
         import ctypes
+
         hwnd = ctypes.windll.user32.GetForegroundWindow()
         if not hwnd:
             return ""
@@ -60,4 +63,3 @@ def get_active_window_title() -> str:
         return buff.value
     except Exception:
         return ""
-

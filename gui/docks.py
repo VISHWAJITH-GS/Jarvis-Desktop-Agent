@@ -14,26 +14,53 @@ import threading
 import time
 from pathlib import Path
 from gui.base import *
-from gui.base import _WIN_HIDE, _base_dir, BASE_DIR, CONFIG_DIR, API_FILE, _read_full_config, _DEFAULT_W, _DEFAULT_H, _MIN_W, _MIN_H, _LEFT_W, _RIGHT_W, _OS, _ResizeEdge, _detect_resize_edge, _cursor_for_edge, _FramelessWindowResizeMixin, _SysMetrics, _metrics, _nvml_gpu_windows, _load_app_fonts, keena_font, HAVE_VIDEO, HoloAvatar, get_uicon, QGraphicsVideoItem, QAudioOutput, QMediaPlayer
+from gui.base import (
+    _WIN_HIDE,
+    _base_dir,
+    BASE_DIR,
+    CONFIG_DIR,
+    API_FILE,
+    _read_full_config,
+    _DEFAULT_W,
+    _DEFAULT_H,
+    _MIN_W,
+    _MIN_H,
+    _LEFT_W,
+    _RIGHT_W,
+    _OS,
+    _ResizeEdge,
+    _detect_resize_edge,
+    _cursor_for_edge,
+    _FramelessWindowResizeMixin,
+    _SysMetrics,
+    _metrics,
+    _nvml_gpu_windows,
+    _load_app_fonts,
+    keena_font,
+    HAVE_VIDEO,
+    HoloAvatar,
+    get_uicon,
+    QGraphicsVideoItem,
+    QAudioOutput,
+    QMediaPlayer,
+)
 from gui.theme import *
 from gui.theme import _RESIZE_MARGIN, _NO_SCROLLBAR_STYLE, _HUE_LINKED, _PALETTE_DEFAULTS, _lerp_color
 
 from gui.widgets import *
+
 
 class BottomChatDock(_FramelessWindowResizeMixin, QWidget):
     """
     Floating rectangular transcript and command input dock positioned at the
     bottom-center of the screen with wide width and short height.
     """
+
     def __init__(self, main_win: "MainWindow", parent=None):
         super().__init__(parent)
         self._main_win = main_win
         self.setWindowTitle("JARVIS Comm Link")
-        self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint |
-            Qt.WindowType.WindowStaysOnTopHint |
-            Qt.WindowType.Tool
-        )
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setMinimumSize(480, 68)
         self._init_frameless_resize()
@@ -257,6 +284,7 @@ def format_visual_content_html(raw_text: str) -> str:
         return ""
 
     import re
+
     lines = raw_text.replace("\r\n", "\n").split("\n")
     out_html = []
     i = 0
@@ -287,48 +315,62 @@ def format_visual_content_html(raw_text: str) -> str:
                 rows.append(cells)
 
             if rows:
-                t_html = ['<table width="100%" cellpadding="6" cellspacing="0" style="border: 1px solid rgba(255,23,68,0.45); background: rgba(14,3,7,0.85); border-radius: 4px; margin: 8px 0;">']
+                t_html = [
+                    '<table width="100%" cellpadding="6" cellspacing="0" style="border: 1px solid rgba(255,23,68,0.45); background: rgba(14,3,7,0.85); border-radius: 4px; margin: 8px 0;">'
+                ]
                 start_row = 0
                 if has_header_sep and len(rows) > 0:
                     t_html.append('<tr bgcolor="rgba(45,8,16,0.95)">')
                     for h_cell in rows[0]:
-                        t_html.append(f'<th align="left" style="color: #ff5252; font-family: \'Montserrat\'; font-size: 11px; border-bottom: 1.5px solid #ff1744; padding: 6px;"><b>{h_cell}</b></th>')
-                    t_html.append('</tr>')
+                        t_html.append(
+                            f'<th align="left" style="color: #ff5252; font-family: \'Montserrat\'; font-size: 11px; border-bottom: 1.5px solid #ff1744; padding: 6px;"><b>{h_cell}</b></th>'
+                        )
+                    t_html.append("</tr>")
                     start_row = 1
 
                 for r_idx, row in enumerate(rows[start_row:]):
                     bg = "rgba(24,5,11,0.70)" if r_idx % 2 == 0 else "rgba(12,2,5,0.50)"
                     t_html.append(f'<tr bgcolor="{bg}">')
                     for cell in row:
-                        pct_match = re.search(r'(\d{1,3})%', cell)
+                        pct_match = re.search(r"(\d{1,3})%", cell)
                         bar_html = ""
                         if pct_match:
                             val = min(100, max(0, int(pct_match.group(1))))
-                            bar_html = f'<table width="100%" cellpadding="0" cellspacing="0" style="border: 1px solid #ff1744; background: #120306; border-radius: 2px; margin-top: 3px;"><tr><td width="{val}%" bgcolor="#ff1744" height="6"></td><td width="{100-val}%"></td></tr></table>'
-                        t_html.append(f'<td style="color: #e0e0e0; font-family: \'Montserrat\'; font-size: 11px; border-bottom: 1px solid rgba(255,23,68,0.18); padding: 5px;">{cell}{bar_html}</td>')
-                    t_html.append('</tr>')
-                t_html.append('</table>')
-                out_html.append(''.join(t_html))
+                            bar_html = f'<table width="100%" cellpadding="0" cellspacing="0" style="border: 1px solid #ff1744; background: #120306; border-radius: 2px; margin-top: 3px;"><tr><td width="{val}%" bgcolor="#ff1744" height="6"></td><td width="{100 - val}%"></td></tr></table>'
+                        t_html.append(
+                            f"<td style=\"color: #e0e0e0; font-family: 'Montserrat'; font-size: 11px; border-bottom: 1px solid rgba(255,23,68,0.18); padding: 5px;\">{cell}{bar_html}</td>"
+                        )
+                    t_html.append("</tr>")
+                t_html.append("</table>")
+                out_html.append("".join(t_html))
             continue
 
         # 2. Check for Diagram / Flowchart ('->' or '➔' with >= 2 transitions)
         if any(arrow in line for arrow in ("->", "-->", "➔", "==>")) and not line.startswith("<"):
-            tokens = re.split(r'\s*(?:-->|->|➔|==>)\s*', stripped)
+            tokens = re.split(r"\s*(?:-->|->|➔|==>)\s*", stripped)
             if len(tokens) >= 2 and all(len(t) < 50 for t in tokens):
-                f_html = ['<div style="margin: 8px 0; padding: 8px; background: rgba(18, 4, 8, 0.85); border: 1px solid rgba(255,23,68,0.35); border-radius: 4px;">']
-                f_html.append('<div style="color: #ff5252; font-family: \'Montserrat\'; font-size: 10px; font-weight: bold; margin-bottom: 6px;">◈ SYSTEM FLOW DIAGRAM</div>')
+                f_html = [
+                    '<div style="margin: 8px 0; padding: 8px; background: rgba(18, 4, 8, 0.85); border: 1px solid rgba(255,23,68,0.35); border-radius: 4px;">'
+                ]
+                f_html.append(
+                    "<div style=\"color: #ff5252; font-family: 'Montserrat'; font-size: 10px; font-weight: bold; margin-bottom: 6px;\">◈ SYSTEM FLOW DIAGRAM</div>"
+                )
                 f_html.append('<table cellpadding="4" cellspacing="0"><tr>')
                 for s_idx, tok in enumerate(tokens):
-                    f_html.append(f'<td style="background: rgba(255,23,68,0.22); border: 1px solid #ff1744; color: #ffffff; border-radius: 3px; font-family: \'Montserrat\'; font-size: 11px; font-weight: bold; padding: 4px 8px;">{tok}</td>')
+                    f_html.append(
+                        f"<td style=\"background: rgba(255,23,68,0.22); border: 1px solid #ff1744; color: #ffffff; border-radius: 3px; font-family: 'Montserrat'; font-size: 11px; font-weight: bold; padding: 4px 8px;\">{tok}</td>"
+                    )
                     if s_idx < len(tokens) - 1:
-                        f_html.append('<td style="color: #ff1744; font-size: 14px; font-weight: bold; padding: 0 4px;">➔</td>')
-                f_html.append('</tr></table></div>')
-                out_html.append(''.join(f_html))
+                        f_html.append(
+                            '<td style="color: #ff1744; font-size: 14px; font-weight: bold; padding: 0 4px;">➔</td>'
+                        )
+                f_html.append("</tr></table></div>")
+                out_html.append("".join(f_html))
                 i += 1
                 continue
 
         # 3. Check for Standalone Metric / Bar Chart
-        metric_match = re.match(r'^([A-Za-z0-9_\- ]+?)[:=]\s*(\d{1,3})%', stripped)
+        metric_match = re.match(r"^([A-Za-z0-9_\- ]+?)[:=]\s*(\d{1,3})%", stripped)
         if metric_match:
             lbl, pct_str = metric_match.group(1).strip(), metric_match.group(2)
             pct = min(100, max(0, int(pct_str)))
@@ -342,7 +384,7 @@ def format_visual_content_html(raw_text: str) -> str:
                 <tr>
                   <td colspan="2" style="padding-top: 4px;">
                     <table width="100%" cellpadding="0" cellspacing="0" style="border: 1px solid #ff1744; background: #120306; border-radius: 2px;">
-                      <tr><td width="{pct}%" bgcolor="#ff1744" height="8"></td><td width="{100-pct}%"></td></tr>
+                      <tr><td width="{pct}%" bgcolor="#ff1744" height="8"></td><td width="{100 - pct}%"></td></tr>
                     </table>
                   </td>
                 </tr>
@@ -355,18 +397,26 @@ def format_visual_content_html(raw_text: str) -> str:
         # 4. Regular text & Markdown formatting
         formatted = stripped
         if formatted.startswith("###"):
-            formatted = f'<div style="color: #ff5252; font-family: \'Montserrat\'; font-size: 13px; font-weight: bold; margin: 8px 0 3px 0;">◈ {formatted[3:].strip()}</div>'
+            formatted = f"<div style=\"color: #ff5252; font-family: 'Montserrat'; font-size: 13px; font-weight: bold; margin: 8px 0 3px 0;\">◈ {formatted[3:].strip()}</div>"
         elif formatted.startswith("##"):
-            formatted = f'<div style="color: #ff1744; font-family: \'Montserrat\'; font-size: 14px; font-weight: bold; margin: 10px 0 4px 0;">◈ {formatted[2:].strip()}</div>'
+            formatted = f"<div style=\"color: #ff1744; font-family: 'Montserrat'; font-size: 14px; font-weight: bold; margin: 10px 0 4px 0;\">◈ {formatted[2:].strip()}</div>"
         elif formatted.startswith(("* ", "- ")):
             bullet_txt = formatted[2:].strip()
-            bullet_txt = re.sub(r'\*\*(.+?)\*\*', r'<b style="color:#ffffff;">\1</b>', bullet_txt)
-            bullet_txt = re.sub(r'`(.+?)`', r'<code style="background:rgba(255,23,68,0.18); color:#80cbc4; padding:1px 4px; border-radius:2px;">\1</code>', bullet_txt)
-            formatted = f'<div style="color: #e0e0e0; font-family: \'Montserrat\'; font-size: 11px; padding-left: 8px;">• {bullet_txt}</div>'
+            bullet_txt = re.sub(r"\*\*(.+?)\*\*", r'<b style="color:#ffffff;">\1</b>', bullet_txt)
+            bullet_txt = re.sub(
+                r"`(.+?)`",
+                r'<code style="background:rgba(255,23,68,0.18); color:#80cbc4; padding:1px 4px; border-radius:2px;">\1</code>',
+                bullet_txt,
+            )
+            formatted = f"<div style=\"color: #e0e0e0; font-family: 'Montserrat'; font-size: 11px; padding-left: 8px;\">• {bullet_txt}</div>"
         else:
-            formatted = re.sub(r'\*\*(.+?)\*\*', r'<b style="color:#ffffff;">\1</b>', formatted)
-            formatted = re.sub(r'`(.+?)`', r'<code style="background:rgba(255,23,68,0.18); color:#80cbc4; padding:1px 4px; border-radius:2px;">\1</code>', formatted)
-            formatted = f'<div style="color: #d0d0d0; font-family: \'Montserrat\'; font-size: 11px; margin: 2px 0;">{formatted}</div>'
+            formatted = re.sub(r"\*\*(.+?)\*\*", r'<b style="color:#ffffff;">\1</b>', formatted)
+            formatted = re.sub(
+                r"`(.+?)`",
+                r'<code style="background:rgba(255,23,68,0.18); color:#80cbc4; padding:1px 4px; border-radius:2px;">\1</code>',
+                formatted,
+            )
+            formatted = f"<div style=\"color: #d0d0d0; font-family: 'Montserrat'; font-size: 11px; margin: 2px 0;\">{formatted}</div>"
 
         out_html.append(formatted)
         i += 1
@@ -379,13 +429,14 @@ class ScreenGlowOverlay(QWidget):
     Full-screen transparent HUD overlay that illuminates a glowing red border around
     the edges of the screen whenever JARVIS observes or captures the display.
     """
+
     def __init__(self, parent=None):
         super().__init__(None)
         self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint |
-            Qt.WindowType.WindowStaysOnTopHint |
-            Qt.WindowType.Tool |
-            Qt.WindowType.WindowTransparentForInput
+            Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.Tool
+            | Qt.WindowType.WindowTransparentForInput
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
@@ -437,11 +488,11 @@ class ScreenGlowOverlay(QWidget):
 
         # Draw multi-layered glowing border from outer boundary inward
         layers = [
-            (0, 3, QColor(255, 23, 68, min(255, int(alpha * 1.0)))),      # crisp core border
-            (3, 3, QColor(255, 23, 68, min(255, int(alpha * 0.70)))),     # intense inner glow
-            (6, 4, QColor(255, 23, 68, min(255, int(alpha * 0.40)))),     # soft halo
-            (10, 6, QColor(255, 23, 68, min(255, int(alpha * 0.18)))),    # diffused atmospheric glow
-            (16, 8, QColor(255, 23, 68, min(255, int(alpha * 0.08)))),    # outermost ambient glow
+            (0, 3, QColor(255, 23, 68, min(255, int(alpha * 1.0)))),  # crisp core border
+            (3, 3, QColor(255, 23, 68, min(255, int(alpha * 0.70)))),  # intense inner glow
+            (6, 4, QColor(255, 23, 68, min(255, int(alpha * 0.40)))),  # soft halo
+            (10, 6, QColor(255, 23, 68, min(255, int(alpha * 0.18)))),  # diffused atmospheric glow
+            (16, 8, QColor(255, 23, 68, min(255, int(alpha * 0.08)))),  # outermost ambient glow
         ]
 
         for offset, stroke, color in layers:
@@ -473,15 +524,12 @@ class LeftSearchDock(_FramelessWindowResizeMixin, QWidget):
     Floating pop-up panel for search results, briefings, document reviews,
     and quizzes, positioned along the left edge of the screen.
     """
+
     def __init__(self, main_win: "MainWindow", parent=None):
         super().__init__(parent)
         self._main_win = main_win
         self.setWindowTitle("JARVIS Search & Intel")
-        self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint |
-            Qt.WindowType.WindowStaysOnTopHint |
-            Qt.WindowType.Tool
-        )
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setMinimumSize(380, 400)
         self._init_frameless_resize()
@@ -538,7 +586,10 @@ class LeftSearchDock(_FramelessWindowResizeMixin, QWidget):
             elif clean_title.upper().startswith("SEARCH:"):
                 clean_title = clean_title[7:].strip()
 
-            if not any(clean_title.upper().startswith(p) for p in ("SEARCH", "REVIEW", "QUIZ", "CODE AGENT", "BRIEFING", "TASK")):
+            if not any(
+                clean_title.upper().startswith(p)
+                for p in ("SEARCH", "REVIEW", "QUIZ", "CODE AGENT", "BRIEFING", "TASK")
+            ):
                 display_title = f"SEARCH — {clean_title.upper()[:40]}"
             else:
                 display_title = clean_title.upper()[:48]
@@ -644,13 +695,10 @@ class SlideDownAlert(QWidget):
     Animates down from the top edge of the screen with a glowing JARVIS red background
     and bold black text. Automatically slides back up after timeout or when dismissed.
     """
+
     def __init__(self, parent=None):
         super().__init__(None)
-        self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint |
-            Qt.WindowType.WindowStaysOnTopHint |
-            Qt.WindowType.Tool
-        )
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
 
@@ -736,10 +784,7 @@ class SlideDownAlert(QWidget):
         screen = QApplication.primaryScreen().availableGeometry()
         fm_msg = self._msg_lbl.fontMetrics()
         fm_title = self._title_lbl.fontMetrics()
-        text_w = max(
-            fm_title.horizontalAdvance(self._title_lbl.text()),
-            fm_msg.horizontalAdvance(clean_msg)
-        )
+        text_w = max(fm_title.horizontalAdvance(self._title_lbl.text()), fm_msg.horizontalAdvance(clean_msg))
         inner_w = text_w + 48
         w = min(340, max(190, inner_w))
 
@@ -782,5 +827,3 @@ class SlideDownAlert(QWidget):
         self._pos_anim.setEndValue(QPoint(center_x, target_y))
         self._pos_anim.finished.connect(self.hide)
         self._pos_anim.start()
-
-

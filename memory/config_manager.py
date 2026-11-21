@@ -10,10 +10,12 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+
 def get_base_dir() -> Path:
     if getattr(sys, "frozen", False):
         return Path(sys.executable).parent
     return Path(__file__).resolve().parent.parent
+
 
 def get_user_data_dir() -> Path:
     """Return the per-user runtime data directory outside the repository."""
@@ -26,24 +28,27 @@ def get_user_data_dir() -> Path:
     base.mkdir(parents=True, exist_ok=True)
     return base
 
-BASE_DIR    = get_base_dir()
-CONFIG_DIR  = BASE_DIR / "config"
+
+BASE_DIR = get_base_dir()
+CONFIG_DIR = BASE_DIR / "config"
 CONFIG_FILE = CONFIG_DIR / "api_keys.json"
 CONFIG_TEMPLATE = CONFIG_DIR / "api_keys.template.json"
 
 _KEYRING_SERVICE = "JARVIS_Mark_LVI"
-_KEYRING_USER    = "gemini_api_key"
+_KEYRING_USER = "gemini_api_key"
 
 _SECRET_PATTERNS = [
-    re.compile(r"AIza[0-9A-Za-z-_]{35}"),               # Google API Key pattern
-    re.compile(r"sk-[a-zA-Z0-9]{20,}"),                 # Standard secret key prefix
+    re.compile(r"AIza[0-9A-Za-z-_]{35}"),  # Google API Key pattern
+    re.compile(r"sk-[a-zA-Z0-9]{20,}"),  # Standard secret key prefix
 ]
+
 
 def _is_keyring_available() -> bool:
     """Check if keyring package is available with an active backend."""
     try:
         import keyring
         import keyring.backends.fail
+
         b = keyring.get_keyring()
         if isinstance(b, keyring.backends.fail.Keyring):
             return False
@@ -113,6 +118,7 @@ def scan_for_secrets(text: str) -> list[str]:
 def ensure_config_dir() -> None:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
+
 def ensure_config_exists() -> None:
     ensure_config_dir()
     if not CONFIG_FILE.exists() and CONFIG_TEMPLATE.exists():
@@ -121,15 +127,18 @@ def ensure_config_exists() -> None:
         except Exception:
             pass
 
-TRUST_LEVEL_STRICT   = "strict"
+
+TRUST_LEVEL_STRICT = "strict"
 TRUST_LEVEL_BALANCED = "balanced"
-TRUST_LEVEL_TRUSTED  = "trusted"
-VALID_TRUST_LEVELS   = (TRUST_LEVEL_STRICT, TRUST_LEVEL_BALANCED, TRUST_LEVEL_TRUSTED)
+TRUST_LEVEL_TRUSTED = "trusted"
+VALID_TRUST_LEVELS = (TRUST_LEVEL_STRICT, TRUST_LEVEL_BALANCED, TRUST_LEVEL_TRUSTED)
+
 
 def get_trust_level() -> str:
     """Return user trust level: 'strict', 'balanced' (default), or 'trusted'."""
     val = str(load_api_keys().get("trust_level", TRUST_LEVEL_BALANCED)).strip().lower()
     return val if val in VALID_TRUST_LEVELS else TRUST_LEVEL_BALANCED
+
 
 def set_trust_level(level: str) -> None:
     """Persist user trust level setting."""
@@ -146,6 +155,7 @@ def set_trust_level(level: str) -> None:
     data["trust_level"] = clean
     CONFIG_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
+
 DEFAULT_ALLOWED_SUBNETS = [
     "127.0.0.0/8",
     "::1/128",
@@ -155,9 +165,11 @@ DEFAULT_ALLOWED_SUBNETS = [
     "100.64.0.0/10",
 ]
 
+
 def get_dashboard_allow_lan() -> bool:
     """Return whether the dashboard is allowed to bind to LAN (default False: loopback only)."""
     return bool(load_api_keys().get("dashboard_allow_lan", False))
+
 
 def set_dashboard_allow_lan(allow: bool) -> None:
     """Configure whether the dashboard binds to LAN or loopback only."""
@@ -171,12 +183,14 @@ def set_dashboard_allow_lan(allow: bool) -> None:
     data["dashboard_allow_lan"] = bool(allow)
     CONFIG_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
+
 def get_dashboard_allowed_subnets() -> list[str]:
     """Return list of IP CIDR subnets allowed to access the dashboard."""
     subnets = load_api_keys().get("dashboard_allowed_subnets")
     if isinstance(subnets, list) and subnets:
         return [str(s).strip() for s in subnets if str(s).strip()]
     return list(DEFAULT_ALLOWED_SUBNETS)
+
 
 def set_dashboard_allowed_subnets(subnets: list[str]) -> None:
     """Set allowed IP CIDR subnets for dashboard access."""
@@ -190,6 +204,7 @@ def set_dashboard_allowed_subnets(subnets: list[str]) -> None:
     data["dashboard_allowed_subnets"] = [str(s).strip() for s in subnets if str(s).strip()]
     CONFIG_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
+
 def _migrate_plaintext_key_to_keyring(data: dict) -> bool:
     """Migrate plaintext key from json dict to OS keyring if available."""
     if not _is_keyring_available():
@@ -198,6 +213,7 @@ def _migrate_plaintext_key_to_keyring(data: dict) -> bool:
     if plaintext_key:
         try:
             import keyring
+
             keyring.set_password(_KEYRING_SERVICE, _KEYRING_USER, plaintext_key)
             del data["gemini_api_key"]
             CONFIG_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
@@ -207,6 +223,7 @@ def _migrate_plaintext_key_to_keyring(data: dict) -> bool:
             print(f"[Config] ⚠️ Keyring migration failed: {e}")
             return False
     return False
+
 
 def save_api_keys(gemini_api_key: str) -> None:
     ensure_config_dir()
@@ -222,6 +239,7 @@ def save_api_keys(gemini_api_key: str) -> None:
     if _is_keyring_available():
         try:
             import keyring
+
             keyring.set_password(_KEYRING_SERVICE, _KEYRING_USER, clean_key)
             # Remove secret key from JSON file so it is never stored plaintext
             data.pop("gemini_api_key", None)
@@ -236,6 +254,7 @@ def save_api_keys(gemini_api_key: str) -> None:
     CONFIG_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
     _restrict_file_permissions(CONFIG_FILE)
 
+
 def load_api_keys() -> dict:
     if not CONFIG_FILE.exists():
         return {}
@@ -249,6 +268,7 @@ def load_api_keys() -> dict:
         print(f"❌ Failed to load api_keys.json: {e}")
         return {}
 
+
 def get_gemini_key() -> str | None:
     # 1. Environment variable override
     env_key = os.environ.get("GEMINI_API_KEY")
@@ -259,6 +279,7 @@ def get_gemini_key() -> str | None:
     if _is_keyring_available():
         try:
             import keyring
+
             stored = keyring.get_password(_KEYRING_SERVICE, _KEYRING_USER)
             if stored and len(stored.strip()) > 8:
                 return stored.strip()
@@ -280,6 +301,7 @@ def get_gemini_key() -> str | None:
         return file_key
 
     return None
+
 
 def is_configured() -> bool:
     key = get_gemini_key()
@@ -314,7 +336,7 @@ def save_assistant_config(assistant_name: str, user_name: str) -> None:
 # Gemini Live prebuilt voices. Names are proper nouns — identical in every
 # language, so this list is safe to show verbatim in any locale.
 AVAILABLE_VOICES = ["Charon", "Puck", "Kore", "Fenrir", "Aoede"]
-DEFAULT_VOICE    = "Charon"
+DEFAULT_VOICE = "Charon"
 
 
 def get_voice() -> str:
@@ -341,7 +363,7 @@ def save_voice(voice_name: str) -> None:
 
 DEFAULT_WAKE_WORDS = ["Jarvis"]
 DEFAULT_WAKE_WORD_THRESHOLD = 0.200
-DEFAULT_IDLE_SLEEP_TIMEOUT = 180.0   # 3 minutes
+DEFAULT_IDLE_SLEEP_TIMEOUT = 180.0  # 3 minutes
 DEFAULT_AUTO_SLEEP_ENABLED = True
 DEFAULT_WAKE_WORD_ENABLED = True
 
@@ -389,20 +411,14 @@ def get_wake_words() -> list[str]:
     """Active wake words used to wake JARVIS from sleep. Default: ['Jarvis']."""
     v = load_api_keys().get("wake_words")
     if isinstance(v, list):
-        cleaned = [
-            str(w).strip() for w in v
-            if str(w).strip() and str(w).strip().lower() != "hello"
-        ]
+        cleaned = [str(w).strip() for w in v if str(w).strip() and str(w).strip().lower() != "hello"]
         if cleaned:
             return cleaned
     return list(DEFAULT_WAKE_WORDS)
 
 
 def save_wake_words(words: list[str]) -> None:
-    cleaned = [
-        str(w).strip() for w in (words or [])
-        if str(w).strip() and str(w).strip().lower() != "hello"
-    ]
+    cleaned = [str(w).strip() for w in (words or []) if str(w).strip() and str(w).strip().lower() != "hello"]
     _save_flag("wake_words", cleaned or list(DEFAULT_WAKE_WORDS))
 
 
@@ -564,7 +580,9 @@ def sanitize_hotkeys_and_wake_words() -> None:
             save_wake_word_threshold(DEFAULT_WAKE_WORD_THRESHOLD)
             dirty = True
         if dirty:
-            logger.info("[Config] Sanitized hotkeys and wake word ('Jarvis' alone, Ctrl+Alt+J mute/sleep, Ctrl+Alt+K force listening)")
+            logger.info(
+                "[Config] Sanitized hotkeys and wake word ('Jarvis' alone, Ctrl+Alt+J mute/sleep, Ctrl+Alt+K force listening)"
+            )
     except Exception as e:
         logger.debug("[Config] Error sanitizing hotkeys and wake words: %s", e)
 
@@ -620,6 +638,7 @@ def save_ui_scale(scale: float) -> None:
 # config behaves exactly like a configured one. Each value is also a way out:
 # if a future model dislikes one of these, set it back and nothing else changes.
 
+
 def get_thinking_enabled() -> bool:
     """Whether the Live model may spend tokens thinking before it answers.
 
@@ -659,11 +678,11 @@ def get_turn_tuning() -> dict:
             return default
 
     return {
-        "enabled":    bool(cfg.get("enabled", False)),
+        "enabled": bool(cfg.get("enabled", False)),
         "silence_ms": _int("silence_ms", 550, 200, 3000),
-        "prefix_ms":  _int("prefix_ms", 150, 0, 1000),
+        "prefix_ms": _int("prefix_ms", 150, 0, 1000),
         # "high" = quicker to decide speech has ended.
-        "end_sensitivity":   str(cfg.get("end_sensitivity", "high")).lower(),
+        "end_sensitivity": str(cfg.get("end_sensitivity", "high")).lower(),
         "start_sensitivity": str(cfg.get("start_sensitivity", "default")).lower(),
     }
 
@@ -752,6 +771,7 @@ def save_brief_enabled(enabled: bool) -> None:
 # at a different microphone. The empty string means "system default", which is
 # both the factory setting and what an unresolvable saved device falls back to —
 # so unplugging a headset degrades to the built-in speakers instead of crashing.
+
 
 def _patch_config(**fields) -> None:
     """Read-modify-write one or more keys in api_keys.json.
@@ -878,10 +898,12 @@ def save_allow_bluetooth_mic(allowed: bool) -> None:
 
 # ── Audio Ducking Settings ──────────────────────────────────────────────────
 
+
 def get_ducking_enabled() -> bool:
     """Whether JARVIS ducks background applications while speaking. Default True on Windows."""
     import platform
-    default = (platform.system() == "Windows")
+
+    default = platform.system() == "Windows"
     return bool(load_api_keys().get("ducking_enabled", default))
 
 
@@ -990,6 +1012,7 @@ def save_plugin_enabled(plugin_name: str, enabled: bool) -> None:
     data["plugins_enabled"] = plugins_cfg
     CONFIG_FILE.write_text(json.dumps(data, indent=4), encoding="utf-8")
 
+
 # ── Providers: local STT/LLM/TTS and non-Gemini APIs ─────────────────────────
 # Stored here rather than in a file of their own, for the same reason plugin
 # settings are: one config to back up, one already in .gitignore, one place a
@@ -1000,7 +1023,7 @@ def save_plugin_enabled(plugin_name: str, enabled: bool) -> None:
 # providers, and every caller checks that BEFORE importing the providers
 # package — so an ordinary install never executes a line of it. This is the
 # whole basis of the claim that the folder costs nothing when unused.
-PROVIDER_MODE_GEMINI = "gemini"      # the conversation runs on the Live API
+PROVIDER_MODE_GEMINI = "gemini"  # the conversation runs on the Live API
 PROVIDER_MODE_PIPELINE = "pipeline"  # STT -> LLM -> TTS, assembled from providers
 
 
@@ -1094,9 +1117,7 @@ def _patch_providers(**fields) -> None:
 
 def save_provider_mode(mode: str) -> None:
     mode = (mode or "").strip().lower()
-    _patch_providers(mode=mode if mode in (PROVIDER_MODE_GEMINI,
-                                           PROVIDER_MODE_PIPELINE)
-                     else PROVIDER_MODE_GEMINI)
+    _patch_providers(mode=mode if mode in (PROVIDER_MODE_GEMINI, PROVIDER_MODE_PIPELINE) else PROVIDER_MODE_GEMINI)
 
 
 def save_provider_config(provider_id: str, values: dict) -> None:
@@ -1178,9 +1199,14 @@ def save_sidecar_first(enabled: bool) -> None:
     _patch_providers(sidecar_first=bool(enabled))
 
 
-def save_providers(mode: str = None, pipeline: dict = None, creds: dict = None,
-                   sidecar: str = None, sidecar_first: bool = None,
-                   coding: str = None) -> None:
+def save_providers(
+    mode: str = None,
+    pipeline: dict = None,
+    creds: dict = None,
+    sidecar: str = None,
+    sidecar_first: bool = None,
+    coding: str = None,
+) -> None:
     """Write the whole providers block in ONE file write.
 
     The settings panel used to call five setters in a row — one per provider's
@@ -1208,8 +1234,7 @@ def save_providers(mode: str = None, pipeline: dict = None, creds: dict = None,
 
     if mode is not None:
         m = str(mode).strip().lower()
-        block["mode"] = m if m in (PROVIDER_MODE_GEMINI,
-                                   PROVIDER_MODE_PIPELINE) else PROVIDER_MODE_GEMINI
+        block["mode"] = m if m in (PROVIDER_MODE_GEMINI, PROVIDER_MODE_PIPELINE) else PROVIDER_MODE_GEMINI
     if pipeline is not None:
         current = block.get("pipeline")
         current = dict(current) if isinstance(current, dict) else {}

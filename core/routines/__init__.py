@@ -4,6 +4,7 @@ core/routines — Consolidated Routines, Schedules, and Quiet Hours Engine for J
 Consolidates reminders, periodic timers, startup triggers, and idle hooks into
 a unified scheduling engine with quiet hours and voice editing.
 """
+
 from __future__ import annotations
 
 from typing import Optional

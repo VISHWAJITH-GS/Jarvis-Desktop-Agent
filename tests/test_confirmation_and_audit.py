@@ -1,6 +1,7 @@
 """
 tests/test_confirmation_and_audit.py — Unit Tests for Sensitive Confirmations and Persistent Audit Log.
 """
+
 import tempfile
 import unittest
 from pathlib import Path
@@ -129,4 +130,3 @@ class TestConfirmationAndAudit(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

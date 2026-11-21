@@ -5,6 +5,7 @@ Independent I/O Switching, Sample-Rate Resampling, Crash Prevention, Gemini Live
 Preservation, Graceful Shutdown), Confirmation Protocols, Voice Commands, and
 nvidia-ml-py Warning-Free GPU Monitoring.
 """
+
 from __future__ import annotations
 
 
@@ -70,12 +71,40 @@ class _FakeAudioEnvironment:
 
     def devices_table(self):
         devs = [
-            {"name": "Microphone Array (Realtek(R) Audio)", "hostapi": 0, "max_input_channels": 2, "max_output_channels": 0, "default_samplerate": 48000.0},
-            {"name": "Speakers (Realtek(R) Audio)", "hostapi": 1, "max_input_channels": 0, "max_output_channels": 2, "default_samplerate": 48000.0},
+            {
+                "name": "Microphone Array (Realtek(R) Audio)",
+                "hostapi": 0,
+                "max_input_channels": 2,
+                "max_output_channels": 0,
+                "default_samplerate": 48000.0,
+            },
+            {
+                "name": "Speakers (Realtek(R) Audio)",
+                "hostapi": 1,
+                "max_input_channels": 0,
+                "max_output_channels": 2,
+                "default_samplerate": 48000.0,
+            },
         ]
         if self.bt_connected:
-            devs.append({"name": "Headset (OPPO Enco Buds2)", "hostapi": 0, "max_input_channels": 1, "max_output_channels": 0, "default_samplerate": 16000.0})
-            devs.append({"name": "Headphones (OPPO Enco Buds2)", "hostapi": 1, "max_input_channels": 0, "max_output_channels": 2, "default_samplerate": 48000.0})
+            devs.append(
+                {
+                    "name": "Headset (OPPO Enco Buds2)",
+                    "hostapi": 0,
+                    "max_input_channels": 1,
+                    "max_output_channels": 0,
+                    "default_samplerate": 16000.0,
+                }
+            )
+            devs.append(
+                {
+                    "name": "Headphones (OPPO Enco Buds2)",
+                    "hostapi": 1,
+                    "max_input_channels": 0,
+                    "max_output_channels": 2,
+                    "default_samplerate": 48000.0,
+                }
+            )
         return devs
 
     def hostapis(self):
@@ -189,12 +218,21 @@ class TestAudioManagerAll12Scenarios(unittest.TestCase):
         """Test 1 (Scenario A): OPPO Enco Buds2 connected before launch initializes both input & output."""
         env = _FakeAudioEnvironment(bt_connected=True)
         status_updates = []
-        with self._patched_env(env), \
-             patch("sounddevice.query_devices", side_effect=lambda idx=None: env.devices_table()[idx] if idx is not None else env.devices_table()), \
-             patch("sounddevice.InputStream", side_effect=env.make_input_stream), \
-             patch("sounddevice.RawOutputStream", side_effect=env.make_output_stream):
+        with (
+            self._patched_env(env),
+            patch(
+                "sounddevice.query_devices",
+                side_effect=lambda idx=None: env.devices_table()[idx] if idx is not None else env.devices_table(),
+            ),
+            patch("sounddevice.InputStream", side_effect=env.make_input_stream),
+            patch("sounddevice.RawOutputStream", side_effect=env.make_output_stream),
+        ):
             mgr = AudioManager(on_status_change=status_updates.append, bt_settle_s=0.0)
-            st = mgr.initialize(preferred_input="Headset (OPPO Enco Buds2)", preferred_output="Headphones (OPPO Enco Buds2)", start_monitor=False)
+            st = mgr.initialize(
+                preferred_input="Headset (OPPO Enco Buds2)",
+                preferred_output="Headphones (OPPO Enco Buds2)",
+                start_monitor=False,
+            )
             self.assertEqual(st["input_device"], "Headset (OPPO Enco Buds2)")
             self.assertEqual(st["output_device"], "Headphones (OPPO Enco Buds2)")
             self.assertEqual(st["input_status"], STATUS_CONNECTED)
@@ -206,10 +244,15 @@ class TestAudioManagerAll12Scenarios(unittest.TestCase):
     def test_02_bluetooth_connected_after_startup(self):
         """Test 2 (Scenario B): Launch with laptop audio, then connect OPPO Enco Buds2 -> hot-switches automatically."""
         env = _FakeAudioEnvironment(bt_connected=False)
-        with self._patched_env(env), \
-             patch("sounddevice.query_devices", side_effect=lambda idx=None: env.devices_table()[idx] if idx is not None else env.devices_table()), \
-             patch("sounddevice.InputStream", side_effect=env.make_input_stream), \
-             patch("sounddevice.RawOutputStream", side_effect=env.make_output_stream):
+        with (
+            self._patched_env(env),
+            patch(
+                "sounddevice.query_devices",
+                side_effect=lambda idx=None: env.devices_table()[idx] if idx is not None else env.devices_table(),
+            ),
+            patch("sounddevice.InputStream", side_effect=env.make_input_stream),
+            patch("sounddevice.RawOutputStream", side_effect=env.make_output_stream),
+        ):
             mgr = AudioManager(bt_settle_s=0.0)
             st0 = mgr.initialize(preferred_input="", preferred_output="", start_monitor=False)
             self.assertIn("Realtek", st0["input_device"])
@@ -235,12 +278,21 @@ class TestAudioManagerAll12Scenarios(unittest.TestCase):
     def test_03_bluetooth_disconnected_while_running(self):
         """Test 3: Disconnecting Bluetooth mid-run gracefully falls back to Windows default laptop audio."""
         env = _FakeAudioEnvironment(bt_connected=True)
-        with self._patched_env(env), \
-             patch("sounddevice.query_devices", side_effect=lambda idx=None: env.devices_table()[idx] if idx is not None else env.devices_table()), \
-             patch("sounddevice.InputStream", side_effect=env.make_input_stream), \
-             patch("sounddevice.RawOutputStream", side_effect=env.make_output_stream):
+        with (
+            self._patched_env(env),
+            patch(
+                "sounddevice.query_devices",
+                side_effect=lambda idx=None: env.devices_table()[idx] if idx is not None else env.devices_table(),
+            ),
+            patch("sounddevice.InputStream", side_effect=env.make_input_stream),
+            patch("sounddevice.RawOutputStream", side_effect=env.make_output_stream),
+        ):
             mgr = AudioManager(bt_settle_s=0.0)
-            mgr.initialize(preferred_input="Headset (OPPO Enco Buds2)", preferred_output="Headphones (OPPO Enco Buds2)", start_monitor=False)
+            mgr.initialize(
+                preferred_input="Headset (OPPO Enco Buds2)",
+                preferred_output="Headphones (OPPO Enco Buds2)",
+                start_monitor=False,
+            )
 
             # Disconnect Bluetooth
             env.bt_connected = False
@@ -258,12 +310,21 @@ class TestAudioManagerAll12Scenarios(unittest.TestCase):
     def test_04_bluetooth_reconnected_restores_preferred_device(self):
         """Test 4: When OPPO Enco Buds2 reconnects, preferred device is automatically restored."""
         env = _FakeAudioEnvironment(bt_connected=True)
-        with self._patched_env(env), \
-             patch("sounddevice.query_devices", side_effect=lambda idx=None: env.devices_table()[idx] if idx is not None else env.devices_table()), \
-             patch("sounddevice.InputStream", side_effect=env.make_input_stream), \
-             patch("sounddevice.RawOutputStream", side_effect=env.make_output_stream):
+        with (
+            self._patched_env(env),
+            patch(
+                "sounddevice.query_devices",
+                side_effect=lambda idx=None: env.devices_table()[idx] if idx is not None else env.devices_table(),
+            ),
+            patch("sounddevice.InputStream", side_effect=env.make_input_stream),
+            patch("sounddevice.RawOutputStream", side_effect=env.make_output_stream),
+        ):
             mgr = AudioManager(bt_settle_s=0.0)
-            mgr.initialize(preferred_input="Headset (OPPO Enco Buds2)", preferred_output="Headphones (OPPO Enco Buds2)", start_monitor=False)
+            mgr.initialize(
+                preferred_input="Headset (OPPO Enco Buds2)",
+                preferred_output="Headphones (OPPO Enco Buds2)",
+                start_monitor=False,
+            )
 
             # Disconnect -> falls back to Realtek
             env.bt_connected = False
@@ -283,12 +344,21 @@ class TestAudioManagerAll12Scenarios(unittest.TestCase):
     def test_05_switch_microphone_independently(self):
         """Test 5: Switching microphone independently leaves speaker untouched."""
         env = _FakeAudioEnvironment(bt_connected=True)
-        with self._patched_env(env), \
-             patch("sounddevice.query_devices", side_effect=lambda idx=None: env.devices_table()[idx] if idx is not None else env.devices_table()), \
-             patch("sounddevice.InputStream", side_effect=env.make_input_stream), \
-             patch("sounddevice.RawOutputStream", side_effect=env.make_output_stream):
+        with (
+            self._patched_env(env),
+            patch(
+                "sounddevice.query_devices",
+                side_effect=lambda idx=None: env.devices_table()[idx] if idx is not None else env.devices_table(),
+            ),
+            patch("sounddevice.InputStream", side_effect=env.make_input_stream),
+            patch("sounddevice.RawOutputStream", side_effect=env.make_output_stream),
+        ):
             mgr = AudioManager(bt_settle_s=0.0)
-            mgr.initialize(preferred_input="Headset (OPPO Enco Buds2)", preferred_output="Headphones (OPPO Enco Buds2)", start_monitor=False)
+            mgr.initialize(
+                preferred_input="Headset (OPPO Enco Buds2)",
+                preferred_output="Headphones (OPPO Enco Buds2)",
+                start_monitor=False,
+            )
             out_before = mgr._out_stream
 
             res = mgr.switch_input("laptop microphone", persist=False)
@@ -303,12 +373,21 @@ class TestAudioManagerAll12Scenarios(unittest.TestCase):
     def test_06_switch_speaker_independently(self):
         """Test 6: Switching speaker independently leaves microphone untouched."""
         env = _FakeAudioEnvironment(bt_connected=True)
-        with self._patched_env(env), \
-             patch("sounddevice.query_devices", side_effect=lambda idx=None: env.devices_table()[idx] if idx is not None else env.devices_table()), \
-             patch("sounddevice.InputStream", side_effect=env.make_input_stream), \
-             patch("sounddevice.RawOutputStream", side_effect=env.make_output_stream):
+        with (
+            self._patched_env(env),
+            patch(
+                "sounddevice.query_devices",
+                side_effect=lambda idx=None: env.devices_table()[idx] if idx is not None else env.devices_table(),
+            ),
+            patch("sounddevice.InputStream", side_effect=env.make_input_stream),
+            patch("sounddevice.RawOutputStream", side_effect=env.make_output_stream),
+        ):
             mgr = AudioManager(bt_settle_s=0.0)
-            mgr.initialize(preferred_input="Microphone Array (Realtek(R) Audio)", preferred_output="Speakers (Realtek(R) Audio)", start_monitor=False)
+            mgr.initialize(
+                preferred_input="Microphone Array (Realtek(R) Audio)",
+                preferred_output="Speakers (Realtek(R) Audio)",
+                start_monitor=False,
+            )
             in_before = mgr._in_stream
 
             res = mgr.switch_output("OPPO Enco Buds2", persist=False)
@@ -323,12 +402,21 @@ class TestAudioManagerAll12Scenarios(unittest.TestCase):
     def test_07_switch_both_and_reset_default(self):
         """Test 7: Switch both microphone & speaker, then reset to Windows default."""
         env = _FakeAudioEnvironment(bt_connected=True)
-        with self._patched_env(env), \
-             patch("sounddevice.query_devices", side_effect=lambda idx=None: env.devices_table()[idx] if idx is not None else env.devices_table()), \
-             patch("sounddevice.InputStream", side_effect=env.make_input_stream), \
-             patch("sounddevice.RawOutputStream", side_effect=env.make_output_stream):
+        with (
+            self._patched_env(env),
+            patch(
+                "sounddevice.query_devices",
+                side_effect=lambda idx=None: env.devices_table()[idx] if idx is not None else env.devices_table(),
+            ),
+            patch("sounddevice.InputStream", side_effect=env.make_input_stream),
+            patch("sounddevice.RawOutputStream", side_effect=env.make_output_stream),
+        ):
             mgr = AudioManager(bt_settle_s=0.0)
-            mgr.initialize(preferred_input="Microphone Array (Realtek(R) Audio)", preferred_output="Speakers (Realtek(R) Audio)", start_monitor=False)
+            mgr.initialize(
+                preferred_input="Microphone Array (Realtek(R) Audio)",
+                preferred_output="Speakers (Realtek(R) Audio)",
+                start_monitor=False,
+            )
 
             res = mgr.switch_devices("OPPO Enco Buds2", "OPPO Enco Buds2", persist=False)
             self.assertTrue(res["success"])
@@ -343,12 +431,21 @@ class TestAudioManagerAll12Scenarios(unittest.TestCase):
     def test_08_selected_device_unavailable_during_init(self):
         """Test 8: Saved OPPO Enco Buds2 unavailable at startup -> falls back cleanly, never blocks boot."""
         env = _FakeAudioEnvironment(bt_connected=False)
-        with self._patched_env(env), \
-             patch("sounddevice.query_devices", side_effect=lambda idx=None: env.devices_table()[idx] if idx is not None else env.devices_table()), \
-             patch("sounddevice.InputStream", side_effect=env.make_input_stream), \
-             patch("sounddevice.RawOutputStream", side_effect=env.make_output_stream):
+        with (
+            self._patched_env(env),
+            patch(
+                "sounddevice.query_devices",
+                side_effect=lambda idx=None: env.devices_table()[idx] if idx is not None else env.devices_table(),
+            ),
+            patch("sounddevice.InputStream", side_effect=env.make_input_stream),
+            patch("sounddevice.RawOutputStream", side_effect=env.make_output_stream),
+        ):
             mgr = AudioManager(bt_settle_s=0.0)
-            st = mgr.initialize(preferred_input="Headset (OPPO Enco Buds2)", preferred_output="Headphones (OPPO Enco Buds2)", start_monitor=False)
+            st = mgr.initialize(
+                preferred_input="Headset (OPPO Enco Buds2)",
+                preferred_output="Headphones (OPPO Enco Buds2)",
+                start_monitor=False,
+            )
             self.assertTrue(mgr.initialized)
             self.assertIn("Realtek", st["input_device"])
             self.assertIn("Realtek", st["output_device"])
@@ -370,10 +467,15 @@ class TestAudioManagerAll12Scenarios(unittest.TestCase):
             },
         )
         received_frames = []
-        with self._patched_env(env), \
-             patch("sounddevice.query_devices", side_effect=lambda idx=None: env.devices_table()[idx] if idx is not None else env.devices_table()), \
-             patch("sounddevice.InputStream", side_effect=env.make_input_stream), \
-             patch("sounddevice.RawOutputStream", side_effect=env.make_output_stream):
+        with (
+            self._patched_env(env),
+            patch(
+                "sounddevice.query_devices",
+                side_effect=lambda idx=None: env.devices_table()[idx] if idx is not None else env.devices_table(),
+            ),
+            patch("sounddevice.InputStream", side_effect=env.make_input_stream),
+            patch("sounddevice.RawOutputStream", side_effect=env.make_output_stream),
+        ):
             mgr = AudioManager(bt_settle_s=0.0)
             st = mgr.initialize(
                 input_callback=lambda indata, frames, *_: received_frames.append(len(indata)),
@@ -400,10 +502,15 @@ class TestAudioManagerAll12Scenarios(unittest.TestCase):
         """Test 10: Repeated & concurrent audio switching creates zero duplicate streams or deadlocks."""
         env = _FakeAudioEnvironment(bt_connected=True)
         errors = []
-        with self._patched_env(env), \
-             patch("sounddevice.query_devices", side_effect=lambda idx=None: env.devices_table()[idx] if idx is not None else env.devices_table()), \
-             patch("sounddevice.InputStream", side_effect=env.make_input_stream), \
-             patch("sounddevice.RawOutputStream", side_effect=env.make_output_stream):
+        with (
+            self._patched_env(env),
+            patch(
+                "sounddevice.query_devices",
+                side_effect=lambda idx=None: env.devices_table()[idx] if idx is not None else env.devices_table(),
+            ),
+            patch("sounddevice.InputStream", side_effect=env.make_input_stream),
+            patch("sounddevice.RawOutputStream", side_effect=env.make_output_stream),
+        ):
             mgr = AudioManager(bt_settle_s=0.0)
             mgr.initialize(start_monitor=False)
 
@@ -434,20 +541,31 @@ class TestAudioManagerAll12Scenarios(unittest.TestCase):
         from main import JarvisLive
 
         env = _FakeAudioEnvironment(bt_connected=True)
-        with self._patched_env(env), \
-             patch("sounddevice.query_devices", side_effect=lambda idx=None: env.devices_table()[idx] if idx is not None else env.devices_table()), \
-             patch("sounddevice.InputStream", side_effect=env.make_input_stream), \
-             patch("sounddevice.RawOutputStream", side_effect=env.make_output_stream):
+        with (
+            self._patched_env(env),
+            patch(
+                "sounddevice.query_devices",
+                side_effect=lambda idx=None: env.devices_table()[idx] if idx is not None else env.devices_table(),
+            ),
+            patch("sounddevice.InputStream", side_effect=env.make_input_stream),
+            patch("sounddevice.RawOutputStream", side_effect=env.make_output_stream),
+        ):
             live = JarvisLive.__new__(JarvisLive)
             live.ui = MagicMock()
             live.request_reconnect = MagicMock()
             live.audio_manager = AudioManager(bt_settle_s=0.0)
-            live.audio_manager.initialize(preferred_input="Microphone Array (Realtek(R) Audio)", preferred_output="Speakers (Realtek(R) Audio)", start_monitor=False)
+            live.audio_manager.initialize(
+                preferred_input="Microphone Array (Realtek(R) Audio)",
+                preferred_output="Speakers (Realtek(R) Audio)",
+                start_monitor=False,
+            )
 
-            with patch("main.get_input_device", return_value="Headset (OPPO Enco Buds2)"), \
-                 patch("main.get_output_device", return_value="Headphones (OPPO Enco Buds2)"), \
-                 patch("memory.config_manager.get_input_device", return_value="Headset (OPPO Enco Buds2)"), \
-                 patch("memory.config_manager.get_output_device", return_value="Headphones (OPPO Enco Buds2)"):
+            with (
+                patch("main.get_input_device", return_value="Headset (OPPO Enco Buds2)"),
+                patch("main.get_output_device", return_value="Headphones (OPPO Enco Buds2)"),
+                patch("memory.config_manager.get_input_device", return_value="Headset (OPPO Enco Buds2)"),
+                patch("memory.config_manager.get_output_device", return_value="Headphones (OPPO Enco Buds2)"),
+            ):
                 live._on_audio_device_change()
                 time.sleep(0.15)
 
@@ -459,10 +577,15 @@ class TestAudioManagerAll12Scenarios(unittest.TestCase):
     def test_12_graceful_shutdown_closes_all_streams_and_threads(self):
         """Test 12: Graceful shutdown stops monitor thread and closes all streams cleanly."""
         env = _FakeAudioEnvironment(bt_connected=True)
-        with self._patched_env(env), \
-             patch("sounddevice.query_devices", side_effect=lambda idx=None: env.devices_table()[idx] if idx is not None else env.devices_table()), \
-             patch("sounddevice.InputStream", side_effect=env.make_input_stream), \
-             patch("sounddevice.RawOutputStream", side_effect=env.make_output_stream):
+        with (
+            self._patched_env(env),
+            patch(
+                "sounddevice.query_devices",
+                side_effect=lambda idx=None: env.devices_table()[idx] if idx is not None else env.devices_table(),
+            ),
+            patch("sounddevice.InputStream", side_effect=env.make_input_stream),
+            patch("sounddevice.RawOutputStream", side_effect=env.make_output_stream),
+        ):
             mgr = AudioManager(poll_interval_s=0.05, bt_settle_s=0.0)
             mgr.initialize(start_monitor=True)
             self.assertIsNotNone(mgr._monitor_thread)
@@ -531,9 +654,20 @@ class TestConfirmationProtocolAndNvidiaFix(unittest.TestCase):
     def test_sleep_and_shutdown_permissions(self):
         self.assertEqual(ActionPermissionManager.get_risk_level("sleep_jarvis", {}), ActionRiskLevel.IMMEDIATE)
         self.assertEqual(ActionPermissionManager.get_risk_level("shutdown_jarvis", {}), ActionRiskLevel.HIGH_IMPACT)
-        self.assertEqual(ActionPermissionManager.get_risk_level("windows_control", {"action": "list_audio_input_devices"}), ActionRiskLevel.IMMEDIATE)
-        self.assertEqual(ActionPermissionManager.get_risk_level("windows_control", {"action": "list_audio_output_devices"}), ActionRiskLevel.IMMEDIATE)
-        self.assertEqual(ActionPermissionManager.get_risk_level("windows_control", {"action": "set_audio_input", "target": "OPPO Enco Buds2"}), ActionRiskLevel.CONFIRMATION_REQUIRED)
+        self.assertEqual(
+            ActionPermissionManager.get_risk_level("windows_control", {"action": "list_audio_input_devices"}),
+            ActionRiskLevel.IMMEDIATE,
+        )
+        self.assertEqual(
+            ActionPermissionManager.get_risk_level("windows_control", {"action": "list_audio_output_devices"}),
+            ActionRiskLevel.IMMEDIATE,
+        )
+        self.assertEqual(
+            ActionPermissionManager.get_risk_level(
+                "windows_control", {"action": "set_audio_input", "target": "OPPO Enco Buds2"}
+            ),
+            ActionRiskLevel.CONFIRMATION_REQUIRED,
+        )
 
     def test_nvidia_ml_py_has_no_deprecation_warning(self):
         with warnings.catch_warnings(record=True) as caught:
@@ -541,6 +675,7 @@ class TestConfirmationProtocolAndNvidiaFix(unittest.TestCase):
             try:
                 import importlib
                 import pynvml
+
                 importlib.reload(pynvml)
             except ImportError:
                 self.skipTest("nvidia-ml-py not installed")

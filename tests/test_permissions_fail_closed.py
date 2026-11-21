@@ -1,6 +1,7 @@
 """
 tests/test_permissions_fail_closed.py — Unit Tests for Fail-Closed Permissions Policy.
 """
+
 import unittest
 
 from core.permissions import (
@@ -59,4 +60,3 @@ class TestPermissionsFailClosed(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

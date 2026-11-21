@@ -7,6 +7,7 @@ Maintains active cache of learned skills and provides:
 - Automatic synchronization with persistent storage.
 - Tool schema generation for exposing approved skills to Gemini Live & Orchestrator.
 """
+
 from __future__ import annotations
 
 import logging
@@ -68,9 +69,11 @@ class SkillRegistry:
             del self._skills[skill_id]
         return success
 
-    def find_matching_skill(self, query: str, threshold: float = 0.4, approved_only: bool = False) -> Tuple[Optional[SkillDefinition], float, dict]:
+    def find_matching_skill(
+        self, query: str, threshold: float = 0.4, approved_only: bool = False
+    ) -> Tuple[Optional[SkillDefinition], float, dict]:
         """Match natural language user input against learned skills using semantic heuristics.
-        
+
         Returns:
             (best_skill, match_score, extracted_parameters)
         """
@@ -139,7 +142,7 @@ class SkillRegistry:
                 if match:
                     extracted[param.name] = match.group(1)
             elif param.type == "url":
-                match = re.search(r'https?://[^\s]+', query)
+                match = re.search(r"https?://[^\s]+", query)
                 if match:
                     extracted[param.name] = match.group(0)
         return extracted
@@ -147,4 +150,3 @@ class SkillRegistry:
 
 def get_default_skill_registry() -> SkillRegistry:
     return SkillRegistry.get_instance()
-

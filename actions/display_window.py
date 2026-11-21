@@ -7,6 +7,7 @@ Allows JARVIS to:
 3. List currently active displays.
 4. Close a specific display or all displays.
 """
+
 from __future__ import annotations
 
 import os
@@ -52,6 +53,7 @@ def _resolve_image_source(source: str, title: str) -> str:
     if query:
         try:
             from actions.web_search import _get_ddgs
+
             DDGS = _get_ddgs()
             with DDGS() as ddgs:
                 for r in ddgs.images(query, max_results=3):
@@ -73,7 +75,9 @@ def _resolve_image_source(source: str, title: str) -> str:
 def display_window(parameters: dict = None, player=None, session_memory=None) -> str:
     params = parameters or {}
     action = (params.get("action") or "show_image").strip().lower()
-    source = (params.get("path_or_url") or params.get("source") or params.get("text") or params.get("content") or "").strip()
+    source = (
+        params.get("path_or_url") or params.get("source") or params.get("text") or params.get("content") or ""
+    ).strip()
     raw_display_id = params.get("display_id")
     title = (params.get("title") or "").strip()
 
@@ -117,7 +121,11 @@ def display_window(parameters: dict = None, player=None, session_memory=None) ->
             target_id = max(d["display_id"] for d in open_displays)
         ok = player.focus_display(target_id)
         if ok:
-            return f"Display {target_id} is now front and center, sir." if target_id else "Displays have been brought to focus, sir."
+            return (
+                f"Display {target_id} is now front and center, sir."
+                if target_id
+                else "Displays have been brought to focus, sir."
+            )
         return f"Sir, I could not find Display {target_id}."
 
     # ── Maximize display ─────────────────────────────────────────────────────
@@ -174,13 +182,17 @@ def display_window(parameters: dict = None, player=None, session_memory=None) ->
                 "status": "planning",
                 "phases": ["planning", "writing", "executing", "verifying", "done"],
                 "steps": [(0.0, "Initiating task plan and environment...")],
-                "files": {}
+                "files": {},
             }
         if not title:
             title = f"Task: {source.get('folder', 'Progress')}"
-    elif action in ("show_text", "text", "display_text") or (params.get("text") and action not in ("show_image", "show_video")):
+    elif action in ("show_text", "text", "display_text") or (
+        params.get("text") and action not in ("show_image", "show_video")
+    ):
         content_type = "text"
-    elif action == "show_video" or (isinstance(source, str) and source.lower().endswith((".mp4", ".mkv", ".webm", ".avi", ".mov", ".flv"))):
+    elif action == "show_video" or (
+        isinstance(source, str) and source.lower().endswith((".mp4", ".mkv", ".webm", ".avi", ".mov", ".flv"))
+    ):
         content_type = "video"
     else:
         content_type = "image"
@@ -196,7 +208,11 @@ def display_window(parameters: dict = None, player=None, session_memory=None) ->
         if content_type == "text":
             title = Path(source).name if (isinstance(source, str) and os.path.exists(source)) else "Document"
         else:
-            title = Path(source).name if (isinstance(source, str) and os.path.exists(source)) else f"{content_type.capitalize()} Media"
+            title = (
+                Path(source).name
+                if (isinstance(source, str) and os.path.exists(source))
+                else f"{content_type.capitalize()} Media"
+            )
 
     # For images, pre-resolve source if URL is broken or needs search
     if content_type == "image" and isinstance(source, str):
@@ -223,26 +239,34 @@ TOOL = {
             "action": {
                 "type": "STRING",
                 "description": "The display action: 'show_image', 'show_video', 'show_text', 'show_task', 'show_plan', 'focus', 'maximize', 'minimize', 'close', or 'list'",
-                "enum": ["show_image", "show_video", "show_text", "show_task", "show_plan", "focus", "maximize", "minimize", "close", "list"]
+                "enum": [
+                    "show_image",
+                    "show_video",
+                    "show_text",
+                    "show_task",
+                    "show_plan",
+                    "focus",
+                    "maximize",
+                    "minimize",
+                    "close",
+                    "list",
+                ],
             },
             "path_or_url": {
                 "type": "STRING",
-                "description": "Path or URL of the image or video to display, or file path for text"
+                "description": "Path or URL of the image or video to display, or file path for text",
             },
             "text": {
                 "type": "STRING",
-                "description": "Text, article, story, code, or document content to display in the window"
+                "description": "Text, article, story, code, or document content to display in the window",
             },
             "display_id": {
                 "type": "INTEGER",
-                "description": "The display number to focus, maximize, minimize, or close (e.g. 2 for Display 2; 0 or omit for all displays)"
+                "description": "The display number to focus, maximize, minimize, or close (e.g. 2 for Display 2; 0 or omit for all displays)",
             },
-            "title": {
-                "type": "STRING",
-                "description": "Optional title for the display header"
-            }
+            "title": {"type": "STRING", "description": "Optional title for the display header"},
         },
-        "required": ["action"]
+        "required": ["action"],
     },
     "handler": display_window,
 }

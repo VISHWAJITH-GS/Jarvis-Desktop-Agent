@@ -1,7 +1,9 @@
 """
 scripts/fix_future_imports.py — Ensure from __future__ import annotations is at the top of test files.
 """
+
 import glob
+
 
 def fix():
     for path in glob.glob("tests/test_*.py"):
@@ -28,6 +30,7 @@ def fix():
             with open(path, "w", encoding="utf-8") as f:
                 f.writelines(lines)
             print(f"Fixed future import in {path}")
+
 
 if __name__ == "__main__":
     fix()

@@ -61,6 +61,7 @@ WHY FACTS AND NOT SENTENCES
     truncated and pasted into a transcript, and small local models parse it
     more reliably than they parse braces.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -97,6 +98,7 @@ STARTED = "started"
 @dataclass
 class ActionResult:
     """Authoritative structured result contract for all JARVIS tool executions."""
+
     status: str
     action: str
     success: bool
@@ -207,7 +209,9 @@ class ActionResult:
         """Standard status for verification contract: SUCCESS, FAILED, PARTIAL, UNKNOWN."""
         if self.status == STATUS_DONE and self.verified and self.success:
             return "SUCCESS"
-        elif self.status == STATUS_FAILED or (not self.success and self.status not in (STATUS_UNVERIFIED, STATUS_STARTED)):
+        elif self.status == STATUS_FAILED or (
+            not self.success and self.status not in (STATUS_UNVERIFIED, STATUS_STARTED)
+        ):
             return "FAILED"
         elif self.status in (STATUS_STARTED, "partial", STATUS_NEEDS_CONFIRMATION):
             return "PARTIAL"
@@ -220,7 +224,9 @@ class ActionResult:
             "action": self.action,
             "attempted": bool(self.attempted),
             "verified": bool(self.verified),
-            "evidence": self.evidence or self.message or ("Verified." if self.verified else "Verification unconfirmed."),
+            "evidence": self.evidence
+            or self.message
+            or ("Verified." if self.verified else "Verification unconfirmed."),
             "error": self.error,
         }
 
@@ -408,7 +414,9 @@ def normalize_result(raw: Any, action_name: str = "", duration_ms: float = 0.0) 
 
     lower_raw = raw_str.lower()
     is_explicit_error = (
-        raw_str.startswith(("Error", "Failed", "Exception", "Tool '", "Browser error", "Type error", "Locator.", "Target page"))
+        raw_str.startswith(
+            ("Error", "Failed", "Exception", "Tool '", "Browser error", "Type error", "Locator.", "Target page")
+        )
         or "error:" in lower_raw
         or "browser error" in lower_raw
         or "type error" in lower_raw
@@ -612,8 +620,7 @@ def untrusted(source: str, content: str) -> str:
     return f"{_OPEN.format(source=label or 'external')}\n{text}\n{_CLOSE}"
 
 
-_WRAP_RE = re.compile(r"<<<UNTRUSTED source=[^>]*>>>\n?(.*?)\n?<<<END UNTRUSTED>>>",
-                      re.S)
+_WRAP_RE = re.compile(r"<<<UNTRUSTED source=[^>]*>>>\n?(.*?)\n?<<<END UNTRUSTED>>>", re.S)
 
 
 def unwrap(text: str) -> str:
@@ -636,9 +643,11 @@ def unwrap(text: str) -> str:
         return text
     # Un-escape the defanged markers too: they were mangled so the model could
     # not be tricked, and a person should not have to read the scar tissue.
-    return "\n\n".join(inner).replace("<<<END-UNTRUSTED-ESCAPED>>>",
-                                      "<<<END UNTRUSTED>>>") \
-                             .replace("<<<UNTRUSTED-ESCAPED", "<<<UNTRUSTED")
+    return (
+        "\n\n".join(inner)
+        .replace("<<<END-UNTRUSTED-ESCAPED>>>", "<<<END UNTRUSTED>>>")
+        .replace("<<<UNTRUSTED-ESCAPED", "<<<UNTRUSTED")
+    )
 
 
 def is_problem(result: str) -> bool:
@@ -653,5 +662,4 @@ def is_problem(result: str) -> bool:
     So tools print their full result and log only what this returns True for.
     """
     text = str(result or "")
-    return text.startswith((f"status={FAILED} ", f"status={UNVERIFIED} ",
-                            f"status={ASK} "))
+    return text.startswith((f"status={FAILED} ", f"status={UNVERIFIED} ", f"status={ASK} "))

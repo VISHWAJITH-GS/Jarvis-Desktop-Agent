@@ -5,6 +5,7 @@ Handles native desktop profile selection when Chrome or Edge opens a profile pic
 ("Who's using Chrome?", "Who's using Edge?") or requires switching profiles from the
 top toolbar via Windows UI Automation.
 """
+
 from __future__ import annotations
 
 import logging
@@ -23,6 +24,7 @@ def detect_profile_chooser(browser: str = "") -> Optional[Any]:
     """
     try:
         from actions import windows_uia
+
         if not windows_uia.is_available():
             return None
         desktop = windows_uia.get_desktop()
@@ -75,6 +77,7 @@ def select_browser_profile(
         return outcome.failed("browser_profile", "A profile_name is required (e.g. 'Student', 'Default').")
 
     from actions import windows_uia
+
     clean_target = profile_name.strip()
     clean_lower = clean_target.lower()
 
@@ -153,6 +156,7 @@ def select_browser_profile(
     if x is not None and y is not None:
         try:
             from actions import computer_control
+
             comp_res = computer_control.computer_control({"action": "click", "x": int(x), "y": int(y)})
             time.sleep(1.0)
             return outcome.done(
@@ -218,4 +222,3 @@ TOOL = {
     },
     "handler": browser_profile,
 }
-

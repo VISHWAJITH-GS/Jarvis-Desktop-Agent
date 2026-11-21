@@ -3,6 +3,7 @@ tests/test_architecture_repair.py — Automated Architecture and Reliability Tes
 
 Using Python's standard unittest library.
 """
+
 from __future__ import annotations
 
 import inspect
@@ -25,8 +26,10 @@ class ArchitectureRepairTestCase(unittest.TestCase):
             sig = inspect.signature(rec.handler)
             has_params = "parameters" in sig.parameters
             has_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
-            self.assertTrue(has_params or has_var_kw or len(sig.parameters) > 0,
-                            f"Handler for {rec.name} has invalid signature: {sig}")
+            self.assertTrue(
+                has_params or has_var_kw or len(sig.parameters) > 0,
+                f"Handler for {rec.name} has invalid signature: {sig}",
+            )
 
     def test_click_without_coordinates_refusal(self):
         """Verify that computer_control refuses click without coordinates instead of defaulting to center."""

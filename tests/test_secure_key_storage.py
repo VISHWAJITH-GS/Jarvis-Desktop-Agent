@@ -1,6 +1,7 @@
 """
 tests/test_secure_key_storage.py — Unit Tests for Secure API Key Storage & Redaction.
 """
+
 import json
 import tempfile
 import unittest
@@ -41,7 +42,9 @@ class TestSecureKeyStorage(unittest.TestCase):
                 config_manager.save_api_keys(test_key)
 
                 # Keyring received key
-                self.assertEqual(stored_keys.get(f"{config_manager._KEYRING_SERVICE}:{config_manager._KEYRING_USER}"), test_key)
+                self.assertEqual(
+                    stored_keys.get(f"{config_manager._KEYRING_SERVICE}:{config_manager._KEYRING_USER}"), test_key
+                )
 
                 # JSON file does NOT contain plaintext key
                 if self.test_cfg_file.exists():
@@ -60,10 +63,10 @@ class TestSecureKeyStorage(unittest.TestCase):
         mock_keyring.set_password.side_effect = lambda s, u, p: stored_keys.update({f"{s}:{u}": p})
 
         # Seed JSON with plaintext key
-        self.test_cfg_file.write_text(json.dumps({
-            "gemini_api_key": "AIzaSyPreExistingKeyToMigrate999",
-            "assistant_name": "JARVIS"
-        }), encoding="utf-8")
+        self.test_cfg_file.write_text(
+            json.dumps({"gemini_api_key": "AIzaSyPreExistingKeyToMigrate999", "assistant_name": "JARVIS"}),
+            encoding="utf-8",
+        )
 
         with patch.object(config_manager, "_is_keyring_available", return_value=True):
             with patch.dict("sys.modules", {"keyring": mock_keyring}):
@@ -71,7 +74,10 @@ class TestSecureKeyStorage(unittest.TestCase):
                 self.assertEqual(key, "AIzaSyPreExistingKeyToMigrate999")
 
                 # Migrated to keyring
-                self.assertEqual(stored_keys.get(f"{config_manager._KEYRING_SERVICE}:{config_manager._KEYRING_USER}"), "AIzaSyPreExistingKeyToMigrate999")
+                self.assertEqual(
+                    stored_keys.get(f"{config_manager._KEYRING_SERVICE}:{config_manager._KEYRING_USER}"),
+                    "AIzaSyPreExistingKeyToMigrate999",
+                )
 
                 # Removed from json
                 raw = json.loads(self.test_cfg_file.read_text(encoding="utf-8"))
@@ -117,4 +123,3 @@ class TestSecureKeyStorage(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

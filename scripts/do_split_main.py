@@ -1,10 +1,12 @@
 """
 scripts/do_split_main.py — Script to extract main.py into core/ modules and a thin main.py.
 """
+
 from __future__ import annotations
 
 import re
 from pathlib import Path
+
 
 def main():
     with open("main.py", "r", encoding="utf-8") as f:
@@ -14,6 +16,7 @@ def main():
     if len(lines) < 1000:
         print("main.py already trimmed, fetching from git...")
         import subprocess
+
         res = subprocess.run(["git", "show", "HEAD:main.py"], capture_output=True, text=True, encoding="utf-8")
         lines = res.stdout.splitlines(keepends=True)
 
@@ -67,7 +70,7 @@ class LiveVoiceMixin:
     # Lines before v_start: class JarvisLive to v_start
     # Lines from v_end (_build_config) to _execute_tool (line 1848)
     # Lines from _open_session (line 2881) to def main() (line 3261)
-    
+
     jl_start = None
     exec_tool_start = None
     exec_tool_end = None
@@ -93,7 +96,9 @@ class LiveVoiceMixin:
     for l in init_body:
         if "from actions import screen_processor" in l:
             init_cleaned.append("            from core import platform_hooks\n")
-            init_cleaned.append("            platform_hooks.call_hook('set_screen_glow_callback', lambda dur=2500: self.ui.show_screen_glow(dur))\n")
+            init_cleaned.append(
+                "            platform_hooks.call_hook('set_screen_glow_callback', lambda dur=2500: self.ui.show_screen_glow(dur))\n"
+            )
         elif "screen_processor.set_screen_glow_callback" in l:
             continue
         elif "self._sys_monitor      = SystemMonitor()" in l:
@@ -180,10 +185,17 @@ from memory.config_manager import (
 )
 
 '''
-    live_session_content = [live_session_header] + init_cleaned + [
-        "        # Initialize tool dispatcher\n",
-        "        self._tool_dispatcher = ToolDispatcher(self)\n",
-    ] + tool_delegates + config_body + run_body
+    live_session_content = (
+        [live_session_header]
+        + init_cleaned
+        + [
+            "        # Initialize tool dispatcher\n",
+            "        self._tool_dispatcher = ToolDispatcher(self)\n",
+        ]
+        + tool_delegates
+        + config_body
+        + run_body
+    )
 
     with open("core/live_session.py", "w", encoding="utf-8") as f:
         f.writelines(live_session_content)
@@ -272,6 +284,7 @@ if __name__ == "__main__":
     with open("main.py", "w", encoding="utf-8") as f:
         f.write(main_code)
     print("Rewrote main.py as thin composition module")
+
 
 if __name__ == "__main__":
     main()

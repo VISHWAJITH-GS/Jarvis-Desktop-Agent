@@ -18,22 +18,22 @@ _PYPERCLIP = installed("pyperclip")
 
 def _configure_pyautogui(module) -> None:
     module.FAILSAFE = True
-    module.PAUSE    = 0.06
+    module.PAUSE = 0.06
 
 
 pyautogui = LazyModule("pyautogui", _configure_pyautogui)
 pyperclip = LazyModule("pyperclip")
+
 
 def _base_dir() -> Path:
     if getattr(sys, "frozen", False):
         return Path(sys.executable).parent
     return Path(__file__).resolve().parent.parent
 
+
 def _get_os() -> str:
     try:
-        cfg = json.loads(
-            (_base_dir() / "config" / "api_keys.json").read_text(encoding="utf-8")
-        )
+        cfg = json.loads((_base_dir() / "config" / "api_keys.json").read_text(encoding="utf-8"))
         return cfg.get("os_system", "windows").lower()
     except Exception:
         return "windows"
@@ -76,6 +76,7 @@ def _clear_and_paste(text: str) -> None:
     _empty_search_bar()
     _paste_text(text)
 
+
 def _open_app(app_name: str) -> bool:
     _require_pyautogui()
     os_name = _get_os()
@@ -93,17 +94,25 @@ def _open_app(app_name: str) -> bool:
         elif os_name == "mac":
             result = subprocess.run(
                 ["open", "-a", app_name],
-                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=10,
             )
             if result.returncode != 0:
                 result = subprocess.run(
                     ["open", "-a", f"{app_name}.app"],
-                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=10,
                 )
             time.sleep(2.5)
             return result.returncode == 0
 
-        else: 
+        else:
             launched = False
             for launcher in [
                 ["gtk-launch", app_name.lower()],
@@ -129,13 +138,15 @@ def _open_app(app_name: str) -> bool:
 
 def _open_browser_url(url: str) -> bool:
     import webbrowser
+
     try:
         webbrowser.open(url)
-        time.sleep(4.0) 
+        time.sleep(4.0)
         return True
     except Exception as e:
         print(f"[SendMessage] ⚠️ Could not open browser: {e}")
         return False
+
 
 def _search_in_app(query: str) -> None:
     _require_pyautogui()
@@ -150,12 +161,14 @@ def _search_in_app(query: str) -> None:
     _paste_text(query)
     time.sleep(1.0)
 
+
 def _desktop_send(app_name: str, receiver: str, message: str) -> str:
     if not _open_app(app_name):
         return outcome.failed(
-            "send_message", f"{app_name} could not be opened, so nothing was "
-            f"typed and no message was sent",
-            platform=app_name, to=receiver,
+            "send_message",
+            f"{app_name} could not be opened, so nothing was typed and no message was sent",
+            platform=app_name,
+            to=receiver,
         )
 
     time.sleep(1.0)
@@ -185,8 +198,10 @@ def _desktop_send(app_name: str, receiver: str, message: str) -> str:
         "send_message",
         f"the message was typed into {app_name} blind - no confirmation is "
         f"available for this app, so it is NOT known to have been sent",
-        platform=app_name, to=receiver,
+        platform=app_name,
+        to=receiver,
     )
+
 
 def _send_whatsapp_web_cdp(receiver: str, message: str) -> Optional[str]:
     """
@@ -195,6 +210,7 @@ def _send_whatsapp_web_cdp(receiver: str, message: str) -> Optional[str]:
     """
     try:
         from actions.browser_session import get_browser_session_manager
+
         bm = get_browser_session_manager()
         ok, _ = bm.check_connection(timeout=0.5)
         if not ok:
@@ -266,12 +282,11 @@ def _send_whatsapp_web_cdp(receiver: str, message: str) -> Optional[str]:
             return True, f"Message verified sent to '{receiver}' on WhatsApp Web (header: '{header_title}')."
 
         import asyncio
+
         ok, msg = bm.run_coroutine(_do_send(), timeout=25.0)
         if ok:
-            return outcome.done("send_message", platform="WhatsApp Web",
-                                to=receiver, message=message, verified=True)
-        return outcome.failed("send_message", msg,
-                              platform="WhatsApp Web", to=receiver)
+            return outcome.done("send_message", platform="WhatsApp Web", to=receiver, message=message, verified=True)
+        return outcome.failed("send_message", msg, platform="WhatsApp Web", to=receiver)
     except Exception as e:
         print(f"[SendMessage] WhatsApp Web CDP error: {e}")
         return None
@@ -283,6 +298,7 @@ def _send_whatsapp(receiver: str, message: str) -> str:
     formatted_msg = message
     try:
         from plugins.whatsapp_automation import _polish_message_formal
+
         formatted_msg = _polish_message_formal(message)
     except Exception:
         pass
@@ -295,14 +311,15 @@ def _send_whatsapp(receiver: str, message: str) -> str:
     # 2. Windows UIA WhatsApp Desktop driver
     try:
         from plugins import _whatsapp_core as wa
+
         transport, why = wa.get()
         if transport is not None:
             sent, failure = transport.send_message_to(receiver, formatted_msg)
             if sent:
-                return outcome.done("send_message", platform="WhatsApp",
-                                    to=receiver, message=formatted_msg, verified=True)
-            return outcome.failed("send_message", failure,
-                                  platform="WhatsApp", to=receiver)
+                return outcome.done(
+                    "send_message", platform="WhatsApp", to=receiver, message=formatted_msg, verified=True
+                )
+            return outcome.failed("send_message", failure, platform="WhatsApp", to=receiver)
     except Exception as e:
         print(f"[SendMessage] WhatsApp driver error ({e})")
 
@@ -313,11 +330,14 @@ def _send_whatsapp(receiver: str, message: str) -> str:
     return outcome.failed(
         "send_message",
         "Could not send WhatsApp message: neither WhatsApp Web, WhatsApp Desktop UIA, nor PyAutoGUI is available.",
-        platform="WhatsApp", to=receiver,
+        platform="WhatsApp",
+        to=receiver,
     )
+
 
 def _send_telegram(receiver: str, message: str) -> str:
     return _desktop_send("Telegram", receiver, message)
+
 
 def _send_signal(receiver: str, message: str) -> str:
     return _desktop_send("Signal", receiver, message)
@@ -332,15 +352,18 @@ def _send_instagram(receiver: str, message: str) -> str:
 
     if not _open_browser_url("https://www.instagram.com/direct/new/"):
         return outcome.failed(
-            "send_message", "Instagram could not be opened in the browser, so "
-            "nothing was sent", platform="Instagram", to=receiver)
+            "send_message",
+            "Instagram could not be opened in the browser, so nothing was sent",
+            platform="Instagram",
+            to=receiver,
+        )
 
     _paste_text(receiver)
     time.sleep(1.5)
 
     pyautogui.press("down")
     time.sleep(0.3)
-    pyautogui.press("enter")   
+    pyautogui.press("enter")
     time.sleep(0.4)
 
     for _ in range(4):
@@ -358,7 +381,9 @@ def _send_instagram(receiver: str, message: str) -> str:
         "send_message",
         "the message was typed into Instagram in the browser blind - the page "
         "was never read back, so it is NOT known to have been sent",
-        platform="Instagram", to=receiver)
+        platform="Instagram",
+        to=receiver,
+    )
 
 
 def _send_messenger(receiver: str, message: str) -> str:
@@ -366,9 +391,11 @@ def _send_messenger(receiver: str, message: str) -> str:
 
     if not _open_browser_url("https://www.messenger.com/"):
         return outcome.failed(
-            "send_message", "Messenger could not be opened in the browser, so "
-            "nothing was sent", platform="Messenger", to=receiver)
-
+            "send_message",
+            "Messenger could not be opened in the browser, so nothing was sent",
+            platform="Messenger",
+            to=receiver,
+        )
 
     _search_in_app(receiver)
     time.sleep(0.5)
@@ -386,15 +413,18 @@ def _send_messenger(receiver: str, message: str) -> str:
         "send_message",
         "the message was typed into Messenger in the browser blind - the page "
         "was never read back, so it is NOT known to have been sent",
-        platform="Messenger", to=receiver)
+        platform="Messenger",
+        to=receiver,
+    )
+
 
 _PLATFORM_MAP = [
-    ({"whatsapp", "wp", "wapp"},              _send_whatsapp),
-    ({"telegram", "tg"},                      _send_telegram),
-    ({"instagram", "ig", "insta"},            _send_instagram),
-    ({"signal"},                               _send_signal),
-    ({"discord"},                              _send_discord),
-    ({"messenger", "facebook", "fb"},         _send_messenger),
+    ({"whatsapp", "wp", "wapp"}, _send_whatsapp),
+    ({"telegram", "tg"}, _send_telegram),
+    ({"instagram", "ig", "insta"}, _send_instagram),
+    ({"signal"}, _send_signal),
+    ({"discord"}, _send_discord),
+    ({"messenger", "facebook", "fb"}, _send_messenger),
 ]
 
 
@@ -412,22 +442,24 @@ def send_message(
     player=None,
     session_memory=None,
 ) -> outcome.ActionResult | str:
-    params       = parameters or {}
-    receiver     = params.get("receiver", "").strip()
+    params = parameters or {}
+    receiver = params.get("receiver", "").strip()
     message_text = params.get("message_text", "").strip()
-    platform     = params.get("platform", "whatsapp").strip()
-    is_wa        = any(k in platform.lower() for k in ("whatsapp", "wp", "wapp"))
+    platform = params.get("platform", "whatsapp").strip()
+    is_wa = any(k in platform.lower() for k in ("whatsapp", "wp", "wapp"))
 
     if not receiver:
         return outcome.failed("send_message", "no recipient was given")
-    if not message_text or any(p in message_text.lower() for p in ("enter your message", "message for", "placeholder", "your message here")):
+    if not message_text or any(
+        p in message_text.lower() for p in ("enter your message", "message for", "placeholder", "your message here")
+    ):
         return outcome.ask("send_message", f"What message would you like me to send to {receiver}?", to=receiver)
     if not _PYAUTOGUI and not is_wa:
         return outcome.failed(
             "send_message",
-            "PyAutoGUI is not installed, so the desktop cannot be driven - "
-            "run: pip install pyautogui",
-            to=receiver, platform=platform,
+            "PyAutoGUI is not installed, so the desktop cannot be driven - run: pip install pyautogui",
+            to=receiver,
+            platform=platform,
         )
 
     preview = message_text[:50] + ("…" if len(message_text) > 50 else "")
@@ -440,8 +472,7 @@ def send_message(
         result = handler(receiver, message_text)
     except Exception as exc:
         print(f"[SendMessage] {type(exc).__name__}: {exc}")
-        result = outcome.failed("send_message", f"it failed: {exc}",
-                                to=receiver, platform=platform)
+        result = outcome.failed("send_message", f"it failed: {exc}", to=receiver, platform=platform)
 
     act_res = outcome.normalize_result(result, action_name="send_message")
     verified = act_res.success and act_res.verified and act_res.status == outcome.STATUS_DONE
@@ -464,8 +495,7 @@ def send_message(
     return act_res
 
 
-def _send_and_report(player, platform: str, receiver: str,
-                     message_text: str) -> None:
+def _send_and_report(player, platform: str, receiver: str, message_text: str) -> None:
     """Do the sending, then say what actually happened — including when it did
     not happen, and including when nobody can tell.
 
@@ -477,8 +507,7 @@ def _send_and_report(player, platform: str, receiver: str,
         result = _resolve_platform(platform)(receiver, message_text)
     except Exception as exc:
         print(f"[SendMessage] {type(exc).__name__}: {exc}")
-        result = outcome.failed("send_message", f"it failed: {exc}",
-                                to=receiver, platform=platform)
+        result = outcome.failed("send_message", f"it failed: {exc}", to=receiver, platform=platform)
 
     # A prefix test on a fixed vocabulary, not a search for the word "sent".
     # The old check was `"sent" in text and "not sent" not in text`, which is
@@ -493,8 +522,7 @@ def _send_and_report(player, platform: str, receiver: str,
     # showing through, and it was reported as exactly that.
     print(f"[SendMessage] {'✅' if verified else '⚠️'} {result[:160]}")
     if player and outcome.is_problem(result):
-        player.write_log(f"[msg] could not confirm the message to {receiver} — "
-                         f"see the terminal")
+        player.write_log(f"[msg] could not confirm the message to {receiver} — see the terminal")
 
     if verified:
         # It went, and the user asked for it to go. Announcing a success they
@@ -532,24 +560,11 @@ TOOL = {
     "parameters": {
         "type": "OBJECT",
         "properties": {
-            "receiver": {
-                "type": "STRING",
-                "description": "Recipient contact name"
-            },
-            "message_text": {
-                "type": "STRING",
-                "description": "The message to send"
-            },
-            "platform": {
-                "type": "STRING",
-                "description": "Platform: WhatsApp, Telegram, etc."
-            }
+            "receiver": {"type": "STRING", "description": "Recipient contact name"},
+            "message_text": {"type": "STRING", "description": "The message to send"},
+            "platform": {"type": "STRING", "description": "Platform: WhatsApp, Telegram, etc."},
         },
-        "required": [
-            "receiver",
-            "message_text",
-            "platform"
-        ]
+        "required": ["receiver", "message_text", "platform"],
     },
     "handler": send_message,
 }

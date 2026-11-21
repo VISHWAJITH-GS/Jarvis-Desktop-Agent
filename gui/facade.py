@@ -14,11 +14,41 @@ import threading
 import time
 from pathlib import Path
 from gui.base import *
-from gui.base import _WIN_HIDE, _base_dir, BASE_DIR, CONFIG_DIR, API_FILE, _read_full_config, _DEFAULT_W, _DEFAULT_H, _MIN_W, _MIN_H, _LEFT_W, _RIGHT_W, _OS, _ResizeEdge, _detect_resize_edge, _cursor_for_edge, _FramelessWindowResizeMixin, _SysMetrics, _metrics, _nvml_gpu_windows, _load_app_fonts, keena_font, HAVE_VIDEO, HoloAvatar, get_uicon, QGraphicsVideoItem, QAudioOutput, QMediaPlayer
+from gui.base import (
+    _WIN_HIDE,
+    _base_dir,
+    BASE_DIR,
+    CONFIG_DIR,
+    API_FILE,
+    _read_full_config,
+    _DEFAULT_W,
+    _DEFAULT_H,
+    _MIN_W,
+    _MIN_H,
+    _LEFT_W,
+    _RIGHT_W,
+    _OS,
+    _ResizeEdge,
+    _detect_resize_edge,
+    _cursor_for_edge,
+    _FramelessWindowResizeMixin,
+    _SysMetrics,
+    _metrics,
+    _nvml_gpu_windows,
+    _load_app_fonts,
+    keena_font,
+    HAVE_VIDEO,
+    HoloAvatar,
+    get_uicon,
+    QGraphicsVideoItem,
+    QAudioOutput,
+    QMediaPlayer,
+)
 from gui.theme import *
 from gui.theme import _RESIZE_MARGIN, _NO_SCROLLBAR_STYLE, _HUE_LINKED, _PALETTE_DEFAULTS, _lerp_color
 
 from gui.window import MainWindow
+
 
 class _RootShim:
     def __init__(self, app: QApplication, ui=None):
@@ -54,10 +84,11 @@ def _auto_ui_scale() -> float:
         return 1.0
     try:
         import ctypes
+
         user32, gdi32 = ctypes.windll.user32, ctypes.windll.gdi32
         hdc = user32.GetDC(0)
         try:
-            physical_h = gdi32.GetDeviceCaps(hdc, 117)      # DESKTOPVERTRES
+            physical_h = gdi32.GetDeviceCaps(hdc, 117)  # DESKTOPVERTRES
         finally:
             user32.ReleaseDC(0, hdc)
         percent = ctypes.windll.shcore.GetScaleFactorForDevice(0) or 100
@@ -70,9 +101,10 @@ def _auto_ui_scale() -> float:
 def _apply_ui_scale() -> None:
     """Set Qt's global scale factor. Must run before QApplication exists."""
     if QApplication.instance() is not None or os.environ.get("QT_SCALE_FACTOR"):
-        return              # too late, or the user set it themselves
+        return  # too late, or the user set it themselves
     try:
         from memory.config_manager import get_ui_scale
+
         scale = get_ui_scale() or _auto_ui_scale()
     except Exception:
         scale = _auto_ui_scale()
@@ -388,8 +420,7 @@ class JarvisUI:
         try:
             if not self._is_alive():
                 return
-            self._win._review_sig.emit(str(title or ""), str(summary or ""),
-                                       list(findings or []), list(unclear or []))
+            self._win._review_sig.emit(str(title or ""), str(summary or ""), list(findings or []), list(unclear or []))
         except (RuntimeError, AttributeError):
             pass
 
@@ -403,11 +434,11 @@ class JarvisUI:
         except (RuntimeError, AttributeError):
             pass
 
-    def show_video(self, source: str, title: str = "", muted: bool = True,
-                   audio_source: str = "") -> None:
+    def show_video(self, source: str, title: str = "", muted: bool = True, audio_source: str = "") -> None:
         """Video display on HUD is removed per user request. Opens in external player."""
         try:
             import os, webbrowser
+
             s = str(source or "")
             if os.path.exists(s):
                 os.startfile(s)
@@ -534,14 +565,16 @@ class JarvisUI:
                 return []
             res = []
             for d_id, w in list(self._win._displays.items()):
-                res.append({
-                    "display_id": d_id,
-                    "name": getattr(w, "display_name", f"DISPLAY {d_id}"),
-                    "type": getattr(w, "content_type", "image"),
-                    "title": getattr(w, "title_text", ""),
-                    "minimized": d_id in getattr(self._win, "_minimized_display_ids", set()),
-                    "maximized": getattr(w, "_is_maximized_disp", False),
-                })
+                res.append(
+                    {
+                        "display_id": d_id,
+                        "name": getattr(w, "display_name", f"DISPLAY {d_id}"),
+                        "type": getattr(w, "content_type", "image"),
+                        "title": getattr(w, "title_text", ""),
+                        "minimized": d_id in getattr(self._win, "_minimized_display_ids", set()),
+                        "maximized": getattr(w, "_is_maximized_disp", False),
+                    }
+                )
             return res
         except (RuntimeError, AttributeError):
             return []

@@ -8,6 +8,7 @@ Deterministic hardware & settings manager providing verified operations for:
 - Sound & Audio Devices (Master volume, mute/unmute, list playback/recording devices, set default audio output/mic)
 - System Power & States (Battery status, power plan, lock, sleep/shutdown confirmation)
 """
+
 from __future__ import annotations
 
 import ctypes
@@ -34,18 +35,19 @@ if _IS_WINDOWS:
         _wlanapi = ctypes.windll.wlanapi
 
         WLAN_MAX_NAME_LENGTH = 256
+
         class _WLAN_INTERFACE_INFO(ctypes.Structure):
             _fields_ = [
                 ("InterfaceGuid", ctypes.c_byte * 16),
                 ("strInterfaceDescription", ctypes.c_wchar * WLAN_MAX_NAME_LENGTH),
-                ("isState", ctypes.c_uint)
+                ("isState", ctypes.c_uint),
             ]
 
         class _WLAN_INTERFACE_INFO_LIST(ctypes.Structure):
             _fields_ = [
                 ("dwNumberOfItems", wintypes.DWORD),
                 ("dwIndex", wintypes.DWORD),
-                ("InterfaceInfo", _WLAN_INTERFACE_INFO * 1)
+                ("InterfaceInfo", _WLAN_INTERFACE_INFO * 1),
             ]
 
         class _WLAN_CONNECTION_PARAMETERS(ctypes.Structure):
@@ -55,7 +57,7 @@ if _IS_WINDOWS:
                 ("pDot11Ssid", ctypes.c_void_p),
                 ("pDesiredBssidList", ctypes.c_void_p),
                 ("dot11BssType", ctypes.c_uint),
-                ("dwFlags", wintypes.DWORD)
+                ("dwFlags", wintypes.DWORD),
             ]
     except Exception:
         _wlanapi = None
@@ -130,7 +132,10 @@ def _run_ps(script: str, timeout: int = 15) -> tuple[int, str, str]:
         return 1, "", "Not running on Windows."
     # Security guard: strictly reject any drive formatting commands
     scr_lower = script.lower()
-    if any(pat in scr_lower for pat in ("format-volume", "clear-disk", "initialize-disk", "format c:", "format d:", "format e:", "diskpart")):
+    if any(
+        pat in scr_lower
+        for pat in ("format-volume", "clear-disk", "initialize-disk", "format c:", "format d:", "format e:", "diskpart")
+    ):
         return 1, "", "Drive formatting is strictly prohibited."
     cmd = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script]
     try:
@@ -153,6 +158,7 @@ def _run_ps(script: str, timeout: int = 15) -> tuple[int, str, str]:
 # ══════════════════════════════════════════════════════════════════════════════
 # A. BLUETOOTH MANAGEMENT
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 def get_bluetooth_status() -> dict:
     """Check Bluetooth radio state and active connected devices using WinRT and PnP."""
@@ -227,7 +233,7 @@ try {
         devs = data.get("Devices") or []
         if isinstance(devs, dict):
             devs = [devs]
-        
+
         connected_devs = [d for d in devs if d.get("IsConnected")]
         enabled = radio_state.lower() == "on"
 
@@ -241,7 +247,14 @@ try {
             "paired_count": len(devs),
         }
     except Exception as e:
-        return {"enabled": False, "state": "Unknown", "adapter_available": False, "devices": [], "connected_devices": [], "error": str(e)}
+        return {
+            "enabled": False,
+            "state": "Unknown",
+            "adapter_available": False,
+            "devices": [],
+            "connected_devices": [],
+            "error": str(e),
+        }
 
 
 def set_bluetooth_enabled(enable: bool) -> dict:
@@ -270,14 +283,16 @@ Write-Output $bt.State.ToString()
     code, stdout, stderr = _run_ps(ps, timeout=15)
     time.sleep(1.0)
     new_status = get_bluetooth_status()
-    verified = (new_status.get("enabled") == enable)
+    verified = new_status.get("enabled") == enable
     return {
         "success": verified,
         "action": "set_bluetooth_enabled",
         "enabled": new_status.get("enabled"),
         "state": new_status.get("state"),
         "verified": verified,
-        "message": f"Bluetooth turned {target_state}." if verified else f"Failed to turn Bluetooth {target_state}: {stderr or stdout}",
+        "message": f"Bluetooth turned {target_state}."
+        if verified
+        else f"Failed to turn Bluetooth {target_state}: {stderr or stdout}",
     }
 
 
@@ -323,8 +338,8 @@ def connect_bluetooth_device(device_name: str) -> dict:
 
     target_name = (matched.get("Name") or matched.get("FriendlyName")) if matched else device_name
     dev_id = matched.get("Id") if matched else ""
-    safe_name = re.sub(r'[^a-zA-Z0-9_\-\. ]', '', str(target_name)).strip()
-    safe_id = re.sub(r'[^a-zA-Z0-9_\-\.#:]', '', str(dev_id or "")).strip()
+    safe_name = re.sub(r"[^a-zA-Z0-9_\-\. ]", "", str(target_name)).strip()
+    safe_id = re.sub(r"[^a-zA-Z0-9_\-\.#:]", "", str(dev_id or "")).strip()
 
     # Enable and trigger device via Windows PnP, WinRT, and AudioEndpoint
     ps = f"""
@@ -363,7 +378,7 @@ try {{
     for _ in range(3):
         time.sleep(1.0)
         st = get_bluetooth_status()
-        for d in (st.get("connected_devices") or []):
+        for d in st.get("connected_devices") or []:
             if target_name.lower() in (d.get("Name") or "").lower():
                 verified = True
                 break
@@ -374,6 +389,7 @@ try {{
     if verified:
         try:
             from core.audio_devices import invalidate_cache
+
             invalidate_cache()
         except Exception:
             pass
@@ -385,7 +401,9 @@ try {{
         "action": "connect_bluetooth_device",
         "device": target_name,
         "verified": verified,
-        "message": f"Connected to {target_name} successfully." if verified else f"Connection command sent to '{target_name}', but active connected state could not be verified. Please ensure the earphones are powered on and in range.",
+        "message": f"Connected to {target_name} successfully."
+        if verified
+        else f"Connection command sent to '{target_name}', but active connected state could not be verified. Please ensure the earphones are powered on and in range.",
         "error": None if verified else f"Device '{target_name}' is not in connected state.",
     }
 
@@ -403,7 +421,7 @@ def disconnect_bluetooth_device(device_name: str) -> dict:
             break
     target_name = (matched.get("Name") or matched.get("FriendlyName")) if matched else device_name
 
-    safe_name = re.sub(r'[^a-zA-Z0-9_\-\. ]', '', str(target_name)).strip()
+    safe_name = re.sub(r"[^a-zA-Z0-9_\-\. ]", "", str(target_name)).strip()
     ps = f"""
 $dev = Get-PnpDevice -Class Bluetooth -FriendlyName '*{safe_name}*' -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($dev) {{
@@ -427,7 +445,7 @@ if ($dev) {{
 
 def pair_bluetooth_device(device_name: str) -> dict:
     """Guide and initiate pairing for a Bluetooth device."""
-    safe_name = re.sub(r'[^a-zA-Z0-9_\-\. ]', '', str(device_name)).strip()
+    safe_name = re.sub(r"[^a-zA-Z0-9_\-\. ]", "", str(device_name)).strip()
     ps = f"""
 $name = "{safe_name}"
 $dev = Get-PnpDevice -Class Bluetooth -FriendlyName "*$name*" -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -445,7 +463,9 @@ if ($dev) {{
         "action": "pair_bluetooth_device",
         "device": device_name,
         "verified": verified,
-        "message": f"Device '{device_name}' is already paired and verified." if verified else f"Device '{device_name}' was not found among paired devices. Please put the device in pairing mode in Windows Settings.",
+        "message": f"Device '{device_name}' is already paired and verified."
+        if verified
+        else f"Device '{device_name}' was not found among paired devices. Please put the device in pairing mode in Windows Settings.",
     }
 
 
@@ -469,13 +489,16 @@ if ($dev) {{
         "action": "unpair_bluetooth_device",
         "device": device_name,
         "verified": verified,
-        "message": f"Removed paired device '{device_name}'." if verified else f"Bluetooth device '{device_name}' not found.",
+        "message": f"Removed paired device '{device_name}'."
+        if verified
+        else f"Bluetooth device '{device_name}' not found.",
     }
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # B. WI-FI MANAGEMENT
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 def get_wifi_status() -> dict:
     """Get accurate Wi-Fi adapter status, connected SSID, IP address, and profiles."""
@@ -544,7 +567,7 @@ try {
             profiles.append(line.split(":", 1)[1].strip())
 
     # Internet availability (IPv4Connectivity == 4 indicates internet access)
-    has_internet = (ipv4_conn == 4)
+    has_internet = ipv4_conn == 4
     is_connected = bool(connected_ssid and adapter_status.lower() == "up")
 
     return {
@@ -585,7 +608,9 @@ def list_available_wifi_networks() -> dict:
         "networks": networks,
         "currently_connected": st.get("connected_ssid"),
         "verified": True,
-        "message": f"Visible / Saved Wi-Fi networks ({len(networks)}): {', '.join(networks)}" if networks else "No Wi-Fi networks detected.",
+        "message": f"Visible / Saved Wi-Fi networks ({len(networks)}): {', '.join(networks)}"
+        if networks
+        else "No Wi-Fi networks detected.",
     }
 
 
@@ -613,7 +638,7 @@ $setTask.Wait()
     _run_ps(ps, timeout=15)
     time.sleep(1.0)
     st = get_wifi_status()
-    verified = (st.get("enabled") == enable)
+    verified = st.get("enabled") == enable
     return {
         "success": verified,
         "action": "set_wifi_enabled",
@@ -647,7 +672,9 @@ def connect_wifi(ssid: str) -> dict:
         "ssid": ssid,
         "verified": verified,
         "connected_ssid": connected_curr,
-        "message": f"Connected to Wi-Fi network '{ssid}' successfully." if verified else f"Could not verify connection to '{ssid}'. Ensure the network is in range and configured.",
+        "message": f"Connected to Wi-Fi network '{ssid}' successfully."
+        if verified
+        else f"Could not verify connection to '{ssid}'. Ensure the network is in range and configured.",
     }
 
 
@@ -674,13 +701,18 @@ def forget_wifi(ssid: str) -> dict:
     cmd = f'netsh wlan delete profile name="{ssid}"'
     code, stdout, stderr = _run_ps(cmd, timeout=8)
     verified = code == 0 or "deleted" in stdout.lower()
-    msg = f"Forgot Wi-Fi network '{ssid}'." if verified else f"Could not forget Wi-Fi network '{ssid}': {stderr or stdout}"
+    msg = (
+        f"Forgot Wi-Fi network '{ssid}'."
+        if verified
+        else f"Could not forget Wi-Fi network '{ssid}': {stderr or stdout}"
+    )
     return {"success": verified, "verified": verified, "action": "forget_wifi", "ssid": ssid, "message": msg}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # C. DISPLAY AND BRIGHTNESS
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 def get_brightness() -> Optional[int]:
     """Get current primary screen brightness (0-100%)."""
@@ -698,7 +730,7 @@ def set_brightness(level: int) -> dict:
     ps = f"(Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightnessMethods).WmiSetBrightness(1, {lvl})"
     code, stdout, stderr = _run_ps(ps, timeout=5)
     now = get_brightness()
-    verified = (now is not None and abs(now - lvl) <= 5)
+    verified = now is not None and abs(now - lvl) <= 5
 
     if before is not None:
         push_undo(f"brightness {lvl}%", lambda b=before: set_brightness(b)["message"])
@@ -736,12 +768,18 @@ def set_display_mode(mode: str) -> dict:
             "message": f"Display mode switched to {mode} ({flag}).",
         }
     except Exception as e:
-        return {"success": False, "action": "set_display_mode", "error": str(e), "message": f"Failed to switch display mode: {e}"}
+        return {
+            "success": False,
+            "action": "set_display_mode",
+            "error": str(e),
+            "message": f"Failed to switch display mode: {e}",
+        }
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # D. SOUND & AUDIO DEVICES
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 def list_audio_devices(kind: str = "all") -> dict:
     """List available Windows audio input and/or output devices with capabilities and active status."""
@@ -969,6 +1007,7 @@ def get_system_power_status() -> dict:
     """Retrieve Windows laptop battery percentage and charging state."""
     try:
         import psutil
+
         batt = psutil.sensors_battery()
         if batt is not None:
             pct = int(batt.percent)
@@ -1019,18 +1058,19 @@ def _win_endpoint_volume():
     """Get Windows master volume endpoint safely across pycaw versions and COM threads."""
     try:
         import comtypes
+
         comtypes.CoInitialize()
     except Exception:
         pass
     from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
     from comtypes import CLSCTX_ALL
+
     speakers = AudioUtilities.GetSpeakers()
     endpoint = getattr(speakers, "EndpointVolume", None)
     if endpoint is not None:
         return endpoint
     dev = getattr(speakers, "_dev", speakers)
-    return ctypes.cast(dev.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None),
-                       ctypes.POINTER(IAudioEndpointVolume))
+    return ctypes.cast(dev.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None), ctypes.POINTER(IAudioEndpointVolume))
 
 
 def get_volume() -> int:
@@ -1042,6 +1082,7 @@ def get_volume() -> int:
     except Exception:
         try:
             from actions.computer_settings import volume_get as cs_volume_get
+
             vg = cs_volume_get()
             if vg is not None:
                 return vg
@@ -1070,6 +1111,7 @@ def set_volume(level: int) -> dict:
         # Fallback to computer_settings
         try:
             from actions.computer_settings import volume_set as cs_volume_set, volume_get as cs_volume_get
+
             cs_volume_set(lvl)
             now = cs_volume_get() or lvl
             return {
@@ -1099,6 +1141,7 @@ def set_mute(mute: bool) -> dict:
     except Exception as e:
         try:
             from actions.computer_settings import volume_mute
+
             volume_mute()
             return {
                 "success": True,
@@ -1114,11 +1157,19 @@ def set_mute(mute: bool) -> dict:
 # E. CENTRAL ACTION DISPATCHER
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 def windows_control(parameters: dict = None, player=None, **kwargs) -> str:
     """Auto-discovered tool handler for Windows system, hardware, Bluetooth and Wi-Fi."""
     params = parameters or {}
     action = params.get("action", "").lower().strip()
-    target = params.get("target") or params.get("device") or params.get("name") or params.get("ssid") or params.get("mode") or ""
+    target = (
+        params.get("target")
+        or params.get("device")
+        or params.get("name")
+        or params.get("ssid")
+        or params.get("mode")
+        or ""
+    )
     value = params.get("value")
 
     # Bluetooth operations
@@ -1135,9 +1186,26 @@ def windows_control(parameters: dict = None, player=None, **kwargs) -> str:
             player.show_content("Bluetooth Status", msg)
         return outcome.done("windows_control", **st, message=msg, verified=True)
 
-    if action in ("set_bluetooth_enabled", "bluetooth_on", "bluetooth_off", "enable_bluetooth", "disable_bluetooth", "toggle_bluetooth"):
-        enable = action in ("bluetooth_on", "enable_bluetooth") or str(value or target).lower() in ("on", "true", "1", "enable")
-        if action in ("bluetooth_off", "disable_bluetooth") or str(value or target).lower() in ("off", "false", "0", "disable"):
+    if action in (
+        "set_bluetooth_enabled",
+        "bluetooth_on",
+        "bluetooth_off",
+        "enable_bluetooth",
+        "disable_bluetooth",
+        "toggle_bluetooth",
+    ):
+        enable = action in ("bluetooth_on", "enable_bluetooth") or str(value or target).lower() in (
+            "on",
+            "true",
+            "1",
+            "enable",
+        )
+        if action in ("bluetooth_off", "disable_bluetooth") or str(value or target).lower() in (
+            "off",
+            "false",
+            "0",
+            "disable",
+        ):
             enable = False
         res = set_bluetooth_enabled(enable)
         return outcome.done("windows_control", **res)
@@ -1145,7 +1213,11 @@ def windows_control(parameters: dict = None, player=None, **kwargs) -> str:
     if action in ("list_bluetooth_devices", "bluetooth_devices", "paired_bluetooth_devices"):
         devs = list_bluetooth_devices()
         paired = [d.get("Name") for d in devs if d.get("Name")]
-        msg = f"Paired Bluetooth devices ({len(paired)}): {', '.join(paired)}" if paired else "No paired Bluetooth devices found."
+        msg = (
+            f"Paired Bluetooth devices ({len(paired)}): {', '.join(paired)}"
+            if paired
+            else "No paired Bluetooth devices found."
+        )
         if player and hasattr(player, "show_content"):
             player.show_content("Bluetooth Devices", msg)
         return outcome.done("windows_control", count=len(devs), devices=devs, message=msg, verified=True)
@@ -1167,7 +1239,9 @@ def windows_control(parameters: dict = None, player=None, **kwargs) -> str:
             return outcome.failed("windows_control", "device name required to connect")
         res = connect_bluetooth_device(target)
         if not res.get("verified", False):
-            return outcome.unverified("windows_control", f"Bluetooth connection to '{target}' could not be verified.", **res)
+            return outcome.unverified(
+                "windows_control", f"Bluetooth connection to '{target}' could not be verified.", **res
+            )
         if player and hasattr(player, "show_content"):
             player.show_content("Bluetooth", res.get("message", "Connected."))
         return outcome.done("windows_control", **res)
@@ -1226,8 +1300,11 @@ def windows_control(parameters: dict = None, player=None, **kwargs) -> str:
 
     if action in ("check_windows_version", "windows_version", "system_version"):
         import platform
+
         ver_msg = f"Windows {platform.release()} (Build {platform.version()})"
-        return outcome.done("windows_control", version=platform.version(), release=platform.release(), message=ver_msg, verified=True)
+        return outcome.done(
+            "windows_control", version=platform.version(), release=platform.release(), message=ver_msg, verified=True
+        )
 
     if action in ("set_power_mode", "power_mode", "change_power_mode"):
         return outcome.done("windows_control", mode=target, message=f"Power mode changed to '{target}'.", verified=True)
@@ -1254,18 +1331,41 @@ def windows_control(parameters: dict = None, player=None, **kwargs) -> str:
             player.minimize_jarvis()
             return outcome.done("windows_control", action=action, message="I have minimized myself.", verified=True)
 
-    if action in ("maximize_jarvis", "jarvis_maximize", "restore_jarvis") or (action in ("maximize", "restore") and is_jarvis_target):
+    if action in ("maximize_jarvis", "jarvis_maximize", "restore_jarvis") or (
+        action in ("maximize", "restore") and is_jarvis_target
+    ):
         if player and hasattr(player, "maximize_jarvis"):
             player.maximize_jarvis()
-            return outcome.done("windows_control", action=action, message="I have restored and maximized myself.", verified=True)
+            return outcome.done(
+                "windows_control", action=action, message="I have restored and maximized myself.", verified=True
+            )
 
-    if action in ("show_memory", "manage_memory", "memory_platform", "memory_manager", "show_actions", "manage_actions", "action_registry", "action_platform"):
+    if action in (
+        "show_memory",
+        "manage_memory",
+        "memory_platform",
+        "memory_manager",
+        "show_actions",
+        "manage_actions",
+        "action_registry",
+        "action_platform",
+    ):
         tab = "actions" if "action" in action else "memory"
         if player and hasattr(player, "show_memory_actions_display"):
             player.show_memory_actions_display(tab=tab)
-            return outcome.done("windows_control", action=action, message=f"Opening JARVIS {tab} management matrix.", verified=True)
+            return outcome.done(
+                "windows_control", action=action, message=f"Opening JARVIS {tab} management matrix.", verified=True
+            )
 
-    if action in ("set_volume", "volume", "adjust_volume", "volume_up", "volume_down", "increase_volume", "decrease_volume"):
+    if action in (
+        "set_volume",
+        "volume",
+        "adjust_volume",
+        "volume_up",
+        "volume_down",
+        "increase_volume",
+        "decrease_volume",
+    ):
         if action in ("volume_up", "increase_volume"):
             delta = 10
             raw = str(value or target or "").replace("%", "").strip()

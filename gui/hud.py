@@ -14,9 +14,39 @@ import threading
 import time
 from pathlib import Path
 from gui.base import *
-from gui.base import _WIN_HIDE, _base_dir, BASE_DIR, CONFIG_DIR, API_FILE, _read_full_config, _DEFAULT_W, _DEFAULT_H, _MIN_W, _MIN_H, _LEFT_W, _RIGHT_W, _OS, _ResizeEdge, _detect_resize_edge, _cursor_for_edge, _FramelessWindowResizeMixin, _SysMetrics, _metrics, _nvml_gpu_windows, _load_app_fonts, keena_font, HAVE_VIDEO, HoloAvatar, get_uicon, QGraphicsVideoItem, QAudioOutput, QMediaPlayer
+from gui.base import (
+    _WIN_HIDE,
+    _base_dir,
+    BASE_DIR,
+    CONFIG_DIR,
+    API_FILE,
+    _read_full_config,
+    _DEFAULT_W,
+    _DEFAULT_H,
+    _MIN_W,
+    _MIN_H,
+    _LEFT_W,
+    _RIGHT_W,
+    _OS,
+    _ResizeEdge,
+    _detect_resize_edge,
+    _cursor_for_edge,
+    _FramelessWindowResizeMixin,
+    _SysMetrics,
+    _metrics,
+    _nvml_gpu_windows,
+    _load_app_fonts,
+    keena_font,
+    HAVE_VIDEO,
+    HoloAvatar,
+    get_uicon,
+    QGraphicsVideoItem,
+    QAudioOutput,
+    QMediaPlayer,
+)
 from gui.theme import *
 from gui.theme import _RESIZE_MARGIN, _NO_SCROLLBAR_STYLE, _HUE_LINKED, _PALETTE_DEFAULTS, _lerp_color
+
 
 class HudFadeOverlay(QWidget):
     def __init__(self, parent=None):
@@ -138,22 +168,22 @@ class HudConversationWidget(QTextEdit):
 
     def _render_conversation(self):
         html_parts = []
-        html_parts.append(f'<div style="font-family: \'Montserrat\', monospace; color: {C.TEXT}; font-size: 11px;">')
+        html_parts.append(f"<div style=\"font-family: 'Montserrat', monospace; color: {C.TEXT}; font-size: 11px;\">")
 
         for spk, txt in self._messages[-50:]:
-            escaped = (txt.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>"))
+            escaped = txt.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>")
             if spk == "you":
                 html_parts.append(
                     f'<div style="margin-top: 6px; margin-bottom: 2px;">'
                     f'<span style="color: {C.TEXT_DIM}; font-size: 9px; font-weight: bold; letter-spacing: 1.5px;">YOU</span>'
-                    f'</div>'
+                    f"</div>"
                     f'<div style="color: #ffffff; margin-bottom: 8px; line-height: 1.35;">{escaped}</div>'
                 )
             elif spk == "jarvis":
                 html_parts.append(
                     f'<div style="margin-top: 6px; margin-bottom: 2px;">'
                     f'<span style="color: {C.PRI}; font-size: 9px; font-weight: bold; letter-spacing: 1.5px;">{self._asst_name}</span>'
-                    f'</div>'
+                    f"</div>"
                     f'<div style="color: {C.TEXT}; border-left: 2px solid {C.PRI}; padding-left: 6px; margin-bottom: 8px; line-height: 1.35;">{escaped}</div>'
                 )
             else:
@@ -162,24 +192,34 @@ class HudConversationWidget(QTextEdit):
                 )
 
         if self._streaming_user:
-            esc = self._streaming_user.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>")
+            esc = (
+                self._streaming_user.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\n", "<br>")
+            )
             html_parts.append(
                 f'<div style="margin-top: 6px; margin-bottom: 2px;">'
                 f'<span style="color: {C.TEXT_DIM}; font-size: 9px; font-weight: bold; letter-spacing: 1.5px;">YOU</span>'
-                f'</div>'
+                f"</div>"
                 f'<div style="color: #ffffff; margin-bottom: 8px; line-height: 1.35;">{esc} <span style="color: {C.PRI};">...</span></div>'
             )
 
         if self._streaming_reply:
-            esc = self._streaming_reply.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>")
+            esc = (
+                self._streaming_reply.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\n", "<br>")
+            )
             html_parts.append(
                 f'<div style="margin-top: 6px; margin-bottom: 2px;">'
                 f'<span style="color: {C.PRI}; font-size: 9px; font-weight: bold; letter-spacing: 1.5px;">{self._asst_name}</span>'
-                f'</div>'
+                f"</div>"
                 f'<div style="color: {C.TEXT}; border-left: 2px solid {C.PRI}; padding-left: 6px; margin-bottom: 8px; line-height: 1.35;">{esc} <span style="color: {C.PRI}; font-weight: bold;">█</span></div>'
             )
 
-        html_parts.append('</div>')
+        html_parts.append("</div>")
 
         bar = self.verticalScrollBar()
         old_val = bar.value()
@@ -227,7 +267,7 @@ class HudCanvas(QWidget):
         self.spin = 0.0
         self.boot = 1.0
         self.wave = [0.0] * 72
-        self.cards = []               # list of (action_text, timestamp)
+        self.cards = []  # list of (action_text, timestamp)
         self.user_text = ""
         self.reply_text = ""
         self.reply_shown = 0.0
@@ -253,7 +293,7 @@ class HudCanvas(QWidget):
 
         self._tmr = QTimer(self)
         self._tmr.timeout.connect(self._step)
-        self._tmr.start(16)           # 60 FPS animation
+        self._tmr.start(16)  # 60 FPS animation
 
     def on_state_changed(self, new_state: str):
         """Immediately update state, reset phase, and transition colors smoothly."""
@@ -264,7 +304,7 @@ class HudCanvas(QWidget):
             self._active_state = st
             self._state_start_t = time.time()
             self.state = st
-            self.speaking = (st == "SPEAKING")
+            self.speaking = st == "SPEAKING"
             self.update()
 
     def resizeEvent(self, e):
@@ -443,7 +483,7 @@ class HudCanvas(QWidget):
             frames, t0, hop = sched
             i = int((now - t0) / hop)
             if 0 <= i < len(frames):
-                v_seq = frames[max(0, self._vis_i or i):i + 1]
+                v_seq = frames[max(0, self._vis_i or i) : i + 1]
                 self._vis_i = i + 1
                 if v_seq:
                     peak = max(f[0] for f in v_seq)
@@ -468,10 +508,14 @@ class HudCanvas(QWidget):
             self._state_start_t = now
 
         speed = {
-            "THINKING": 220, "PROCESSING": 180,
-            "LISTENING": 28, "SPEAKING": 45,
-            "EXECUTING": 160, "INTERRUPTED": 90,
-            "RECONNECTING": 12, "MUTED": 10,
+            "THINKING": 220,
+            "PROCESSING": 180,
+            "LISTENING": 28,
+            "SPEAKING": 45,
+            "EXECUTING": 160,
+            "INTERRUPTED": 90,
+            "RECONNECTING": 12,
+            "MUTED": 10,
             "SLEEPING": 6,
         }.get(st, 14)
         self.spin = (self.spin + dt * speed) % 360.0
@@ -521,28 +565,28 @@ class HudCanvas(QWidget):
         CYAN_ACC = qcol(C.PRI)
         DEEP_ACC = qcol(C.ACC)
         TEXT_COL = qcol(C.TEXT)
-        DIM_COL  = qcol(C.TEXT_DIM)
+        DIM_COL = qcol(C.TEXT_DIM)
         ALERT_COL = qcol(C.MUTED_C)
 
         if self.muted or st == "MUTED":
-            target_accent = QColor(138, 138, 138)         # GRAY when mic is muted
+            target_accent = QColor(138, 138, 138)  # GRAY when mic is muted
             target_core_mid = QColor(190, 190, 190, 240)
             target_glow_col = QColor(138, 138, 138)
             pulse_speed = 1.0
         elif st == "SLEEPING":
-            target_accent = QColor(99, 102, 241)          # CALM INDIGO when low-power sleeping
+            target_accent = QColor(99, 102, 241)  # CALM INDIGO when low-power sleeping
             target_core_mid = QColor(165, 180, 252, 220)
             target_glow_col = QColor(99, 102, 241)
             pulse_speed = 0.8
         elif self.speaking or st == "SPEAKING":
-            target_accent = COLOR_STATE_SPEAKING           # YELLOW when JARVIS is speaking
+            target_accent = COLOR_STATE_SPEAKING  # YELLOW when JARVIS is speaking
             target_core_mid = QColor(255, 245, 180, 240)
             target_glow_col = COLOR_STATE_SPEAKING
             pulse_speed = 4.5
         elif st in ("THINKING", "PROCESSING"):
-            target_accent = COLOR_BLUE_PRIMARY            # Bright glowing light blue (#38BDF8)
-            target_core_mid = COLOR_BLUE_HIGHLIGHT        # Strong highlight (#BAE6FD)
-            target_glow_col = COLOR_BLUE_GLOW             # Bright cyan-blue glow (#7DD3FC)
+            target_accent = COLOR_BLUE_PRIMARY  # Bright glowing light blue (#38BDF8)
+            target_core_mid = COLOR_BLUE_HIGHLIGHT  # Strong highlight (#BAE6FD)
+            target_glow_col = COLOR_BLUE_GLOW  # Bright cyan-blue glow (#7DD3FC)
             pulse_speed = 5.0 if st == "THINKING" else 5.5
         elif st in ("ERROR", "INTERRUPTED"):
             target_accent = ALERT_COL
@@ -592,12 +636,18 @@ class HudCanvas(QWidget):
         # ── Frame: cut-corner translucent dark glass
         c = 18
         r = QRectF(6, 6, w_d - 12, h_d - 12)
-        panel = QPolygonF([
-            QPointF(r.left() + c, r.top()), QPointF(r.right() - c, r.top()),
-            QPointF(r.right(), r.top() + c), QPointF(r.right(), r.bottom() - c),
-            QPointF(r.right() - c, r.bottom()), QPointF(r.left() + c, r.bottom()),
-            QPointF(r.left(), r.bottom() - c), QPointF(r.left(), r.top() + c)
-        ])
+        panel = QPolygonF(
+            [
+                QPointF(r.left() + c, r.top()),
+                QPointF(r.right() - c, r.top()),
+                QPointF(r.right(), r.top() + c),
+                QPointF(r.right(), r.bottom() - c),
+                QPointF(r.right() - c, r.bottom()),
+                QPointF(r.left() + c, r.bottom()),
+                QPointF(r.left(), r.bottom() - c),
+                QPointF(r.left(), r.top() + c),
+            ]
+        )
         p.setPen(QPen(rgba(accent, 55), 1))
         p.setBrush(QColor(14, 4, 12, 220))
         p.drawPolygon(panel)
@@ -605,8 +655,12 @@ class HudCanvas(QWidget):
         # Bright angular corner brackets
         p.setPen(QPen(rgba(accent, 210), 2))
         L = 24
-        for (x, y, dx, dy) in ((r.left(), r.top(), 1, 1), (r.right(), r.top(), -1, 1),
-                               (r.left(), r.bottom(), 1, -1), (r.right(), r.bottom(), -1, -1)):
+        for x, y, dx, dy in (
+            (r.left(), r.top(), 1, 1),
+            (r.right(), r.top(), -1, 1),
+            (r.left(), r.bottom(), 1, -1),
+            (r.right(), r.bottom(), -1, -1),
+        ):
             p.drawLine(QPointF(x + dx * c, y), QPointF(x + dx * (c + L), y))
             p.drawLine(QPointF(x, y + dy * c), QPointF(x, y + dy * (c + L)))
             p.drawLine(QPointF(x + dx * c, y), QPointF(x, y + dy * c))
@@ -675,7 +729,7 @@ class HudCanvas(QWidget):
             p.drawEllipse(center, glow_r, glow_r)
             p.setBrush(Qt.BrushStyle.NoBrush)
         else:
-            glow_r = (145 + 30 * lvl)
+            glow_r = 145 + 30 * lvl
             g = QRadialGradient(center, max(glow_r, 1))
             g.setColorAt(0.0, rgba(glow_col, 95))
             g.setColorAt(0.45, rgba(glow_col, 30))
@@ -696,11 +750,15 @@ class HudCanvas(QWidget):
             tip = QPointF(cx + math.cos(a) * (R - 7), cy + math.sin(a) * (R - 7))
             side = math.radians(k * 90 + 45 + 90)
             base = QPointF(cx + math.cos(a) * (R + 2), cy + math.sin(a) * (R + 2))
-            p.drawPolygon(QPolygonF([
-                tip,
-                base + QPointF(math.cos(side) * 5, math.sin(side) * 5),
-                base - QPointF(math.cos(side) * 5, math.sin(side) * 5)
-            ]))
+            p.drawPolygon(
+                QPolygonF(
+                    [
+                        tip,
+                        base + QPointF(math.cos(side) * 5, math.sin(side) * 5),
+                        base - QPointF(math.cos(side) * 5, math.sin(side) * 5),
+                    ]
+                )
+            )
         p.setBrush(Qt.BrushStyle.NoBrush)
 
         # Radar sweep for thinking
@@ -719,12 +777,11 @@ class HudCanvas(QWidget):
         p.translate(center)
         p.rotate(-self.spin * 0.35)
         for k in range(72):
-            long_tick = (k % 6 == 0)
+            long_tick = k % 6 == 0
             p.setPen(QPen(rgba(accent, 215 if long_tick else 90), 2 if long_tick else 1))
             r0 = 102 if long_tick else 106
             a = math.radians(k * 5)
-            p.drawLine(QPointF(math.cos(a) * r0, math.sin(a) * r0),
-                       QPointF(math.cos(a) * 112, math.sin(a) * 112))
+            p.drawLine(QPointF(math.cos(a) * r0, math.sin(a) * r0), QPointF(math.cos(a) * 112, math.sin(a) * 112))
         p.restore()
 
         # Counter-rotating segmented arcs
@@ -749,8 +806,10 @@ class HudCanvas(QWidget):
                 length = 3 + (26 * lvl + 20 * w_val) * freq
                 alpha = int(140 + 115 * min(1.0, lvl * 2.0))
                 p.setPen(QPen(rgba(accent, alpha), 2.2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.FlatCap))
-                p.drawLine(QPointF(cx + math.cos(a) * base_r, cy + math.sin(a) * base_r),
-                           QPointF(cx + math.cos(a) * (base_r + length), cy + math.sin(a) * (base_r + length)))
+                p.drawLine(
+                    QPointF(cx + math.cos(a) * base_r, cy + math.sin(a) * base_r),
+                    QPointF(cx + math.cos(a) * (base_r + length), cy + math.sin(a) * (base_r + length)),
+                )
             p.setPen(QPen(rgba(accent, 220), 1.5))
             p.drawEllipse(center, base_r - 2, base_r - 2)
         elif st == "SPEAKING":
@@ -760,8 +819,10 @@ class HudCanvas(QWidget):
                 wob = 0.5 + 0.5 * math.sin(t * 9 + k * 0.9) * math.sin(t * 4.3 + k * 0.37)
                 length = 4 + 22 * lvl * wob
                 p.setPen(QPen(rgba(accent, 220), 2.2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.FlatCap))
-                p.drawLine(QPointF(cx + math.cos(a) * base_r, cy + math.sin(a) * base_r),
-                           QPointF(cx + math.cos(a) * (base_r + length), cy + math.sin(a) * (base_r + length)))
+                p.drawLine(
+                    QPointF(cx + math.cos(a) * base_r, cy + math.sin(a) * base_r),
+                    QPointF(cx + math.cos(a) * (base_r + length), cy + math.sin(a) * (base_r + length)),
+                )
         elif st == "EXECUTING":
             rect = QRectF(cx - base_r, cy - base_r, 2 * base_r, 2 * base_r)
             p.setPen(QPen(rgba(accent, 240), 3.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
@@ -786,14 +847,14 @@ class HudCanvas(QWidget):
 
         # Glowing core: pure white center fading to state color
         if st in ("THINKING", "PROCESSING"):
-            core_r = (28 + 6 * pulse + 1.5 * math.sin(t * 3.5))
+            core_r = 28 + 6 * pulse + 1.5 * math.sin(t * 3.5)
             cg = QRadialGradient(center, max(core_r, 1))
             cg.setColorAt(0.0, QColor(255, 255, 255, 255))
-            cg.setColorAt(0.35, COLOR_BLUE_HIGHLIGHT)     # #BAE6FD Strong highlight
-            cg.setColorAt(0.75, COLOR_BLUE_PRIMARY)       # #38BDF8 Primary light blue
+            cg.setColorAt(0.35, COLOR_BLUE_HIGHLIGHT)  # #BAE6FD Strong highlight
+            cg.setColorAt(0.75, COLOR_BLUE_PRIMARY)  # #38BDF8 Primary light blue
             cg.setColorAt(1.0, QColor(56, 189, 248, 35))
         else:
-            core_r = (28 + 6 * lvl + 1.5 * math.sin(t * 2.2))
+            core_r = 28 + 6 * lvl + 1.5 * math.sin(t * 2.2)
             cg = QRadialGradient(center, max(core_r, 1))
             cg.setColorAt(0.0, QColor(255, 255, 255, 255))
             cg.setColorAt(0.35, core_mid)
@@ -837,7 +898,7 @@ class HudCanvas(QWidget):
     def _paint_big(self, p: QPainter, accent: QColor, boot: float, t: float):
         w, h = self.width(), self.height()
         TEXT_COL = qcol(C.TEXT)
-        DIM_COL  = qcol(C.TEXT_DIM)
+        DIM_COL = qcol(C.TEXT_DIM)
 
         p.fillRect(QRectF(0, 0, w, h), QColor(10, 3, 10, 245))
         p.setPen(QPen(rgba(accent, 12), 1))
@@ -855,7 +916,7 @@ class HudCanvas(QWidget):
 
         m, L = 28, 70
         p.setPen(QPen(rgba(accent, 200 * boot), 2.5))
-        for (x, y, dx, dy) in ((m, m, 1, 1), (w - m, m, -1, 1), (m, h - m, 1, -1), (w - m, h - m, -1, -1)):
+        for x, y, dx, dy in ((m, m, 1, 1), (w - m, m, -1, 1), (m, h - m, 1, -1), (w - m, h - m, -1, -1)):
             p.drawLine(QPointF(x, y), QPointF(x + dx * L, y))
             p.drawLine(QPointF(x, y), QPointF(x, y + dy * L))
 
@@ -886,7 +947,9 @@ class HudCanvas(QWidget):
 
         p.setPen(rgba(DIM_COL, 150 * boot))
         p.setFont(keena_font(9, False, 3))
-        p.drawText(QRectF(0, h - m - 22, w - m - 26, 18), Qt.AlignmentFlag.AlignRight, "ESC OR CLICK — RETURN TO DESKTOP HUD")
+        p.drawText(
+            QRectF(0, h - m - 22, w - m - 26, 18), Qt.AlignmentFlag.AlignRight, "ESC OR CLICK — RETURN TO DESKTOP HUD"
+        )
 
         p.save()
         p.translate(rx, ry)
@@ -906,26 +969,29 @@ class HudCanvas(QWidget):
             tip = QPointF(center.x() + math.cos(a) * (R - 7), center.y() + math.sin(a) * (R - 7))
             side = math.radians(k * 90 + 45 + 90)
             base = QPointF(center.x() + math.cos(a) * (R + 2), center.y() + math.sin(a) * (R + 2))
-            p.drawPolygon(QPolygonF([
-                tip,
-                base + QPointF(math.cos(side) * 5, math.sin(side) * 5),
-                base - QPointF(math.cos(side) * 5, math.sin(side) * 5)
-            ]))
+            p.drawPolygon(
+                QPolygonF(
+                    [
+                        tip,
+                        base + QPointF(math.cos(side) * 5, math.sin(side) * 5),
+                        base - QPointF(math.cos(side) * 5, math.sin(side) * 5),
+                    ]
+                )
+            )
         p.setBrush(Qt.BrushStyle.NoBrush)
 
         p.save()
         p.translate(center)
         p.rotate(-self.spin * 0.35)
         for k in range(72):
-            long_tick = (k % 6 == 0)
+            long_tick = k % 6 == 0
             p.setPen(QPen(rgba(accent, 215 if long_tick else 90), 2 if long_tick else 1))
             r0 = 102 if long_tick else 106
             a = math.radians(k * 5)
-            p.drawLine(QPointF(math.cos(a) * r0, math.sin(a) * r0),
-                       QPointF(math.cos(a) * 112, math.sin(a) * 112))
+            p.drawLine(QPointF(math.cos(a) * r0, math.sin(a) * r0), QPointF(math.cos(a) * 112, math.sin(a) * 112))
         p.restore()
 
-        core_r = (28 + 6 * lvl + 1.5 * math.sin(t * 2.2))
+        core_r = 28 + 6 * lvl + 1.5 * math.sin(t * 2.2)
         cg = QRadialGradient(center, max(core_r, 1))
         cg.setColorAt(0.0, QColor(255, 255, 255, 255))
         cg.setColorAt(0.35, QColor(255, 214, 236, 240))
@@ -945,14 +1011,20 @@ class HudCanvas(QWidget):
         if self.user_text:
             p.setPen(rgba(DIM_COL, 220))
             p.setFont(keena_font(13))
-            p.drawText(QRectF(tx, ty, tw, 48), Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap, self.user_text[-160:])
+            p.drawText(
+                QRectF(tx, ty, tw, 48), Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap, self.user_text[-160:]
+            )
             ty += 56
         if self.reply_text:
             p.setPen(TEXT_COL)
             p.setFont(keena_font(18, True))
-            shown = self.reply_text[:int(self.reply_shown)]
+            shown = self.reply_text[: int(self.reply_shown)]
             cursor = "█" if int(self.reply_shown) < len(self.reply_text) else ""
-            p.drawText(QRectF(tx, ty, tw, max(60, int(h - ty - 60))), Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap, shown[-220:] + cursor)
+            p.drawText(
+                QRectF(tx, ty, tw, max(60, int(h - ty - 60))),
+                Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap,
+                shown[-220:] + cursor,
+            )
 
     def _paint_mini_circle(self, p: QPainter, accent: QColor, core_mid: QColor, glow_col: QColor, t: float):
         w, h = self.width(), self.height()
@@ -1074,23 +1146,26 @@ class HudCanvas(QWidget):
         p.setBrush(rgba(accent, 240))
         for k in range(4):
             a = math.radians(k * 90 + 45)
-            p.drawPolygon(QPolygonF([
-                QPointF(math.cos(a) * (R - 5), math.sin(a) * (R - 5)),
-                QPointF(math.cos(a + 0.08) * (R + 6), math.sin(a + 0.08) * (R + 6)),
-                QPointF(math.cos(a - 0.08) * (R + 6), math.sin(a - 0.08) * (R + 6)),
-            ]))
+            p.drawPolygon(
+                QPolygonF(
+                    [
+                        QPointF(math.cos(a) * (R - 5), math.sin(a) * (R - 5)),
+                        QPointF(math.cos(a + 0.08) * (R + 6), math.sin(a + 0.08) * (R + 6)),
+                        QPointF(math.cos(a - 0.08) * (R + 6), math.sin(a - 0.08) * (R + 6)),
+                    ]
+                )
+            )
         p.setBrush(Qt.BrushStyle.NoBrush)
 
         # Dial ticks
         p.save()
         p.rotate(-self.spin * 0.35)
         for k in range(36):
-            long_tick = (k % 6 == 0)
+            long_tick = k % 6 == 0
             p.setPen(QPen(rgba(accent, 220 if long_tick else 100), 2.5 if long_tick else 1.5))
             r0 = (96 - 12 * lvl) if long_tick else (104 - 6 * lvl)
             a = math.radians(k * 10)
-            p.drawLine(QPointF(math.cos(a) * r0, math.sin(a) * r0),
-                       QPointF(math.cos(a) * 114, math.sin(a) * 114))
+            p.drawLine(QPointF(math.cos(a) * r0, math.sin(a) * r0), QPointF(math.cos(a) * 114, math.sin(a) * 114))
         p.restore()
 
         # Counter-rotating segmented arcs
@@ -1110,9 +1185,18 @@ class HudCanvas(QWidget):
                 a = math.radians(k * 360 / bars + self.spin * 0.4)
                 wob = 0.5 + 0.5 * math.sin(t * 9 + k * 0.9)
                 length = 5 + 46 * lvl * wob
-                p.setPen(QPen(rgba(accent, 220 + int(35 * lvl)), 2.8 + 1.2 * lvl, Qt.PenStyle.SolidLine, Qt.PenCapStyle.FlatCap))
-                p.drawLine(QPointF(math.cos(a) * base_r, math.sin(a) * base_r),
-                           QPointF(math.cos(a) * (base_r + length), math.sin(a) * (base_r + length)))
+                p.setPen(
+                    QPen(
+                        rgba(accent, 220 + int(35 * lvl)),
+                        2.8 + 1.2 * lvl,
+                        Qt.PenStyle.SolidLine,
+                        Qt.PenCapStyle.FlatCap,
+                    )
+                )
+                p.drawLine(
+                    QPointF(math.cos(a) * base_r, math.sin(a) * base_r),
+                    QPointF(math.cos(a) * (base_r + length), math.sin(a) * (base_r + length)),
+                )
         elif st == "LISTENING":
             path = QPainterPath()
             n = len(self.wave)
@@ -1145,21 +1229,21 @@ class HudCanvas(QWidget):
 
         # Glowing core: pure white center fading to state color
         if st in ("THINKING", "PROCESSING"):
-            core_r = (26 + 8 * pulse + 1.5 * math.sin(t * 3.5))
+            core_r = 26 + 8 * pulse + 1.5 * math.sin(t * 3.5)
             cg = QRadialGradient(center, max(core_r, 1))
             cg.setColorAt(0.0, QColor(255, 255, 255, 255))
-            cg.setColorAt(0.35, COLOR_BLUE_HIGHLIGHT)     # #BAE6FD
-            cg.setColorAt(0.75, COLOR_BLUE_PRIMARY)       # #38BDF8
+            cg.setColorAt(0.35, COLOR_BLUE_HIGHLIGHT)  # #BAE6FD
+            cg.setColorAt(0.75, COLOR_BLUE_PRIMARY)  # #38BDF8
             cg.setColorAt(1.0, QColor(56, 189, 248, 40))
         elif st == "LISTENING":
-            core_r = (24 + 6 * pulse + 24 * lvl + 2.0 * math.sin(t * 3.0))
+            core_r = 24 + 6 * pulse + 24 * lvl + 2.0 * math.sin(t * 3.0)
             cg = QRadialGradient(center, max(core_r, 1))
             cg.setColorAt(0.0, QColor(255, 255, 255, 255))
             cg.setColorAt(0.35, core_mid)
             cg.setColorAt(0.75, rgba(accent, 235))
             cg.setColorAt(1.0, rgba(accent, 40))
         else:
-            core_r = (26 + 26 * lvl + 2.0 * math.sin(t * 3.0))
+            core_r = 26 + 26 * lvl + 2.0 * math.sin(t * 3.0)
             cg = QRadialGradient(center, max(core_r, 1))
             cg.setColorAt(0.0, QColor(255, 255, 255, 255))
             cg.setColorAt(0.35, core_mid)
@@ -1172,5 +1256,3 @@ class HudCanvas(QWidget):
         p.setBrush(Qt.BrushStyle.NoBrush)
 
         p.restore()
-
-

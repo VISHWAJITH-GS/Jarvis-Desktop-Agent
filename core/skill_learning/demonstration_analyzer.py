@@ -8,6 +8,7 @@ Interprets raw observation event traces using Google Gemini API:
 - Maps interaction steps to declarative local tools and semantic selectors
 - Defines verification rules and failure recovery paths
 """
+
 from __future__ import annotations
 
 import json
@@ -124,28 +125,36 @@ Return ONLY a valid JSON object matching this exact schema:
 
         for e in events:
             if e.event_type == "window_activate":
-                steps.append({
-                    "step_id": step_id,
-                    "thought": f"Switch to window '{e.window_title}'",
-                    "tool": "open_app",
-                    "parameters": {"app_name": e.app_name},
-                    "verification": {"type": "window_title_contains", "target": e.app_name, "expected_value": e.app_name},
-                })
+                steps.append(
+                    {
+                        "step_id": step_id,
+                        "thought": f"Switch to window '{e.window_title}'",
+                        "tool": "open_app",
+                        "parameters": {"app_name": e.app_name},
+                        "verification": {
+                            "type": "window_title_contains",
+                            "target": e.app_name,
+                            "expected_value": e.app_name,
+                        },
+                    }
+                )
                 step_id += 1
             elif e.event_type in ("click", "double_click"):
                 elem_name = e.element_name or e.selector.get("name", "Button")
-                steps.append({
-                    "step_id": step_id,
-                    "thought": f"Click '{elem_name}' in {e.app_name}",
-                    "tool": "windows_uia",
-                    "parameters": {
-                        "action": "click",
-                        "name": elem_name,
-                        "control_type": e.control_type or "Button",
-                        "element_name": elem_name,
-                    },
-                    "verification": {"type": "element_visible", "target": elem_name},
-                })
+                steps.append(
+                    {
+                        "step_id": step_id,
+                        "thought": f"Click '{elem_name}' in {e.app_name}",
+                        "tool": "windows_uia",
+                        "parameters": {
+                            "action": "click",
+                            "name": elem_name,
+                            "control_type": e.control_type or "Button",
+                            "element_name": elem_name,
+                        },
+                        "verification": {"type": "element_visible", "target": elem_name},
+                    }
+                )
                 step_id += 1
             elif e.event_type == "type_text" and e.input_value:
                 # Abstract input into dynamic parameter, ensuring credentials are never stored
@@ -156,51 +165,61 @@ Return ONLY a valid JSON object matching this exact schema:
 
                 if is_pwd:
                     param_name = "password"
-                    parameters.append({
-                        "name": param_name,
-                        "type": "string",
-                        "description": "Secure password",
-                        "required": True,
-                        "is_credential": True,
-                    })
+                    parameters.append(
+                        {
+                            "name": param_name,
+                            "type": "string",
+                            "description": "Secure password",
+                            "required": True,
+                            "is_credential": True,
+                        }
+                    )
                 elif is_user:
                     param_name = "username"
-                    parameters.append({
-                        "name": param_name,
-                        "type": "string",
-                        "description": "Login account / username",
-                        "required": True,
-                        "is_credential": True,
-                    })
+                    parameters.append(
+                        {
+                            "name": param_name,
+                            "type": "string",
+                            "description": "Login account / username",
+                            "required": True,
+                            "is_credential": True,
+                        }
+                    )
                 elif "\\" in e.input_value or "/" in e.input_value or "." in e.input_value:
                     param_name = "file_path"
-                    parameters.append({
-                        "name": param_name,
-                        "type": "file_path",
-                        "description": "Target file path",
-                        "required": True,
-                    })
+                    parameters.append(
+                        {
+                            "name": param_name,
+                            "type": "file_path",
+                            "description": "Target file path",
+                            "required": True,
+                        }
+                    )
                 else:
                     param_name = "prompt"
-                    parameters.append({
-                        "name": param_name,
-                        "type": "string",
-                        "description": "User instruction text",
-                        "required": True,
-                    })
+                    parameters.append(
+                        {
+                            "name": param_name,
+                            "type": "string",
+                            "description": "User instruction text",
+                            "required": True,
+                        }
+                    )
 
-                steps.append({
-                    "step_id": step_id,
-                    "thought": f"Enter {param_name} into {e.element_name or 'input field'}",
-                    "tool": "windows_uia",
-                    "parameters": {
-                        "action": "type_text",
-                        "text": f"{{{param_name}}}",
-                        "element_name": e.element_name,
-                    },
-                    "verification": {"type": "element_visible", "target": e.element_name},
-                    "is_sensitive": is_pwd,
-                })
+                steps.append(
+                    {
+                        "step_id": step_id,
+                        "thought": f"Enter {param_name} into {e.element_name or 'input field'}",
+                        "tool": "windows_uia",
+                        "parameters": {
+                            "action": "type_text",
+                            "text": f"{{{param_name}}}",
+                            "element_name": e.element_name,
+                        },
+                        "verification": {"type": "element_visible", "target": e.element_name},
+                        "is_sensitive": is_pwd,
+                    }
+                )
                 step_id += 1
 
         return {
@@ -225,4 +244,3 @@ Return ONLY a valid JSON object matching this exact schema:
             "preconditions": [],
             "steps": [],
         }
-

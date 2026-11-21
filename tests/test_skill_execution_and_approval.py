@@ -8,6 +8,7 @@ Tests:
 4. Word-boundary risk classification (preventing 'skillrack' from matching 'kill').
 5. Observable step-by-step reporting with credential redaction.
 """
+
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -19,7 +20,6 @@ from core.skill_learning.skill_security import classify_skill_risk, sanitize_tex
 
 
 class TestSkillExecutionAndApproval(unittest.TestCase):
-
     def setUp(self):
         ConfirmationManager.discard_pending("test setup")
 
@@ -38,10 +38,12 @@ class TestSkillExecutionAndApproval(unittest.TestCase):
             mock_mgr = MagicMock()
             mock_mgr_getter.return_value = mock_mgr
 
-            skill_learner({
-                "action": "execute_skill, approve_skill:True",
-                "skill_id": "test_skill",
-            })
+            skill_learner(
+                {
+                    "action": "execute_skill, approve_skill:True",
+                    "skill_id": "test_skill",
+                }
+            )
 
             # execute_skill should have been called with approve_skill set in parameters
             self.assertTrue(mock_mgr.execute_skill.called)
@@ -76,7 +78,7 @@ class TestSkillExecutionAndApproval(unittest.TestCase):
             name="Skillrack Login",
             description="Login to Skillrack",
             category="web",
-            status=RiskLevel.NORMAL.value, # or SkillStatus.APPROVED.value
+            status=RiskLevel.NORMAL.value,  # or SkillStatus.APPROVED.value
             permissions=RiskLevel.SENSITIVE.value,
             steps=[
                 StepDefinition(step_id=1, tool="open_app", thought="Open Chrome", is_sensitive=True),
@@ -97,7 +99,9 @@ class TestSkillExecutionAndApproval(unittest.TestCase):
         from core.skill_learning.skill_executor import SkillExecutor
 
         mock_registry = MagicMock()
-        mock_registry.execute.return_value = MagicMock(is_success=lambda: True, status="done", message="Done", verified=True)
+        mock_registry.execute.return_value = MagicMock(
+            is_success=lambda: True, status="done", message="Done", verified=True
+        )
 
         executor = SkillExecutor(action_registry=mock_registry)
         sensitive_skill = SkillDefinition(
@@ -105,7 +109,7 @@ class TestSkillExecutionAndApproval(unittest.TestCase):
             name="Skillrack Login",
             description="Login to Skillrack",
             category="web",
-            status=RiskLevel.NORMAL.value, # or SkillStatus.APPROVED.value
+            status=RiskLevel.NORMAL.value,  # or SkillStatus.APPROVED.value
             permissions=RiskLevel.SENSITIVE.value,
             steps=[
                 StepDefinition(step_id=1, tool="open_app", thought="Open Chrome", is_sensitive=True),
@@ -129,7 +133,9 @@ class TestSkillExecutionAndApproval(unittest.TestCase):
         from core.skill_learning.skill_executor import SkillExecutor
 
         mock_registry = MagicMock()
-        mock_registry.execute.return_value = MagicMock(is_success=lambda: True, status="done", message="Done", verified=True)
+        mock_registry.execute.return_value = MagicMock(
+            is_success=lambda: True, status="done", message="Done", verified=True
+        )
 
         executor = SkillExecutor(action_registry=mock_registry)
         sensitive_skill = SkillDefinition(
@@ -137,7 +143,7 @@ class TestSkillExecutionAndApproval(unittest.TestCase):
             name="Skillrack Login",
             description="Login to Skillrack",
             category="web",
-            status=RiskLevel.NORMAL.value, # or SkillStatus.APPROVED.value
+            status=RiskLevel.NORMAL.value,  # or SkillStatus.APPROVED.value
             permissions=RiskLevel.SENSITIVE.value,
             steps=[
                 StepDefinition(step_id=1, tool="open_app", thought="Open Chrome", is_sensitive=True),

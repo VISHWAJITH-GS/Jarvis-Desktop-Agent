@@ -66,6 +66,7 @@ class TestRemindersAlertsWindowControls(unittest.TestCase):
         # Simulate execution inside permissions guard
         with patch.object(permissions.ActionPermissionManager, "get_risk_level") as mock_risk:
             from core.permissions import ActionRiskLevel
+
             mock_risk.return_value = ActionRiskLevel.CONFIRMATION_REQUIRED
             with patch("core.confirm.request_action") as mock_req:
                 permissions.ActionExecutionGuard.guard_and_execute(
@@ -178,6 +179,7 @@ class TestRemindersAlertsWindowControls(unittest.TestCase):
     def test_07_terminal_timestamp_logging(self):
         """ComputerControl logs format includes timestamps."""
         from actions.computer_control import _cc_log
+
         with patch("builtins.print") as mock_print:
             _cc_log("test message")
             self.assertTrue(mock_print.called)

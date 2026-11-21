@@ -30,12 +30,12 @@ from typing import Callable, Optional
 logger = logging.getLogger(__name__)
 
 # Default inactivity window (seconds) before transitioning to SLEEPING.
-DEFAULT_IDLE_SLEEP_TIMEOUT = 180.0   # 3 minutes
+DEFAULT_IDLE_SLEEP_TIMEOUT = 180.0  # 3 minutes
 
 
 class VoiceState(str, enum.Enum):
     DISABLED = "DISABLED"
-    MUTED = "DISABLED"       # Canonical alias for DISABLED
+    MUTED = "DISABLED"  # Canonical alias for DISABLED
     SLEEPING = "SLEEPING"
     LISTENING = "LISTENING"
     PROCESSING = "PROCESSING"
@@ -58,9 +58,7 @@ class VoiceStateManager:
         self._state = initial_state
         # Resting state to restore when unmuting via Toggle Mute (Ctrl + Alt + J).
         self._pre_mute_state: VoiceState = (
-            VoiceState.SLEEPING
-            if initial_state == VoiceState.SLEEPING
-            else VoiceState.LISTENING
+            VoiceState.SLEEPING if initial_state == VoiceState.SLEEPING else VoiceState.LISTENING
         )
         self._lock = threading.RLock()
         self._generation_id = 0
@@ -362,6 +360,7 @@ class VoiceStateManager:
                 logger.warning("Error in on_interrupt callback: %s", e)
         try:
             from core.ducking import restore_background_audio
+
             restore_background_audio()
         except Exception:
             pass
@@ -382,6 +381,7 @@ class VoiceStateManager:
 
         try:
             from core.ducking import notify_speech_activity
+
             if new_state == VoiceState.SPEAKING:
                 notify_speech_activity(True)
             elif old_state == VoiceState.SPEAKING:

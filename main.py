@@ -1,6 +1,7 @@
 """
 main.py — Main entrypoint and composition layer for Jarvis Desktop Agent.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -9,6 +10,7 @@ import threading
 
 # ── 1. Configure runtime environment ─────────────────────────────────────────
 from core.runtime_env import ensure_windows_subprocess_patch, ensure_utf8_console
+
 ensure_windows_subprocess_patch()
 ensure_utf8_console()
 
@@ -17,9 +19,7 @@ from core import platform_hooks
 from actions.screen_processor import _capture_screen, set_screen_glow_callback
 from actions.system_monitor import SystemMonitor, get_system_status
 from actions.proactive import ProactiveEngine
-from actions.background_monitor import (
-    add_monitor, remove_monitor, list_monitors, check_all as monitor_check_all
-)
+from actions.background_monitor import add_monitor, remove_monitor, list_monitors, check_all as monitor_check_all
 from actions.web_search import _news as _fetch_news_sync
 
 platform_hooks.register_hook("capture_screen", _capture_screen)

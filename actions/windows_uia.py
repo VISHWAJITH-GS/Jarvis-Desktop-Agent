@@ -20,6 +20,7 @@ Capabilities:
      and validate bounding boxes before any physical mouse operation.
   9. MULTI-TIER FALLBACK: UIA -> OCR -> Visual Grounding -> PyAutoGUI.
 """
+
 from __future__ import annotations
 
 import io
@@ -127,14 +128,18 @@ def get_screen_metrics() -> dict:
     """
     if not _IS_WINDOWS:
         return {
-            "virtual_x": 0, "virtual_y": 0,
-            "virtual_w": 1920, "virtual_h": 1080,
+            "virtual_x": 0,
+            "virtual_y": 0,
+            "virtual_w": 1920,
+            "virtual_h": 1080,
             "scale_factor": 1.0,
-            "pyautogui_w": 1920, "pyautogui_h": 1080,
+            "pyautogui_w": 1920,
+            "pyautogui_h": 1080,
         }
 
     try:
         import ctypes
+
         user32 = ctypes.windll.user32
         gdi32 = ctypes.windll.gdi32
 
@@ -181,10 +186,13 @@ def get_screen_metrics() -> dict:
     except Exception as e:
         print(f"[WindowsUIA] ⚠️ Error getting screen metrics: {e}")
         return {
-            "virtual_x": 0, "virtual_y": 0,
-            "virtual_w": 1920, "virtual_h": 1080,
+            "virtual_x": 0,
+            "virtual_y": 0,
+            "virtual_w": 1920,
+            "virtual_h": 1080,
             "scale_factor": 1.0,
-            "pyautogui_w": 1920, "pyautogui_h": 1080,
+            "pyautogui_w": 1920,
+            "pyautogui_h": 1080,
         }
 
 
@@ -208,9 +216,11 @@ def validate_coordinates(
 
     # Basic multi-monitor desktop bounds check
     if not (vx <= x < vx + vw and vy <= y < vy + vh):
-        return x, y, False, (
-            f"Coordinates ({x}, {y}) lie outside virtual screen bounds "
-            f"[{vx}, {vy}, {vx + vw}, {vy + vh}]."
+        return (
+            x,
+            y,
+            False,
+            (f"Coordinates ({x}, {y}) lie outside virtual screen bounds [{vx}, {vy}, {vx + vw}, {vy + vh}]."),
         )
 
     # Check bounding box if provided
@@ -221,9 +231,14 @@ def validate_coordinates(
         b = bounding_box.get("bottom", vy + vh)
 
         if not (l <= x <= r and t <= y <= b):
-            return x, y, False, (
-                f"Coordinates ({x}, {y}) lie outside element bounding box "
-                f"[left={l}, top={t}, right={r}, bottom={b}]."
+            return (
+                x,
+                y,
+                False,
+                (
+                    f"Coordinates ({x}, {y}) lie outside element bounding box "
+                    f"[left={l}, top={t}, right={r}, bottom={b}]."
+                ),
             )
 
     return x, y, True, "valid"
@@ -277,6 +292,7 @@ def get_active_window() -> dict:
         proc_name = ""
         try:
             import psutil
+
             proc_name = psutil.Process(pid).name()
         except Exception:
             pass
@@ -421,8 +437,16 @@ def inspect_window(
             return {"status": "failed", "reason": "No valid window to inspect."}
 
         actionable_types = {
-            "Button", "ListItem", "TreeItem", "MenuItem", "Hyperlink",
-            "CheckBox", "RadioButton", "ComboBox", "Edit", "TabItem",
+            "Button",
+            "ListItem",
+            "TreeItem",
+            "MenuItem",
+            "Hyperlink",
+            "CheckBox",
+            "RadioButton",
+            "ComboBox",
+            "Edit",
+            "TabItem",
         }
 
         collected: List[dict] = []
@@ -462,7 +486,7 @@ def inspect_window(
         _traverse(target_wrapper, 1)
 
         total = len(collected)
-        paged = collected[offset: offset + limit]
+        paged = collected[offset : offset + limit]
 
         # Strip internal wrappers from final output to make it serializable
         clean_elements = []
@@ -576,7 +600,9 @@ def find_elements(
                         exact_matches.append(c_info)
                     elif elem_name_lower == target_name_lower:
                         case_insensitive_matches.append(c_info)
-                    elif target_name_lower in elem_name_lower or (len(elem_name_lower) > 3 and elem_name_lower in target_name_lower):
+                    elif target_name_lower in elem_name_lower or (
+                        len(elem_name_lower) > 3 and elem_name_lower in target_name_lower
+                    ):
                         partial_matches.append(c_info)
 
                     _search(child, depth + 1)
@@ -606,7 +632,8 @@ def find_elements(
         # Multiple elements match: attempt automatic disambiguation by container
         # e.g. Prefer an item in a list/data view over navigation bar or breadcrumbs
         main_view_candidates = [
-            c for c in candidates
+            c
+            for c in candidates
             if c["control_type"] in ("ListItem", "TreeItem", "Button")
             and any(k in c["parent_child_relationship"]["parent_type"] for k in ("List", "DataGrid", "Tree", "Pane"))
         ]
@@ -630,10 +657,7 @@ def find_elements(
         return {
             "status": "ambiguous",
             "candidates": candidates,
-            "question": (
-                f"Multiple elements matched '{name}'. Which one did you mean?\n"
-                + "\n".join(descriptions)
-            ),
+            "question": (f"Multiple elements matched '{name}'. Which one did you mean?\n" + "\n".join(descriptions)),
         }
     except Exception as e:
         return {"status": "failed", "reason": f"Find element failed: {e}"}
@@ -990,6 +1014,7 @@ def _get_file_explorer_window() -> Optional[Any]:
         pass
     return None
 
+
 def _get_edge_window() -> Optional[Any]:
     """Find active or top Microsoft Edge window."""
     if not is_available():
@@ -1013,6 +1038,7 @@ def _get_edge_window() -> Optional[Any]:
     except Exception:
         pass
     return None
+
 
 def _get_chrome_window() -> Optional[Any]:
     """Find active or top Google Chrome window."""
@@ -1083,16 +1109,19 @@ def list_open_windows(visible_only: bool = True) -> List[dict]:
                     try:
                         _, pid = win32process.GetWindowThreadProcessId(h)
                         import psutil
+
                         pname = psutil.Process(pid).name()
                     except Exception:
                         pass
-                results.append({
-                    "title": title,
-                    "handle": h,
-                    "pid": pid,
-                    "process_name": pname,
-                    "is_visible": w.is_visible() if hasattr(w, "is_visible") else True,
-                })
+                results.append(
+                    {
+                        "title": title,
+                        "handle": h,
+                        "pid": pid,
+                        "process_name": pname,
+                        "is_visible": w.is_visible() if hasattr(w, "is_visible") else True,
+                    }
+                )
             except Exception:
                 continue
     except Exception as e:
@@ -1228,15 +1257,14 @@ def open_file_explorer_item(
       8. If location matches wrong folder, report mismatch; if not found, report not found.
     """
     if not is_available():
-        return outcome.failed(
-            "uia_open", "Windows UI Automation is not available on this platform."
-        )
+        return outcome.failed("uia_open", "Windows UI Automation is not available on this platform.")
 
     exp_win = window or _get_file_explorer_window()
     if not exp_win:
         # If File Explorer is not open, automatically attempt to launch it to the requested path
         try:
             import os
+
             clean_path = item_name.strip()
             if os.path.exists(clean_path):
                 os.startfile(clean_path)
@@ -1352,9 +1380,9 @@ def open_file_explorer_item(
             if r.width() > 0 and r.height() > 0:
                 cx = (r.left + r.right) // 2
                 cy = (r.top + r.bottom) // 2
-                adj_x, adj_y, valid, reason = validate_coordinates(cx, cy, {
-                    "left": r.left, "top": r.top, "right": r.right, "bottom": r.bottom
-                })
+                adj_x, adj_y, valid, reason = validate_coordinates(
+                    cx, cy, {"left": r.left, "top": r.top, "right": r.right, "bottom": r.bottom}
+                )
                 if valid and _PYAUTOGUI:
                     pyautogui.doubleClick(adj_x, adj_y)
                     opened = True
@@ -1437,6 +1465,7 @@ def _ocr_find_text(query: str) -> Optional[Tuple[int, int]]:
         return None
     try:
         import pytesseract
+
         screenshot = pyautogui.screenshot()
         data = pytesseract.image_to_data(screenshot, output_type=pytesseract.Output.DICT)
         query_lower = query.lower()
@@ -1520,7 +1549,8 @@ def windows_uia(
 
     if not _IS_WINDOWS:
         return outcome.failed(
-            "windows_uia", "Windows UI Automation is only supported on Windows.",
+            "windows_uia",
+            "Windows UI Automation is only supported on Windows.",
             os=platform.system(),
         )
 
@@ -1668,6 +1698,7 @@ TOOL = {
 
 try:
     from core import platform_hooks
+
     platform_hooks.register_hook("uia_is_available", is_available)
     platform_hooks.register_hook("get_active_window", get_active_window)
     platform_hooks.register_hook("find_element_at_point", find_element_at_point)
@@ -1676,4 +1707,3 @@ try:
     platform_hooks.register_hook("open_file_explorer_item", open_file_explorer_item)
 except Exception:
     pass
-

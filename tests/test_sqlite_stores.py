@@ -43,7 +43,7 @@ class TestReminderSQLiteStore(unittest.TestCase):
                 "target_time": "2026-11-13T20:00:00",
                 "status": "pending",
                 "recurrence": "none",
-                "created_at": "2026-11-13T18:00:00"
+                "created_at": "2026-11-13T18:00:00",
             }
         ]
         json_file.write_text(json.dumps(legacy_data), encoding="utf-8")
@@ -118,7 +118,9 @@ class TestSkillsSQLiteStore(unittest.TestCase):
     def setUp(self):
         self.test_dir = tempfile.mkdtemp(prefix="test_skills_sqlite_")
         self.p_skills_dir = patch.object(skill_storage, "SKILLS_DIR", reminder_mod.Path(self.test_dir))
-        self.p_manifest_path = patch.object(skill_storage, "MANIFEST_PATH", reminder_mod.Path(self.test_dir) / "manifest.json")
+        self.p_manifest_path = patch.object(
+            skill_storage, "MANIFEST_PATH", reminder_mod.Path(self.test_dir) / "manifest.json"
+        )
         self.p_db_path = patch.object(skill_storage, "DB_PATH", reminder_mod.Path(self.test_dir) / "skills_manifest.db")
         self.p_skills_dir.start()
         self.p_manifest_path.start()
@@ -149,9 +151,9 @@ class TestSkillsSQLiteStore(unittest.TestCase):
                     "status": "approved",
                     "permissions": "normal",
                     "file": "skills/application_skills/skill_legacy_1.json",
-                    "updated_at": "2026-11-13T10:00:00"
+                    "updated_at": "2026-11-13T10:00:00",
                 }
-            }
+            },
         }
         skill_storage.MANIFEST_PATH.write_text(json.dumps(legacy_manifest), encoding="utf-8")
 
@@ -184,7 +186,7 @@ class TestSkillsSQLiteStore(unittest.TestCase):
             application="system",
             version="1.0.0",
             status="draft",
-            permissions="normal"
+            permissions="normal",
         )
         saved_path = skill_storage.save_skill(skill)
         self.assertTrue(saved_path.exists())
@@ -221,7 +223,7 @@ class TestSkillsSQLiteStore(unittest.TestCase):
                         application="app",
                         version="1.0.0",
                         status="draft",
-                        permissions="normal"
+                        permissions="normal",
                     )
                     skill_storage.save_skill(s)
             except Exception as e:

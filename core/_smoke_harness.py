@@ -16,6 +16,7 @@ Nothing here can reach a model or the network on the plugin's behalf:
 core.gemini is replaced with stubs that answer "nothing came back", which is
 also the case every plugin must survive.
 """
+
 from __future__ import annotations
 
 import importlib
@@ -102,10 +103,10 @@ class Player:
             self.calls.append(name)
             if name == "show_quiz":
                 qs = args[1] if len(args) > 1 else kwargs.get("questions")
-                if not isinstance(qs, list) or not qs or not all(
-                        isinstance(q, dict) and q.get("question") for q in qs):
+                if not isinstance(qs, list) or not qs or not all(isinstance(q, dict) and q.get("question") for q in qs):
                     self.calls.append("show_quiz:BAD_QUESTIONS")
             return None
+
         return method
 
     # attributes some tools read
@@ -122,11 +123,13 @@ def main() -> None:
         try:
             from PyQt6.QtCore import qInstallMessageHandler
             from PyQt6.QtWidgets import QApplication
+
             app = QApplication.instance() or QApplication([])
 
             def handler(_mode, _ctx, msg):
                 qt_messages.append(str(msg))
                 _trace("QT", str(msg))
+
             qInstallMessageHandler(handler)
         except Exception:
             app = None
@@ -146,6 +149,7 @@ def main() -> None:
         stem = os.path.splitext(os.path.basename(rel))[0]
         try:
             from core.plugin_loader import _call_run, _validate
+
             spec = importlib.util.spec_from_file_location(f"plugins.{stem}", path)
             module = importlib.util.module_from_spec(spec)
             sys.modules[f"plugins.{stem}"] = module
@@ -171,7 +175,7 @@ def main() -> None:
 
         t0 = time.monotonic()
         _trace("RUN", rel)
-        worker = threading.Thread(target=call, daemon=True)   # as the app runs tools
+        worker = threading.Thread(target=call, daemon=True)  # as the app runs tools
         worker.start()
         # Only WAIT here — no Qt calls on this thread while the plugin runs. A
         # plugin that builds a window on its own thread can deadlock against a
@@ -188,8 +192,10 @@ def main() -> None:
         res["warnings"] = qt_messages[before:][:10]
         res["params"] = params
         if worker.is_alive():
-            res["error"] = ("run() did not return within 25 seconds. Tools must return "
-                            "at once and do slow work on a background thread.")
+            res["error"] = (
+                "run() did not return within 25 seconds. Tools must return "
+                "at once and do slow work on a background thread."
+            )
         elif "error" in box:
             res["error"] = "run() raised:\n" + box["error"]
         else:

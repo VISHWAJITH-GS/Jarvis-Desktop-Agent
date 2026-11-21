@@ -3,6 +3,7 @@ import subprocess
 import time
 from actions import computer_control
 
+
 class TestCloseApp(unittest.TestCase):
     def test_close_calculator(self):
         # Open Calculator
@@ -36,6 +37,6 @@ class TestCloseApp(unittest.TestCase):
         self.assertIn("status=done", res)
         self.assertIn("verified=true", res)
 
+
 if __name__ == "__main__":
     unittest.main()
-

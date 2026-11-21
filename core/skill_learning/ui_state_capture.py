@@ -8,6 +8,7 @@ Captures high-fidelity desktop UI state during user demonstration:
 - Password/credential protection
 - Browser URL and state extraction
 """
+
 from __future__ import annotations
 
 import platform
@@ -39,6 +40,7 @@ def get_current_ui_state(max_elements: int = 25) -> UIState:
 
     try:
         from core import platform_hooks
+
         win_info = platform_hooks.call_hook("get_active_window", default=None)
         if win_info and win_info.get("status") == "success":
             state.window_title = win_info.get("title", "")
@@ -51,20 +53,24 @@ def get_current_ui_state(max_elements: int = 25) -> UIState:
                 state.is_browser = True
 
         # Inspect actionable controls
-        ins = platform_hooks.call_hook("inspect_window", max_depth=3, limit=max_elements, only_actionable=True, default=None)
+        ins = platform_hooks.call_hook(
+            "inspect_window", max_depth=3, limit=max_elements, only_actionable=True, default=None
+        )
         if ins and ins.get("status") == "success":
             clean_elems = []
             for e in ins.get("elements", []):
                 # Flag sensitive controls
                 is_sens = is_sensitive_control(e)
-                clean_elems.append({
-                    "name": "[PROTECTED]" if is_sens else e.get("name", ""),
-                    "control_type": e.get("control_type", ""),
-                    "automation_id": e.get("automation_id", ""),
-                    "class_name": e.get("class_name", ""),
-                    "bounding_rectangle": e.get("bounding_rectangle"),
-                    "is_sensitive": is_sens,
-                })
+                clean_elems.append(
+                    {
+                        "name": "[PROTECTED]" if is_sens else e.get("name", ""),
+                        "control_type": e.get("control_type", ""),
+                        "automation_id": e.get("automation_id", ""),
+                        "class_name": e.get("class_name", ""),
+                        "bounding_rectangle": e.get("bounding_rectangle"),
+                        "is_sensitive": is_sens,
+                    }
+                )
             state.elements = clean_elems
 
     except Exception as e:
@@ -79,6 +85,7 @@ def capture_element_at_point(x: int, y: int) -> Optional[dict]:
         return None
     try:
         from core import platform_hooks
+
         elem_data = platform_hooks.call_hook("find_element_at_point", x, y, default=None)
         if elem_data and "info" in elem_data:
             info = dict(elem_data["info"])
@@ -90,4 +97,3 @@ def capture_element_at_point(x: int, y: int) -> Optional[dict]:
     except Exception as e:
         print(f"[UIStateCapture] Point inspect error ({x}, {y}): {e}")
     return None
-

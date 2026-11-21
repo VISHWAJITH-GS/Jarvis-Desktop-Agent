@@ -1,6 +1,7 @@
 """
 core/runtime_env.py — Runtime environment configuration, subprocess patching, and PCM helpers.
 """
+
 from __future__ import annotations
 
 import os
@@ -47,18 +48,18 @@ def get_base_dir() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
-BASE_DIR        = get_base_dir()
+BASE_DIR = get_base_dir()
 API_CONFIG_PATH = BASE_DIR / "config" / "api_keys.json"
-PROMPT_PATH     = BASE_DIR / "core" / "prompt.txt"
+PROMPT_PATH = BASE_DIR / "core" / "prompt.txt"
 
-LIVE_MODEL          = "models/gemini-3.1-flash-live-preview"
-CHANNELS            = 1
-SEND_SAMPLE_RATE    = 16000 
+LIVE_MODEL = "models/gemini-3.1-flash-live-preview"
+CHANNELS = 1
+SEND_SAMPLE_RATE = 16000
 RECEIVE_SAMPLE_RATE = 24000
-CHUNK_SIZE          = 1024
+CHUNK_SIZE = 1024
 
 _LEVEL_FLOOR = 20.0
-_LEVEL_FULL  = 2000.0
+_LEVEL_FULL = 2000.0
 
 
 def _pcm_level(samples) -> float:
@@ -73,7 +74,7 @@ def _pcm_level(samples) -> float:
     if rms <= _LEVEL_FLOOR:
         return 0.0
     ratio = min(1.0, max(0.0, (rms - _LEVEL_FLOOR) / (_LEVEL_FULL - _LEVEL_FLOOR)))
-    return float(ratio ** 0.65)
+    return float(ratio**0.65)
 
 
 def _pcm_visemes(samples, sr: int = 24000):
@@ -96,36 +97,38 @@ def _pcm_visemes(samples, sr: int = 24000):
 
         w = np.hanning(win_size).astype(np.float32)
         freqs = np.fft.rfftfreq(win_size, d=1.0 / sr)
-        b_low  = (freqs >= 200.0)  & (freqs < 900.0)
-        b_mid  = (freqs >= 900.0)  & (freqs < 2600.0)
+        b_low = (freqs >= 200.0) & (freqs < 900.0)
+        b_mid = (freqs >= 900.0) & (freqs < 2600.0)
         b_high = (freqs >= 2600.0) & (freqs < 6000.0)
 
         frames = []
         for start in range(0, x.size - win_size + 1, hop_size):
-            slice_ = x[start:start + win_size] * w
+            slice_ = x[start : start + win_size] * w
             slice_rms = float(np.sqrt(np.mean(slice_ * slice_)))
             if slice_rms <= _LEVEL_FLOOR:
                 energy = 0.0
             else:
                 r = min(1.0, max(0.0, (slice_rms - _LEVEL_FLOOR) / (_LEVEL_FULL - _LEVEL_FLOOR)))
-                energy = float(r ** 0.65)
+                energy = float(r**0.65)
 
             mag = np.abs(np.fft.rfft(slice_))
-            e_low  = float(np.sum(mag[b_low]))
-            e_mid  = float(np.sum(mag[b_mid]))
+            e_low = float(np.sum(mag[b_low]))
+            e_mid = float(np.sum(mag[b_mid]))
             e_high = float(np.sum(mag[b_high]))
-            denom  = e_low + e_mid + e_high + 1e-4
+            denom = e_low + e_mid + e_high + 1e-4
 
             openness = (0.55 * (e_low / denom) + 0.45 * (e_mid / denom)) * min(1.0, energy * 1.6)
-            form     = min(1.0, max(0.0, (e_mid / denom) * 1.5))
-            tilt     = float(np.clip((e_high - e_low) / denom, -1.0, 1.0))
+            form = min(1.0, max(0.0, (e_mid / denom) * 1.5))
+            tilt = float(np.clip((e_high - e_low) / denom, -1.0, 1.0))
 
-            frames.append((
-                float(energy),
-                float(min(1.0, max(0.0, openness))),
-                float(form),
-                float(tilt),
-            ))
+            frames.append(
+                (
+                    float(energy),
+                    float(min(1.0, max(0.0, openness))),
+                    float(form),
+                    float(tilt),
+                )
+            )
         return frames
     except Exception:
         return []
@@ -141,9 +144,11 @@ def _is_repeat_chunk(txt: str, buf: list) -> bool:
         return True
     return False
 
+
 _CTRL_RE = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 
-def _clean_transcript(text: str) -> str:    
+
+def _clean_transcript(text: str) -> str:
     text = _CTRL_RE.sub("", text)
     text = re.sub(r"[\x00-\x08\x0b-\x1f]", "", text)
     return text.strip()

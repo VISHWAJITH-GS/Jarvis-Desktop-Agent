@@ -88,11 +88,12 @@ class TestAudioDucking(unittest.TestCase):
         """Ducks background media apps, skips JARVIS PID and excluded communications apps (Teams)."""
         mock_sessions = self._create_mock_sessions()
 
-        with patch("pycaw.pycaw.AudioUtilities.GetAllSessions", return_value=mock_sessions), \
-             patch("memory.config_manager.get_ducking_enabled", return_value=True), \
-             patch("memory.config_manager.get_ducking_level", return_value=25), \
-             patch("memory.config_manager.get_ducking_exclude_apps", return_value=["teams.exe"]):
-
+        with (
+            patch("pycaw.pycaw.AudioUtilities.GetAllSessions", return_value=mock_sessions),
+            patch("memory.config_manager.get_ducking_enabled", return_value=True),
+            patch("memory.config_manager.get_ducking_level", return_value=25),
+            patch("memory.config_manager.get_ducking_exclude_apps", return_value=["teams.exe"]),
+        ):
             self.ducker._perform_duck()
 
             # Spotify ducked: 0.8 * 0.25 = 0.20
@@ -142,10 +143,11 @@ class TestAudioDucking(unittest.TestCase):
         """If user manually moves volume slider while ducked, restore does not override user change."""
         mock_sessions = self._create_mock_sessions()
 
-        with patch("pycaw.pycaw.AudioUtilities.GetAllSessions", return_value=mock_sessions), \
-             patch("memory.config_manager.get_ducking_enabled", return_value=True), \
-             patch("memory.config_manager.get_ducking_level", return_value=25):
-
+        with (
+            patch("pycaw.pycaw.AudioUtilities.GetAllSessions", return_value=mock_sessions),
+            patch("memory.config_manager.get_ducking_enabled", return_value=True),
+            patch("memory.config_manager.get_ducking_level", return_value=25),
+        ):
             self.ducker._perform_duck()
             self.assertAlmostEqual(self.spotify_session.SimpleAudioVolume.GetMasterVolume(), 0.20, places=2)
 
@@ -162,10 +164,11 @@ class TestAudioDucking(unittest.TestCase):
         """Watchdog forces restore if ducking exceeds 60 seconds without release."""
         mock_sessions = self._create_mock_sessions()
 
-        with patch("pycaw.pycaw.AudioUtilities.GetAllSessions", return_value=mock_sessions), \
-             patch("memory.config_manager.get_ducking_enabled", return_value=True), \
-             patch("memory.config_manager.get_ducking_level", return_value=25):
-
+        with (
+            patch("pycaw.pycaw.AudioUtilities.GetAllSessions", return_value=mock_sessions),
+            patch("memory.config_manager.get_ducking_enabled", return_value=True),
+            patch("memory.config_manager.get_ducking_level", return_value=25),
+        ):
             self.ducker._perform_duck()
             self.assertTrue(self.ducker._is_ducked)
 
@@ -181,11 +184,12 @@ class TestAudioDucking(unittest.TestCase):
         self._create_mock_sessions()
         mock_sessions = [self.spotify_session]
 
-        with patch("pycaw.pycaw.AudioUtilities.GetAllSessions", side_effect=lambda: list(mock_sessions)), \
-             patch("memory.config_manager.get_ducking_enabled", return_value=True), \
-             patch("memory.config_manager.get_ducking_level", return_value=25), \
-             patch("memory.config_manager.get_ducking_exclude_apps", return_value=[]):
-
+        with (
+            patch("pycaw.pycaw.AudioUtilities.GetAllSessions", side_effect=lambda: list(mock_sessions)),
+            patch("memory.config_manager.get_ducking_enabled", return_value=True),
+            patch("memory.config_manager.get_ducking_level", return_value=25),
+            patch("memory.config_manager.get_ducking_exclude_apps", return_value=[]),
+        ):
             self.ducker._perform_duck()
             self.assertAlmostEqual(self.spotify_session.SimpleAudioVolume.GetMasterVolume(), 0.20, places=2)
 
@@ -208,7 +212,9 @@ class TestAudioDucking(unittest.TestCase):
     def test_recovery_restores_only_sessions_near_ducked_value(self):
         """Recovery only restores sessions that are still near their ducked value."""
         sess_still_ducked = MockAudioSession(3001, "music.exe", volume=0.21)  # ducked was 0.20 -> diff 0.01 <= 0.06
-        sess_user_adjusted = MockAudioSession(3002, "podcast.exe", volume=0.50)  # was 0.8, ducked 0.2, user set to 0.50 (< orig_vol, but > 0.06 away from ducked)
+        sess_user_adjusted = MockAudioSession(
+            3002, "podcast.exe", volume=0.50
+        )  # was 0.8, ducked 0.2, user set to 0.50 (< orig_vol, but > 0.06 away from ducked)
 
         snapshot = {
             "3001_music.exe": {
@@ -239,9 +245,10 @@ class TestAudioDucking(unittest.TestCase):
         """When disabled in settings or on non-Windows OS, ducking is a no-op."""
         mock_sessions = self._create_mock_sessions()
 
-        with patch("pycaw.pycaw.AudioUtilities.GetAllSessions", return_value=mock_sessions), \
-             patch("memory.config_manager.get_ducking_enabled", return_value=False):
-
+        with (
+            patch("pycaw.pycaw.AudioUtilities.GetAllSessions", return_value=mock_sessions),
+            patch("memory.config_manager.get_ducking_enabled", return_value=False),
+        ):
             self.ducker._perform_duck()
             self.assertFalse(self.ducker._is_ducked)
             self.assertEqual(self.spotify_session.SimpleAudioVolume.GetMasterVolume(), 0.80)
@@ -262,11 +269,12 @@ class TestAudioDucking(unittest.TestCase):
             ("{oppo-bt-ep}", "inst-bt-spotify", bt_spotify),
         ]
 
-        with patch.object(self.ducker, "_get_all_sessions", return_value=multi_sessions), \
-             patch("memory.config_manager.get_ducking_enabled", return_value=True), \
-             patch("memory.config_manager.get_ducking_level", return_value=25), \
-             patch("memory.config_manager.get_ducking_exclude_apps", return_value=[]):
-
+        with (
+            patch.object(self.ducker, "_get_all_sessions", return_value=multi_sessions),
+            patch("memory.config_manager.get_ducking_enabled", return_value=True),
+            patch("memory.config_manager.get_ducking_level", return_value=25),
+            patch("memory.config_manager.get_ducking_exclude_apps", return_value=[]),
+        ):
             self.ducker._perform_duck()
 
             # Both laptop speaker AND Bluetooth headphones sessions must be ducked!

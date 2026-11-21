@@ -14,7 +14,36 @@ import threading
 import time
 from pathlib import Path
 from gui.base import *
-from gui.base import _WIN_HIDE, _base_dir, BASE_DIR, CONFIG_DIR, API_FILE, _read_full_config, _DEFAULT_W, _DEFAULT_H, _MIN_W, _MIN_H, _LEFT_W, _RIGHT_W, _OS, _ResizeEdge, _detect_resize_edge, _cursor_for_edge, _FramelessWindowResizeMixin, _SysMetrics, _metrics, _nvml_gpu_windows, _load_app_fonts, keena_font, HAVE_VIDEO, HoloAvatar, get_uicon, QGraphicsVideoItem, QAudioOutput, QMediaPlayer
+from gui.base import (
+    _WIN_HIDE,
+    _base_dir,
+    BASE_DIR,
+    CONFIG_DIR,
+    API_FILE,
+    _read_full_config,
+    _DEFAULT_W,
+    _DEFAULT_H,
+    _MIN_W,
+    _MIN_H,
+    _LEFT_W,
+    _RIGHT_W,
+    _OS,
+    _ResizeEdge,
+    _detect_resize_edge,
+    _cursor_for_edge,
+    _FramelessWindowResizeMixin,
+    _SysMetrics,
+    _metrics,
+    _nvml_gpu_windows,
+    _load_app_fonts,
+    keena_font,
+    HAVE_VIDEO,
+    HoloAvatar,
+    get_uicon,
+    QGraphicsVideoItem,
+    QAudioOutput,
+    QMediaPlayer,
+)
 from gui.theme import *
 from gui.theme import _RESIZE_MARGIN, _NO_SCROLLBAR_STYLE, _HUE_LINKED, _PALETTE_DEFAULTS, _lerp_color
 
@@ -27,8 +56,10 @@ from gui.docks import *
 from gui.display_windows import *
 from gui.telemetry_and_displays import *
 
+
 class WindowAudioMixin:
     """Cyber drawer and audio management for MainWindow."""
+
     def _build_hud_controls_bar(self) -> QWidget:
         bar = QWidget()
         bar.setFixedHeight(36)
@@ -179,11 +210,15 @@ class WindowAudioMixin:
             b.clicked.connect(cb)
             return b
 
-        self._drawer_rem_btn = _drawer_btn("REMIND", "Open Reminders Management Matrix", lambda: self._show_reminders("upcoming"), "calendar")
+        self._drawer_rem_btn = _drawer_btn(
+            "REMIND", "Open Reminders Management Matrix", lambda: self._show_reminders("upcoming"), "calendar"
+        )
         self._hud_rem_btn = self._drawer_rem_btn
         hdr.addWidget(self._drawer_rem_btn)
 
-        self._drawer_mem_btn = _drawer_btn("MEM/ACT", "Open Memory & Actions Platform", lambda: self._show_memory_actions("memory"), "database")
+        self._drawer_mem_btn = _drawer_btn(
+            "MEM/ACT", "Open Memory & Actions Platform", lambda: self._show_memory_actions("memory"), "database"
+        )
         self._hud_mem_btn = self._drawer_mem_btn
         hdr.addWidget(self._drawer_mem_btn)
 
@@ -220,6 +255,7 @@ class WindowAudioMixin:
             btn.setCheckable(True)
             if idx == 0:
                 btn.setChecked(True)
+
             def _on_click():
                 for b in self._tab_btns:
                     b.setChecked(False)
@@ -229,6 +265,7 @@ class WindowAudioMixin:
                 self._drawer_tabs.setCurrentIndex(idx)
                 if idx == 2:
                     self._refresh_audio_tab()
+
             btn.clicked.connect(_on_click)
             btn.setStyleSheet(self._tab_btn_style(idx == 0))
             return btn
@@ -350,8 +387,11 @@ class WindowAudioMixin:
         """)
         from memory.config_manager import (
             get_audio_routing_mode,
-            ROUTING_MODE_AUTO_HYBRID, ROUTING_MODE_BUILTIN_ONLY, ROUTING_MODE_BLUETOOTH_ONLY,
+            ROUTING_MODE_AUTO_HYBRID,
+            ROUTING_MODE_BUILTIN_ONLY,
+            ROUTING_MODE_BLUETOOTH_ONLY,
         )
+
         self._combo_routing.addItem("Automatic Hybrid (OPPO Earbuds + Laptop Wake Mic)", ROUTING_MODE_AUTO_HYBRID)
         self._combo_routing.addItem("Laptop Microphone Only (Preserves Stereo Always)", ROUTING_MODE_BUILTIN_ONLY)
         self._combo_routing.addItem("OPPO Microphone Only (Continuous Hands-Free)", ROUTING_MODE_BLUETOOTH_ONLY)
@@ -373,6 +413,7 @@ class WindowAudioMixin:
         try:
             from core.audio_devices import DEFAULT_LABEL
             from memory.config_manager import get_input_device
+
             cur_in = get_input_device() or DEFAULT_LABEL
             self._combo_mic.addItem(DEFAULT_LABEL)
             if cur_in != DEFAULT_LABEL:
@@ -389,6 +430,7 @@ class WindowAudioMixin:
         try:
             from core.audio_devices import DEFAULT_LABEL
             from memory.config_manager import get_output_device
+
             cur_out = get_output_device() or DEFAULT_LABEL
             self._combo_spk.addItem(DEFAULT_LABEL)
             if cur_out != DEFAULT_LABEL:
@@ -444,6 +486,7 @@ class WindowAudioMixin:
     def _on_voice_combo_changed(self, voice_name: str):
         try:
             from memory import config_manager
+
             config_manager.save_voice(voice_name)
         except Exception as exc:
             print(f"[UI] Voice save failed: {exc}")
@@ -452,11 +495,14 @@ class WindowAudioMixin:
 
     def _on_mic_combo_changed(self, mic_name: str):
         from core.audio_devices import DEFAULT_LABEL
+
         val = "" if mic_name == DEFAULT_LABEL else mic_name
+
         def _apply():
             try:
                 from core.audio_manager import get_audio_manager
                 from memory import config_manager
+
                 mgr = get_audio_manager()
                 if mgr is not None:
                     mgr.switch_input(val, persist=True, set_os_default=False)
@@ -466,15 +512,19 @@ class WindowAudioMixin:
                         self.on_audio_device_change()
             except Exception as exc:
                 print(f"[UI] Mic switch failed: {exc}")
+
         threading.Thread(target=_apply, daemon=True, name="ui-mic-switch").start()
 
     def _on_spk_combo_changed(self, spk_name: str):
         from core.audio_devices import DEFAULT_LABEL
+
         val = "" if spk_name == DEFAULT_LABEL else spk_name
+
         def _apply():
             try:
                 from core.audio_manager import get_audio_manager
                 from memory import config_manager
+
                 mgr = get_audio_manager()
                 if mgr is not None:
                     mgr.switch_output(val, persist=True, set_os_default=bool(val))
@@ -484,6 +534,7 @@ class WindowAudioMixin:
                         self.on_audio_device_change()
             except Exception as exc:
                 print(f"[UI] Speaker switch failed: {exc}")
+
         threading.Thread(target=_apply, daemon=True, name="ui-spk-switch").start()
 
     def _apply_audio_status(self, status: dict):
@@ -516,20 +567,14 @@ class WindowAudioMixin:
 
         if hasattr(self, "_lbl_audio_mic") and self._lbl_audio_mic:
             self._lbl_audio_mic.setText(f"MIC: {in_dev}  [{in_st}]")
-            self._lbl_audio_mic.setStyleSheet(
-                f"color: {_badge_color(in_st)}; border: none; background: transparent;"
-            )
+            self._lbl_audio_mic.setStyleSheet(f"color: {_badge_color(in_st)}; border: none; background: transparent;")
         if hasattr(self, "_lbl_audio_spk") and self._lbl_audio_spk:
             self._lbl_audio_spk.setText(f"SPK: {out_dev}  [{out_st}]")
-            self._lbl_audio_spk.setStyleSheet(
-                f"color: {_badge_color(out_st)}; border: none; background: transparent;"
-            )
+            self._lbl_audio_spk.setStyleSheet(f"color: {_badge_color(out_st)}; border: none; background: transparent;")
         if hasattr(self, "_lbl_audio_bt") and self._lbl_audio_bt:
             bt_col = C.GREEN if status.get("bluetooth_connected") else C.TEXT_DIM
             self._lbl_audio_bt.setText(f"BLUETOOTH: {bt_st}")
-            self._lbl_audio_bt.setStyleSheet(
-                f"color: {bt_col}; border: none; background: transparent;"
-            )
+            self._lbl_audio_bt.setStyleSheet(f"color: {bt_col}; border: none; background: transparent;")
         if hasattr(self, "_lbl_audio_rates") and self._lbl_audio_rates:
             self._lbl_audio_rates.setText(f"RATES: IN {in_sr} Hz · OUT {out_sr} Hz")
         if hasattr(self, "_lbl_audio_state") and self._lbl_audio_state:
@@ -539,7 +584,9 @@ class WindowAudioMixin:
             role = status.get("active_input_role", "builtin")
             trans = status.get("transition_state", "idle")
             a2dp = status.get("a2dp_restored", True)
-            mode_lbl = "Hybrid" if rmode == "auto_hybrid" else ("Laptop Mic" if rmode == "built_in_only" else "OPPO Mic")
+            mode_lbl = (
+                "Hybrid" if rmode == "auto_hybrid" else ("Laptop Mic" if rmode == "built_in_only" else "OPPO Mic")
+            )
             role_lbl = "Laptop Mic" if role == "builtin" else "OPPO Mic"
             stereo_lbl = "Stereo Restored" if a2dp else "HFP Active"
             trans_lbl = f" · Transition: {trans}" if trans != "idle" else ""
@@ -555,6 +602,7 @@ class WindowAudioMixin:
         if not mode:
             return
         from memory import config_manager
+
         config_manager.save_audio_routing_mode(mode)
         if hasattr(self, "on_routing_mode_change") and self.on_routing_mode_change:
             try:
@@ -567,6 +615,7 @@ class WindowAudioMixin:
         try:
             from core.audio_devices import get_input_devices, get_output_devices, DEFAULT_LABEL
             from memory.config_manager import get_input_device, get_output_device
+
             cur_in = get_input_device() or DEFAULT_LABEL
             cur_out = get_output_device() or DEFAULT_LABEL
 
@@ -594,6 +643,7 @@ class WindowAudioMixin:
 
             if hasattr(self, "_combo_routing") and self._combo_routing:
                 from memory.config_manager import get_audio_routing_mode
+
                 cur_rm = get_audio_routing_mode()
                 self._combo_routing.blockSignals(True)
                 idx_rm = self._combo_routing.findData(cur_rm)
@@ -639,7 +689,9 @@ class WindowAudioMixin:
 
         lay.addWidget(_hdr("NEURAL INTELLIGENCE CONFIGURATION"))
         lay.addWidget(_action_btn("OPEN REMINDERS MATRIX", lambda: self._show_reminders("upcoming"), "calendar"))
-        lay.addWidget(_action_btn("OPEN MEMORY & ACTIONS PLATFORM", lambda: self._show_memory_actions("memory"), "database"))
+        lay.addWidget(
+            _action_btn("OPEN MEMORY & ACTIONS PLATFORM", lambda: self._show_memory_actions("memory"), "database")
+        )
         lay.addWidget(_action_btn("CONFIGURE GEMINI API KEY", self._show_setup, "settings"))
         lay.addWidget(_action_btn("OPEN PLUGIN MANAGER", self._open_plugin_manager))
         lay.addWidget(_action_btn("CUSTOMIZE APPEARANCE & IDENTITY", self._open_customize))
@@ -689,4 +741,3 @@ class WindowAudioMixin:
                 self._hud_exp_btn.setText(" EXPAND")
                 self._hud_exp_btn.setIcon(get_uicon("angle-small-down", color=C.PRI, size=13))
                 self._hud_exp_btn.setToolTip("Expand attached JARVIS Intelligence Matrix")
-

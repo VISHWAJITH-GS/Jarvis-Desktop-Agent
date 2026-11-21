@@ -14,7 +14,36 @@ import threading
 import time
 from pathlib import Path
 from gui.base import *
-from gui.base import _WIN_HIDE, _base_dir, BASE_DIR, CONFIG_DIR, API_FILE, _read_full_config, _DEFAULT_W, _DEFAULT_H, _MIN_W, _MIN_H, _LEFT_W, _RIGHT_W, _OS, _ResizeEdge, _detect_resize_edge, _cursor_for_edge, _FramelessWindowResizeMixin, _SysMetrics, _metrics, _nvml_gpu_windows, _load_app_fonts, keena_font, HAVE_VIDEO, HoloAvatar, get_uicon, QGraphicsVideoItem, QAudioOutput, QMediaPlayer
+from gui.base import (
+    _WIN_HIDE,
+    _base_dir,
+    BASE_DIR,
+    CONFIG_DIR,
+    API_FILE,
+    _read_full_config,
+    _DEFAULT_W,
+    _DEFAULT_H,
+    _MIN_W,
+    _MIN_H,
+    _LEFT_W,
+    _RIGHT_W,
+    _OS,
+    _ResizeEdge,
+    _detect_resize_edge,
+    _cursor_for_edge,
+    _FramelessWindowResizeMixin,
+    _SysMetrics,
+    _metrics,
+    _nvml_gpu_windows,
+    _load_app_fonts,
+    keena_font,
+    HAVE_VIDEO,
+    HoloAvatar,
+    get_uicon,
+    QGraphicsVideoItem,
+    QAudioOutput,
+    QMediaPlayer,
+)
 from gui.theme import *
 from gui.theme import _RESIZE_MARGIN, _NO_SCROLLBAR_STYLE, _HUE_LINKED, _PALETTE_DEFAULTS, _lerp_color
 
@@ -27,10 +56,13 @@ from gui.docks import *
 from gui.display_windows import *
 from gui.telemetry_and_displays import *
 
+
 class WindowPanelsMixin:
     """Interactive content, quiz, code job, and review panels for MainWindow."""
+
     def _build_input_row(self) -> QHBoxLayout:
-        row = QHBoxLayout(); row.setSpacing(5)
+        row = QHBoxLayout()
+        row.setSpacing(5)
         self._input = QLineEdit()
         self._input.setPlaceholderText("Type a command or question…")
         self._input.setFont(QFont("Montserrat", 9))
@@ -80,7 +112,8 @@ class WindowPanelsMixin:
         lay.setSpacing(5)
 
         # ── header row ───────────────────────────────────────────────────────
-        hdr = QHBoxLayout(); hdr.setSpacing(6)
+        hdr = QHBoxLayout()
+        hdr.setSpacing(6)
 
         dot = QLabel("◈")
         dot.setFont(QFont("Montserrat", 9, QFont.Weight.Bold))
@@ -89,9 +122,7 @@ class WindowPanelsMixin:
 
         self._content_title_lbl = QLabel("BRIEFING")
         self._content_title_lbl.setFont(QFont("Montserrat", 8, QFont.Weight.Bold))
-        self._content_title_lbl.setStyleSheet(
-            f"color: {C.PRI}; background: transparent; letter-spacing: 1px;"
-        )
+        self._content_title_lbl.setStyleSheet(f"color: {C.PRI}; background: transparent; letter-spacing: 1px;")
         hdr.addWidget(self._content_title_lbl)
         hdr.addStretch()
 
@@ -128,13 +159,20 @@ class WindowPanelsMixin:
             }}
             QPushButton:hover {{ color: #ffffff; background: rgba(255, 23, 68, 0.35); border-color: {C.PRI}; }}
         """)
-        dismiss.clicked.connect(lambda: (w.hide(), self.left_search_dock.hide() if hasattr(self, "left_search_dock") and self.left_search_dock else None))
+        dismiss.clicked.connect(
+            lambda: (
+                w.hide(),
+                self.left_search_dock.hide() if hasattr(self, "left_search_dock") and self.left_search_dock else None,
+            )
+        )
         hdr.addWidget(dismiss)
         lay.addLayout(hdr)
 
         # ── separator ─────────────────────────────────────────────────────────
-        sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setStyleSheet(f"color: {C.BORDER};"); lay.addWidget(sep)
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet(f"color: {C.BORDER};")
+        lay.addWidget(sep)
         self._content_sep = sep
 
         # ── text display ──────────────────────────────────────────────────────
@@ -144,9 +182,7 @@ class WindowPanelsMixin:
         self._content_display.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._content_display.setFont(QFont("Montserrat", 8))
         self._content_display.setMinimumHeight(60)
-        self._content_display.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
-        )
+        self._content_display.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self._content_display.setStyleSheet(f"""
             QTextEdit {{
                 background: {C.DARK};
@@ -173,14 +209,13 @@ class WindowPanelsMixin:
     def _show_content(self, title: str, text: str):
         """Slot — runs on Qt main thread. Updates and shows the content panel with visual HTML interpretation."""
         import time as _time
+
         self.hud.glance(0.0, -0.85, hold=1.3)
         self._content_title_lbl.setText(title.replace("//", "-").upper()[:48])
         self._content_ts_lbl.setText(_time.strftime("%I:%M:%S %p"))
         visual_html = format_visual_content_html(text)
         self._content_display.setHtml(visual_html)
-        self._content_display.moveCursor(
-            self._content_display.textCursor().MoveOperation.Start
-        )
+        self._content_display.moveCursor(self._content_display.textCursor().MoveOperation.Start)
         self._content_panel.show()
         if hasattr(self, "left_search_dock"):
             self.left_search_dock.popup(title, _time.strftime("%I:%M:%S %p"))
@@ -225,9 +260,12 @@ class WindowPanelsMixin:
     # from a snapshot the job publishes on every step, so this slot never reads
     # anything a worker thread is still changing.
     _JOB_STATES = {
-        "waiting": ("TEXT_DIM", "○"), "writing": ("PRI", "✎"),
-        "done": ("GREEN", "✓"), "fixing": ("ACC2", "↻"),
-        "skipped": ("TEXT_DIM", "–"), "failed": ("RED", "✕"),
+        "waiting": ("TEXT_DIM", "○"),
+        "writing": ("PRI", "✎"),
+        "done": ("GREEN", "✓"),
+        "fixing": ("ACC2", "↻"),
+        "skipped": ("TEXT_DIM", "–"),
+        "failed": ("RED", "✕"),
         "broken": ("RED", "!"),
     }
     _JOB_PHASES = ("reading", "planning", "writing", "checking")
@@ -235,6 +273,7 @@ class WindowPanelsMixin:
     def _show_code_job(self, job: dict):
         """Slot — Qt main thread. Draws the coding agent's progress in dedicated Task Display Window."""
         import time as _time
+
         if not job:
             return
 
@@ -264,8 +303,7 @@ class WindowPanelsMixin:
         # Phase strip: where in the job it is, readable at a glance.
         strip = []
         phases = list(job.get("phases") or self._JOB_PHASES)
-        here = phases.index(status) if status in phases else (
-            len(phases) if finished else -1)
+        here = phases.index(status) if status in phases else (len(phases) if finished else -1)
         for i, ph in enumerate(phases):
             c = C.GREEN if i < here else (C.PRI if i == here else C.TEXT_DIM)
             mark = "●" if i <= here else "○"
@@ -274,15 +312,17 @@ class WindowPanelsMixin:
             fin = C.GREEN if status == "done" else (C.RED if status == "failed" else C.ACC2)
             strip.append(f'<span style="color:{fin};"><b>● {e(status.upper())}</b></span>')
 
-        parts = [f'<div style="color:{C.TEXT}; font-family:Montserrat;">',
-                 f'<div style="color:{C.TEXT_DIM};">{"  ".join(strip)}'
-                 f'&nbsp;&nbsp;·&nbsp;&nbsp;{took:.0f}s</div>',
-                 f'<div style="margin-top:6px;"><span style="color:{C.TEXT_DIM};">'
-                 f'REQUEST&nbsp;</span>{e(job.get("request", ""))}</div>']
+        parts = [
+            f'<div style="color:{C.TEXT}; font-family:Montserrat;">',
+            f'<div style="color:{C.TEXT_DIM};">{"  ".join(strip)}&nbsp;&nbsp;·&nbsp;&nbsp;{took:.0f}s</div>',
+            f'<div style="margin-top:6px;"><span style="color:{C.TEXT_DIM};">'
+            f"REQUEST&nbsp;</span>{e(job.get('request', ''))}</div>",
+        ]
         if job.get("summary"):
             parts.append(
                 f'<div style="color:{C.WHITE}; border-left:2px solid {C.PRI};'
-                f' padding-left:8px; margin:8px 0;">{e(job["summary"])}</div>')
+                f' padding-left:8px; margin:8px 0;">{e(job["summary"])}</div>'
+            )
         files = job.get("files") or {}
         if files:
             parts.append(f'<div style="color:{C.TEXT_DIM}; margin-top:4px;">FILES</div>')
@@ -293,16 +333,15 @@ class WindowPanelsMixin:
                     f'<div><span style="color:{col(cname)};">{mark}</span>&nbsp;'
                     f'<span style="color:{C.WHITE};">{e(path)}</span>&nbsp;'
                     f'<span style="color:{C.TEXT_DIM};">{verb}{e(f.get("what", ""))[:110]}'
-                    f'</span></div>')
+                    f"</span></div>"
+                )
         # Newest first, so the latest step sits under the plan and the whole
         # state of the job is visible without scrolling in a 220-pixel panel.
         steps = job.get("steps") or []
         if steps:
-            parts.append(f'<div style="color:{C.TEXT_DIM}; margin-top:8px;">'
-                         f'STEPS — newest first</div>')
+            parts.append(f'<div style="color:{C.TEXT_DIM}; margin-top:8px;">STEPS — newest first</div>')
             for t, msg in reversed(steps[-14:]):
-                parts.append(f'<div><span style="color:{C.TEXT_DIM};">{float(t):6.1f}s'
-                             f'</span>&nbsp;{e(msg)}</div>')
+                parts.append(f'<div><span style="color:{C.TEXT_DIM};">{float(t):6.1f}s</span>&nbsp;{e(msg)}</div>')
         parts.append("</div>")
 
         title = f"CODE AGENT — {job.get('folder', '')} · {job.get('model', '')}"
@@ -341,8 +380,7 @@ class WindowPanelsMixin:
 
     @staticmethod
     def _esc(s) -> str:
-        return (str(s or "").replace("&", "&amp;").replace("<", "&lt;")
-                .replace(">", "&gt;").replace("\n", "<br>"))
+        return str(s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>")
 
     def _show_review(self, title: str, summary: str, findings, unclear):
         """Slot — Qt main thread. Lays a document review into the content panel."""
@@ -354,16 +392,18 @@ class WindowPanelsMixin:
         if summary:
             parts.append(
                 f'<div style="color:{C.WHITE}; border-left:2px solid {C.PRI};'
-                f' padding-left:8px; margin-bottom:10px;">{e(summary)}</div>')
+                f' padding-left:8px; margin-bottom:10px;">{e(summary)}</div>'
+            )
 
-        for f in (findings or []):
+        for f in findings or []:
             key, mark = self._REVIEW_MARKS.get(f.get("severity"), ("PRI_DIM", "·"))
             colour = getattr(C, key)
             parts.append(f'<div style="margin-bottom:11px;">')
             parts.append(
                 f'<span style="color:{colour}; font-weight:bold;">{mark}</span> '
                 f'<span style="color:{C.WHITE}; font-weight:bold;">'
-                f'{e(f.get("heading"))}</span>')
+                f"{e(f.get('heading'))}</span>"
+            )
             if f.get("detail"):
                 parts.append(f'<div style="margin-left:12px;">{e(f["detail"])}</div>')
             if f.get("quote"):
@@ -372,25 +412,24 @@ class WindowPanelsMixin:
                 parts.append(
                     f'<div style="margin-left:12px; color:{C.TEXT_DIM};'
                     f' border-left:1px solid {C.BORDER}; padding-left:7px;">'
-                    f'&ldquo;{e(f["quote"])}&rdquo;</div>')
+                    f"&ldquo;{e(f['quote'])}&rdquo;</div>"
+                )
             if f.get("suggestion"):
-                parts.append(
-                    f'<div style="margin-left:12px; color:{C.PRI};">'
-                    f'&rarr; {e(f["suggestion"])}</div>')
-            parts.append('</div>')
+                parts.append(f'<div style="margin-left:12px; color:{C.PRI};">&rarr; {e(f["suggestion"])}</div>')
+            parts.append("</div>")
 
         if unclear:
             parts.append(
                 f'<div style="margin-top:6px; border-top:1px solid {C.BORDER};'
                 f' padding-top:7px; color:{C.TEXT_MED};">'
-                'The document does not settle:</div>')
+                "The document does not settle:</div>"
+            )
             for u in unclear:
-                parts.append(
-                    f'<div style="margin-left:12px; color:{C.TEXT_MED};">'
-                    f'&middot; {e(u)}</div>')
-        parts.append('</div>')
+                parts.append(f'<div style="margin-left:12px; color:{C.TEXT_MED};">&middot; {e(u)}</div>')
+        parts.append("</div>")
 
         import time as _time
+
         self.hud.glance(0.0, -0.85, hold=1.3)
         # Left as written, not upper-cased. The other content-panel titles are
         # the app's own English labels, but this one is the document's name in
@@ -401,8 +440,7 @@ class WindowPanelsMixin:
         self._content_title_lbl.setText((title or "Document")[:48])
         self._content_ts_lbl.setText(_time.strftime("%I:%M:%S %p"))
         self._content_display.setHtml("".join(parts))
-        self._content_display.moveCursor(
-            self._content_display.textCursor().MoveOperation.Start)
+        self._content_display.moveCursor(self._content_display.textCursor().MoveOperation.Start)
         first_show = not self._content_panel.isVisible()
         self._content_panel.show()
         if first_show:
@@ -450,7 +488,8 @@ class WindowPanelsMixin:
         lay.setContentsMargins(12, 7, 12, 8)
         lay.setSpacing(6)
 
-        hdr = QHBoxLayout(); hdr.setSpacing(6)
+        hdr = QHBoxLayout()
+        hdr.setSpacing(6)
         dot = QLabel("◈")
         dot.setFont(QFont("Montserrat", 9, QFont.Weight.Bold))
         dot.setStyleSheet(f"color: {C.PRI}; background: transparent;")
@@ -458,8 +497,7 @@ class WindowPanelsMixin:
 
         self._quiz_title_lbl = QLabel("QUIZ")
         self._quiz_title_lbl.setFont(QFont("Montserrat", 8, QFont.Weight.Bold))
-        self._quiz_title_lbl.setStyleSheet(
-            f"color: {C.PRI}; background: transparent; letter-spacing: 1px;")
+        self._quiz_title_lbl.setStyleSheet(f"color: {C.PRI}; background: transparent; letter-spacing: 1px;")
         hdr.addWidget(self._quiz_title_lbl)
         hdr.addStretch()
 
@@ -479,11 +517,17 @@ class WindowPanelsMixin:
             }}
             QPushButton:hover {{ color: #ffffff; background: rgba(255, 23, 68, 0.35); border-color: {C.PRI}; }}
         """)
-        quit_btn.clicked.connect(lambda: (self._hide_quiz(), self.left_search_dock.hide() if hasattr(self, "left_search_dock") and self.left_search_dock else None))
+        quit_btn.clicked.connect(
+            lambda: (
+                self._hide_quiz(),
+                self.left_search_dock.hide() if hasattr(self, "left_search_dock") and self.left_search_dock else None,
+            )
+        )
         hdr.addWidget(quit_btn)
         lay.addLayout(hdr)
 
-        rule = QFrame(); rule.setFixedHeight(1)
+        rule = QFrame()
+        rule.setFixedHeight(1)
         rule.setStyleSheet(f"background: {C.BORDER};")
         lay.addWidget(rule)
 
@@ -571,8 +615,11 @@ class WindowPanelsMixin:
                 b.clicked.connect(lambda _=False, t=text: self._quiz_submit(t))
                 self._quiz_answers_lay.addWidget(b)
         else:
-            row = QWidget(); row.setStyleSheet("background: transparent;")
-            h = QHBoxLayout(row); h.setContentsMargins(0, 0, 0, 0); h.setSpacing(6)
+            row = QWidget()
+            row.setStyleSheet("background: transparent;")
+            h = QHBoxLayout(row)
+            h.setContentsMargins(0, 0, 0, 0)
+            h.setSpacing(6)
             field = QLineEdit()
             field.setFont(QFont("Montserrat", 9))
             field.setPlaceholderText("your answer")
@@ -604,13 +651,15 @@ class WindowPanelsMixin:
                 verdict = grader(q, given)
             except Exception:
                 verdict = None
-        self._quiz["results"].append({
-            "question": q.get("question", ""),
-            "type": q.get("type", ""),
-            "given": str(given or "").strip(),
-            "answer": q.get("answer", ""),
-            "correct": verdict,
-        })
+        self._quiz["results"].append(
+            {
+                "question": q.get("question", ""),
+                "type": q.get("type", ""),
+                "given": str(given or "").strip(),
+                "answer": q.get("answer", ""),
+                "correct": verdict,
+            }
+        )
 
         for i in range(self._quiz_answers_lay.count()):
             wdg = self._quiz_answers_lay.itemAt(i).widget()
@@ -659,15 +708,16 @@ class WindowPanelsMixin:
 
         # Hand it back to JARVIS as a message, not as a tool return: the tool
         # call ended minutes ago. This is the same channel a dropped file uses.
-        lines = [f"[QUIZ_DONE] topic={topic or 'general'} | "
-                 f"auto-marked {right}/{total} correct"
-                 + (f", {unsure} still need your marking" if unsure else "")]
+        lines = [
+            f"[QUIZ_DONE] topic={topic or 'general'} | "
+            f"auto-marked {right}/{total} correct" + (f", {unsure} still need your marking" if unsure else "")
+        ]
         for i, r in enumerate(results, 1):
-            state = ("correct" if r["correct"] is True
-                     else "wrong" if r["correct"] is False else "NEEDS MARKING")
+            state = "correct" if r["correct"] is True else "wrong" if r["correct"] is False else "NEEDS MARKING"
             lines.append(
                 f"{i}. [{r['type']}] {r['question']} | they answered: "
-                f"{r['given'] or '(blank)'} | expected: {r['answer']} | {state}")
+                f"{r['given'] or '(blank)'} | expected: {r['answer']} | {state}"
+            )
         lines.append(
             "Mark every question flagged NEEDS MARKING yourself — accept an answer "
             "that means the same thing. Then tell them how they did in their own "
@@ -676,8 +726,8 @@ class WindowPanelsMixin:
             "Remember something only if it would still matter next week — that they "
             "are working through a subject, or keep missing the same thing. A score "
             "from one session is not worth a memory, and a memory per quiz would "
-            "bury the things that are.")
+            "bury the things that are."
+        )
         msg = "\n".join(lines)
         if self.on_text_command:
             threading.Thread(target=self.on_text_command, args=(msg,), daemon=True).start()
-

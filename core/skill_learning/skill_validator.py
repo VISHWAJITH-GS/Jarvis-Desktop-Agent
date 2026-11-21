@@ -8,6 +8,7 @@ Validates that a learned SkillDefinition:
 4. Complies with safety and security guidelines (no sensitive/redacted tokens).
 5. Provides a dry-run simulation mode to test parameter substitution and step validity.
 """
+
 from __future__ import annotations
 
 import logging
@@ -29,7 +30,7 @@ class SkillValidator:
 
     def validate_schema(self, skill: SkillDefinition) -> Tuple[bool, list[str], list[str]]:
         """Validate structure and integrity of a SkillDefinition.
-        
+
         Returns:
             (is_valid, errors, warnings)
         """
@@ -71,7 +72,9 @@ class SkillValidator:
             for k, v in step.parameters.items():
                 if isinstance(v, str):
                     if SENSITIVE_INPUT_PLACEHOLDER in v:
-                        warnings.append(f"Step {idx} parameter '{k}' contains redacted credential placeholder. Needs parameterization.")
+                        warnings.append(
+                            f"Step {idx} parameter '{k}' contains redacted credential placeholder. Needs parameterization."
+                        )
 
                     # Check parameter placeholders {param_name}
                     placeholders = re.findall(r"\{([a-zA-Z0-9_]+)\}", v)
@@ -90,7 +93,7 @@ class SkillValidator:
         test_inputs: Optional[dict] = None,
     ) -> dict:
         """Simulate execution of skill steps without calling OS tools.
-        
+
         Verifies:
         - All required parameters are satisfied or have defaults
         - Template substitution evaluates properly
@@ -141,14 +144,18 @@ class SkillValidator:
             else:
                 param_valid, param_err = action_def.validate_parameters(sub_params)
                 if not param_valid:
-                    report["warnings"].append(f"Step {step.step_id} tool '{step.tool}' parameter validation: {param_err}")
+                    report["warnings"].append(
+                        f"Step {step.step_id} tool '{step.tool}' parameter validation: {param_err}"
+                    )
 
-            report["substituted_steps"].append({
-                "step_id": step.step_id,
-                "tool": step.tool,
-                "parameters": sub_params,
-                "verification": step.verification.to_dict() if step.verification else None,
-            })
+            report["substituted_steps"].append(
+                {
+                    "step_id": step.step_id,
+                    "tool": step.tool,
+                    "parameters": sub_params,
+                    "verification": step.verification.to_dict() if step.verification else None,
+                }
+            )
 
         return report
 
@@ -177,4 +184,3 @@ class SkillValidator:
             "risk_level": skill.permissions,
             "simulation": dry_run["substituted_steps"],
         }
-

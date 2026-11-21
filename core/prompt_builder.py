@@ -1,6 +1,7 @@
 """
 core/prompt_builder.py — Tool declarations and system prompt formatting.
 """
+
 from __future__ import annotations
 
 import json
@@ -18,7 +19,7 @@ TOOL_DECLARATIONS = [
         "parameters": {
             "type": "OBJECT",
             "properties": {},
-        }
+        },
     },
     {
         "name": "screen_process",
@@ -34,10 +35,10 @@ TOOL_DECLARATIONS = [
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "text":  {"type": "STRING", "description": "The question or instruction about the captured screen image"}
+                "text": {"type": "STRING", "description": "The question or instruction about the captured screen image"}
             },
-            "required": ["text"]
-        }
+            "required": ["text"],
+        },
     },
     {
         "name": "manage_monitor",
@@ -51,10 +52,10 @@ TOOL_DECLARATIONS = [
             "type": "OBJECT",
             "properties": {
                 "action": {"type": "STRING", "description": "'add', 'remove', or 'list'"},
-                "topic":  {"type": "STRING", "description": "Topic to monitor (required for add/remove)"}
+                "topic": {"type": "STRING", "description": "Topic to monitor (required for add/remove)"},
             },
             "required": ["action"],
-        }
+        },
     },
     {
         "name": "sleep_jarvis",
@@ -67,7 +68,7 @@ TOOL_DECLARATIONS = [
         "parameters": {
             "type": "OBJECT",
             "properties": {},
-        }
+        },
     },
     {
         "name": "shutdown_jarvis",
@@ -78,7 +79,7 @@ TOOL_DECLARATIONS = [
         "parameters": {
             "type": "OBJECT",
             "properties": {},
-        }
+        },
     },
     {
         "name": "save_memory",
@@ -96,13 +97,13 @@ TOOL_DECLARATIONS = [
             "properties": {
                 "category": {
                     "type": "STRING",
-                    "description": "One of: user_facts, preferences, projects, environment, decisions, notes"
+                    "description": "One of: user_facts, preferences, projects, environment, decisions, notes",
                 },
-                "key":   {"type": "STRING", "description": "Short identifier, e.g. 'favorite_language'"},
-                "value": {"type": "STRING", "description": "The fact to remember"}
+                "key": {"type": "STRING", "description": "Short identifier, e.g. 'favorite_language'"},
+                "value": {"type": "STRING", "description": "The fact to remember"},
             },
-            "required": ["category", "key", "value"]
-        }
+            "required": ["category", "key", "value"],
+        },
     },
     {
         "name": "recall_memory",
@@ -113,11 +114,9 @@ TOOL_DECLARATIONS = [
         ),
         "parameters": {
             "type": "OBJECT",
-            "properties": {
-                "query": {"type": "STRING", "description": "Keywords to search for in memory"}
-            },
-            "required": ["query"]
-        }
+            "properties": {"query": {"type": "STRING", "description": "Keywords to search for in memory"}},
+            "required": ["query"],
+        },
     },
     {
         "name": "undo",
@@ -130,7 +129,10 @@ TOOL_DECLARATIONS = [
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "action": {"type": "STRING", "description": "'undo' to revert the last action, 'list' to see what can be undone"}
+                "action": {
+                    "type": "STRING",
+                    "description": "'undo' to revert the last action, 'list' to see what can be undone",
+                }
             },
             "required": [],
         },
@@ -143,8 +145,7 @@ def _describe_tools(declarations) -> str:
     for d in declarations or ():
         try:
             name = d.get("name") if isinstance(d, dict) else getattr(d, "name", None)
-            desc = (d.get("description") if isinstance(d, dict)
-                    else getattr(d, "description", "")) or ""
+            desc = (d.get("description") if isinstance(d, dict) else getattr(d, "description", "")) or ""
         except Exception:
             continue
         if not name:
@@ -166,6 +167,7 @@ def _describe_limits(has_vision: bool, has_mic: bool) -> str:
     ]
     try:
         from core import platform_support
+
         out.extend(platform_support.describe_for_model(platform_support.detect()))
     except Exception as _e:
         print(f"[Limits] platform capabilities unavailable: {_e}")
@@ -174,13 +176,12 @@ def _describe_limits(has_vision: bool, has_mic: bool) -> str:
         out.append(
             "- Your sight is not continuous. You see nothing until you call a "
             "vision tool, and then only that single frame at that moment — you "
-            "cannot watch, monitor or notice something changing on screen.")
+            "cannot watch, monitor or notice something changing on screen."
+        )
     else:
         out.append("- You have no sight at all in this build.")
     if has_mic:
-        out.append(
-            "- You hear nothing while the microphone is muted, and you cannot "
-            "unmute it yourself.")
+        out.append("- You hear nothing while the microphone is muted, and you cannot unmute it yourself.")
     return "\n".join(out)
 
 
@@ -194,6 +195,7 @@ def _render_prompt(template: str, values: dict) -> str:
 def _get_api_key() -> str:
     try:
         from memory.config_manager import get_gemini_key
+
         k = get_gemini_key()
         if k:
             return k

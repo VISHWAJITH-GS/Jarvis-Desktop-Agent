@@ -6,6 +6,7 @@ Executes background tasks in discrete reasoning rounds with atomic checkpointing
 Handles model quota exhaustion, resume attempt bounds, steering injection,
 and strict permission gating.
 """
+
 from __future__ import annotations
 
 import json
@@ -90,7 +91,9 @@ class TaskEngine:
             else:
                 # Reset to queued to continue from last atomic checkpoint
                 self.store.update_state(t.id, "queued")
-                logger.info("[Tasks] Recovered task %s from checkpoint (attempt %d/%d).", t.id, attempts, t.max_attempts)
+                logger.info(
+                    "[Tasks] Recovered task %s from checkpoint (attempt %d/%d).", t.id, attempts, t.max_attempts
+                )
 
     def queue_task(
         self,

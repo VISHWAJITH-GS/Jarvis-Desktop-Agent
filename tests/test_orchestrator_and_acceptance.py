@@ -1,5 +1,6 @@
 from __future__ import annotations
 import pytest
+
 pytestmark = pytest.mark.requires_hardware
 
 """
@@ -48,6 +49,7 @@ class AcceptanceAndOrchestratorTestCase(unittest.TestCase):
             }
         ]
         from actions import web_search
+
         res = web_search.web_search({"mode": "search", "query": "Skillrack"})
         self.assertIn("skillrack.com", res)
         self.assertIn("SkillRack", res)
@@ -64,7 +66,9 @@ class AcceptanceAndOrchestratorTestCase(unittest.TestCase):
     @patch("actions.file_controller.find_files")
     def test_acceptance_4_find_specific_document(self, mock_find):
         """Scenario 4: Find a specific document on disk."""
-        mock_find.return_value = "Found 1 matching file(s):\n  📄 Academic_Notes.pdf (245 KB) — C:\\Users\\User\\Documents"
+        mock_find.return_value = (
+            "Found 1 matching file(s):\n  📄 Academic_Notes.pdf (245 KB) — C:\\Users\\User\\Documents"
+        )
         res = file_controller.find_files(name="Academic_Notes.pdf", path="home")
         self.assertIn("Academic_Notes.pdf", res)
         self.assertIn("Documents", res)
@@ -90,9 +94,7 @@ class AcceptanceAndOrchestratorTestCase(unittest.TestCase):
     @patch("actions.spotify_control.search_spotify_track")
     @patch("actions.spotify_control.get_spotify_window_title")
     @patch("actions.spotify_control.subprocess.run")
-    def test_acceptance_6_to_10_spotify_full_playback_lifecycle(
-        self, mock_sub, mock_title, mock_search, mock_launch
-    ):
+    def test_acceptance_6_to_10_spotify_full_playback_lifecycle(self, mock_sub, mock_title, mock_search, mock_launch):
         """Scenarios 6-10:
         6. Play One Name from Jailer 2
         7. Play Beat It by Michael Jackson while One Name is playing
@@ -201,6 +203,7 @@ class AcceptanceAndOrchestratorTestCase(unittest.TestCase):
     def test_acceptance_15_gemini_reconnection_resilience(self):
         """Scenario 15: Verify reconnect resilience against quota/connection drops."""
         from core.gemini import is_quota_error, is_transient_error
+
         self.assertTrue(is_quota_error("ResourceExhausted 429: Quota exceeded"))
         self.assertTrue(is_transient_error("1011 keepalive ping timeout"))
         self.assertTrue(is_transient_error("504 DEADLINE_EXCEEDED"))

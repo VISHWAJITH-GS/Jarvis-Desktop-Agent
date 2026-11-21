@@ -66,7 +66,7 @@ _lock = threading.Lock()
 # Callbacks wired to UI banner
 _show_cb: Optional[Callable[[str, str], None]] = None
 _hide_cb: Optional[Callable[[], None]] = None
-_log_cb:  Optional[Callable[[str], None]] = None
+_log_cb: Optional[Callable[[str], None]] = None
 
 
 def bind(show, hide, log=None) -> None:
@@ -154,10 +154,7 @@ class ConfirmationManager:
                 f"Note: {detail}. Say confirm or click CONFIRM to execute, or say no to cancel."
             )
         else:
-            return (
-                f"[CONFIRMATION_PENDING] Shall I proceed with {title}? "
-                f"Say confirm to execute, or no to cancel."
-            )
+            return f"[CONFIRMATION_PENDING] Shall I proceed with {title}? Say confirm to execute, or no to cancel."
 
     @classmethod
     def discard_pending(cls, reason: str = "") -> None:
@@ -232,13 +229,19 @@ class ConfirmationManager:
 
         clean = str(utterance or "").lower().strip()
         yes_words = {
-            "confirm", "cconfirm", "confirmed", "yes", "proceed",
-            "sure", "do it", "approved", "go ahead", "okay", "ok"
+            "confirm",
+            "cconfirm",
+            "confirmed",
+            "yes",
+            "proceed",
+            "sure",
+            "do it",
+            "approved",
+            "go ahead",
+            "okay",
+            "ok",
         }
-        no_words = {
-            "no", "cancel", "stop", "abort", "don't", "dont",
-            "never mind", "negative", "reject"
-        }
+        no_words = {"no", "cancel", "stop", "abort", "don't", "dont", "never mind", "negative", "reject"}
 
         words = set(re.findall(r"\w+", clean))
         if "confirm" in clean or "cconfirm" in clean or (words & yes_words):

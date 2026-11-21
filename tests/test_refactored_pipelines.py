@@ -2,6 +2,7 @@
 tests/test_refactored_pipelines.py — Comprehensive unit tests for refactored WhatsApp,
 Plugin Permission Guarding, and Agent Orchestrator Recovery contracts.
 """
+
 from __future__ import annotations
 
 import unittest
@@ -22,14 +23,16 @@ class WhatsAppPipelineTestCase(unittest.TestCase):
 
     def test_resolve_contact_empty_candidates_returns_false(self):
         """When 0 contact candidates match, resolve_contact returns False and does NOT select."""
-        with patch.object(self.driver, "open_whatsapp", return_value=True), \
-             patch.object(self.driver, "_find_whatsapp_window", return_value=MagicMock()), \
-             patch.object(wa, "pyautogui") as mock_pyautogui:
+        with (
+            patch.object(self.driver, "open_whatsapp", return_value=True),
+            patch.object(self.driver, "_find_whatsapp_window", return_value=MagicMock()),
+            patch.object(wa, "pyautogui") as mock_pyautogui,
+        ):
             with patch.object(self.driver, "uia") as mock_uia:
                 # Search box found, but search result ListItems return empty
                 mock_uia.find_elements.side_effect = [
                     {"status": "success", "matches": [MagicMock()]},  # search box
-                    {"status": "success", "matches": []},              # candidates empty
+                    {"status": "success", "matches": []},  # candidates empty
                 ]
                 ok, msg, candidates = self.driver.resolve_contact("NonexistentContact")
                 self.assertFalse(ok)
@@ -40,9 +43,11 @@ class WhatsAppPipelineTestCase(unittest.TestCase):
 
     def test_send_message_fails_when_uia_verification_fails(self):
         """When UIA confirmation cannot verify the message sent, returns False (never verified=True)."""
-        with patch.object(self.driver, "open_chat", return_value=(True, "Alex")), \
-             patch.object(self.driver, "_find_whatsapp_window", return_value=MagicMock()), \
-             patch.object(wa, "_paste_text"):
+        with (
+            patch.object(self.driver, "open_chat", return_value=(True, "Alex")),
+            patch.object(self.driver, "_find_whatsapp_window", return_value=MagicMock()),
+            patch.object(wa, "_paste_text"),
+        ):
             with patch.object(self.driver, "uia") as mock_uia:
                 mock_input = MagicMock()
                 # Input field was NOT cleared after typing/enter (stuck or failed)
@@ -59,9 +64,11 @@ class WhatsAppPipelineTestCase(unittest.TestCase):
 
     def test_send_message_fails_safely_when_input_box_missing(self):
         """When the message input element cannot be found, return False and do not paste blind."""
-        with patch.object(self.driver, "open_chat", return_value=(True, "Alex")), \
-             patch.object(self.driver, "_find_whatsapp_window", return_value=MagicMock()), \
-             patch.object(wa, "_paste_text") as mock_paste:
+        with (
+            patch.object(self.driver, "open_chat", return_value=(True, "Alex")),
+            patch.object(self.driver, "_find_whatsapp_window", return_value=MagicMock()),
+            patch.object(wa, "_paste_text") as mock_paste,
+        ):
             with patch.object(self.driver, "uia") as mock_uia:
                 # No Edit elements found for input
                 mock_uia.find_elements.return_value = {"status": "success", "matches": []}
@@ -150,6 +157,7 @@ class OrchestratorRecoveryTestCase(unittest.TestCase):
             verified=False,
             message="Element not found via UIA",
         )
+
         def mock_exec(action, params, ctx=None):
             if action == "verify_state":
                 return outcome.ActionResult(
@@ -168,11 +176,18 @@ class OrchestratorRecoveryTestCase(unittest.TestCase):
         # Plan with 2 steps where step 2 requires step 1 (index 0)
         test_plan = [
             {"thought": "Click target button", "action": "click_element", "parameters": {"target": "SubmitButton"}},
-            {"thought": "Verify next step", "action": "verify_state", "parameters": {"expected_window": "Home"}, "requires": [0]},
+            {
+                "thought": "Verify next step",
+                "action": "verify_state",
+                "parameters": {"expected_window": "Home"},
+                "requires": [0],
+            },
         ]
 
-        with patch.object(orchestrator, "observe_screen", return_value={"summary": "desktop", "window_title": "Home"}), \
-             patch.object(orchestrator, "plan_task", return_value=test_plan):
+        with (
+            patch.object(orchestrator, "observe_screen", return_value={"summary": "desktop", "window_title": "Home"}),
+            patch.object(orchestrator, "plan_task", return_value=test_plan),
+        ):
             # Mock target_resolver and computer_use_engine for bounded recovery
             mock_res_target = MagicMock(desktop_x=500, desktop_y=400)
             mock_click_res = outcome.ActionResult(
@@ -183,8 +198,10 @@ class OrchestratorRecoveryTestCase(unittest.TestCase):
                 message="Clicked at (500, 400)",
             )
 
-            with patch("actions.target_resolver.get_target_resolver") as mock_get_tr, \
-                 patch("actions.computer_use_engine.get_computer_use_engine") as mock_get_eng:
+            with (
+                patch("actions.target_resolver.get_target_resolver") as mock_get_tr,
+                patch("actions.computer_use_engine.get_computer_use_engine") as mock_get_eng,
+            ):
                 mock_tr = MagicMock()
                 mock_tr.resolve_target.return_value = (mock_res_target, None)
                 mock_get_tr.return_value = mock_tr

@@ -10,6 +10,7 @@ Capabilities:
 - Identify currently playing media ("What song is playing?")
 - Distinct handling of search vs play
 """
+
 from __future__ import annotations
 
 import time
@@ -41,12 +42,18 @@ def get_current_playing_media() -> outcome.ActionResult:
     # Check browser windows with YouTube or media
     try:
         from actions import windows_uia
+
         if windows_uia.is_available():
             wins = windows_uia.list_open_windows()
             for w in wins:
                 t = w.get("title", "")
                 if "youtube" in t.lower() or "soundcloud" in t.lower() or "vlc" in t.lower():
-                    clean_t = t.replace("- YouTube", "").replace("- Google Chrome", "").replace("- Microsoft Edge", "").strip()
+                    clean_t = (
+                        t.replace("- YouTube", "")
+                        .replace("- Google Chrome", "")
+                        .replace("- Microsoft Edge", "")
+                        .strip()
+                    )
                     return outcome.ActionResult(
                         status=outcome.STATUS_DONE,
                         action="get_current_playing_media",
@@ -129,7 +136,15 @@ def media_control(parameters: dict = None, player=None, **kwargs) -> str:
         info = get_current_playing_media()
         return outcome.done("media_control", action="previous", message=f"Returned to previous track ({info.message}).")
 
-    if action in ("current", "what_is_playing", "now_playing", "status", "identify", "get_current_playing_media", "current_playing"):
+    if action in (
+        "current",
+        "what_is_playing",
+        "now_playing",
+        "status",
+        "identify",
+        "get_current_playing_media",
+        "current_playing",
+    ):
         res = get_current_playing_media()
         return res.to_speech_text()
 
@@ -189,4 +204,3 @@ TOOL = {
     },
     "handler": media_control,
 }
-

@@ -1,8 +1,10 @@
 """
 scripts/split_ui.py — Script to modularize ui.py into gui/ package.
 """
+
 import os
 import sys
+
 
 def main():
     # Read original ui.py
@@ -13,6 +15,7 @@ def main():
     if len(lines) < 1000:
         print("ui.py already trimmed, fetching from git...")
         import subprocess
+
         res = subprocess.run(["git", "show", "HEAD:ui.py"], capture_output=True, text=True, encoding="utf-8")
         lines = res.stdout.splitlines(keepends=True)
 
@@ -28,7 +31,7 @@ def main():
 
     print("Discovered class indices:")
     for k, v in class_indices.items():
-        print(f"  {k}: line {v+1}")
+        print(f"  {k}: line {v + 1}")
 
     pyqt_header = [
         "from __future__ import annotations\n",
@@ -38,48 +41,52 @@ def main():
     ]
 
     # Build gui/theme.py
-    theme_content = [
-        "from __future__ import annotations\n",
-        "import colorsys\n",
-        "from PyQt6.QtGui import QColor\n",
-        "\n",
-    ] + lines[class_indices["C"]:class_indices["_ResizeEdge"]] + [
-        "\n",
-        "_RESIZE_MARGIN = 8\n",
-        "RESIZE_MARGIN = 8\n",
-        "__all__ = [\n",
-        '    "C",\n',
-        '    "_HUE_LINKED",\n',
-        '    "_PALETTE_DEFAULTS",\n',
-        '    "DEFAULT_UI_COLOR",\n',
-        '    "COLOR_STATE_LISTENING",\n',
-        '    "COLOR_STATE_SPEAKING",\n',
-        '    "COLOR_STATE_THINKING",\n',
-        '    "COLOR_STATE_PROCESSING",\n',
-        '    "COLOR_BLUE_PRIMARY",\n',
-        '    "COLOR_BLUE_GLOW",\n',
-        '    "COLOR_BLUE_OUTER",\n',
-        '    "COLOR_BLUE_HIGHLIGHT",\n',
-        '    "_lerp_color",\n',
-        '    "apply_ui_accent",\n',
-        '    "_NO_SCROLLBAR_STYLE",\n',
-        '    "_RESIZE_MARGIN",\n',
-        '    "RESIZE_MARGIN",\n',
-        "]\n",
-    ]
+    theme_content = (
+        [
+            "from __future__ import annotations\n",
+            "import colorsys\n",
+            "from PyQt6.QtGui import QColor\n",
+            "\n",
+        ]
+        + lines[class_indices["C"] : class_indices["_ResizeEdge"]]
+        + [
+            "\n",
+            "_RESIZE_MARGIN = 8\n",
+            "RESIZE_MARGIN = 8\n",
+            "__all__ = [\n",
+            '    "C",\n',
+            '    "_HUE_LINKED",\n',
+            '    "_PALETTE_DEFAULTS",\n',
+            '    "DEFAULT_UI_COLOR",\n',
+            '    "COLOR_STATE_LISTENING",\n',
+            '    "COLOR_STATE_SPEAKING",\n',
+            '    "COLOR_STATE_THINKING",\n',
+            '    "COLOR_STATE_PROCESSING",\n',
+            '    "COLOR_BLUE_PRIMARY",\n',
+            '    "COLOR_BLUE_GLOW",\n',
+            '    "COLOR_BLUE_OUTER",\n',
+            '    "COLOR_BLUE_HIGHLIGHT",\n',
+            '    "_lerp_color",\n',
+            '    "apply_ui_accent",\n',
+            '    "_NO_SCROLLBAR_STYLE",\n',
+            '    "_RESIZE_MARGIN",\n',
+            '    "RESIZE_MARGIN",\n',
+            "]\n",
+        ]
+    )
     with open("gui/theme.py", "w", encoding="utf-8") as f:
         f.writelines(theme_content)
 
     # Build gui/base.py
     base_content = (
-        lines[:class_indices["C"]] +
-        [
+        lines[: class_indices["C"]]
+        + [
             "from gui.theme import *\n",
             "from gui.theme import _RESIZE_MARGIN, _NO_SCROLLBAR_STYLE, _HUE_LINKED, _PALETTE_DEFAULTS, _lerp_color\n",
             "\n",
-        ] +
-        lines[class_indices["_ResizeEdge"]:class_indices["HudFadeOverlay"]] +
-        [
+        ]
+        + lines[class_indices["_ResizeEdge"] : class_indices["HudFadeOverlay"]]
+        + [
             "\n",
             "__all__ = [\n",
             '    "_WIN_HIDE",\n',
@@ -132,74 +139,102 @@ def main():
         "from pathlib import Path\n",
     ]
 
-    base_imports = pyqt_header + std_imports + [
-        "from gui.base import *\n",
-        "from gui.base import _WIN_HIDE, _base_dir, BASE_DIR, CONFIG_DIR, API_FILE, _read_full_config, _DEFAULT_W, _DEFAULT_H, _MIN_W, _MIN_H, _LEFT_W, _RIGHT_W, _OS, _ResizeEdge, _detect_resize_edge, _cursor_for_edge, _FramelessWindowResizeMixin, _SysMetrics, _load_app_fonts, keena_font, HAVE_VIDEO, HoloAvatar, get_uicon\n",
-        "from gui.theme import *\n",
-        "from gui.theme import _RESIZE_MARGIN, _NO_SCROLLBAR_STYLE, _HUE_LINKED, _PALETTE_DEFAULTS, _lerp_color\n",
-        "\n",
-    ]
+    base_imports = (
+        pyqt_header
+        + std_imports
+        + [
+            "from gui.base import *\n",
+            "from gui.base import _WIN_HIDE, _base_dir, BASE_DIR, CONFIG_DIR, API_FILE, _read_full_config, _DEFAULT_W, _DEFAULT_H, _MIN_W, _MIN_H, _LEFT_W, _RIGHT_W, _OS, _ResizeEdge, _detect_resize_edge, _cursor_for_edge, _FramelessWindowResizeMixin, _SysMetrics, _load_app_fonts, keena_font, HAVE_VIDEO, HoloAvatar, get_uicon\n",
+            "from gui.theme import *\n",
+            "from gui.theme import _RESIZE_MARGIN, _NO_SCROLLBAR_STYLE, _HUE_LINKED, _PALETTE_DEFAULTS, _lerp_color\n",
+            "\n",
+        ]
+    )
 
     # Build gui/hud.py
-    hud_content = base_imports + lines[class_indices["HudFadeOverlay"]:class_indices["MetricBar"]]
+    hud_content = base_imports + lines[class_indices["HudFadeOverlay"] : class_indices["MetricBar"]]
     with open("gui/hud.py", "w", encoding="utf-8") as f:
         f.writelines(hud_content)
 
     # Build gui/widgets.py
-    widgets_content = base_imports + lines[class_indices["MetricBar"]:class_indices["SetupOverlay"]]
+    widgets_content = base_imports + lines[class_indices["MetricBar"] : class_indices["SetupOverlay"]]
     with open("gui/widgets.py", "w", encoding="utf-8") as f:
         f.writelines(widgets_content)
 
     # Build gui/overlays.py
-    overlays_content = base_imports + [
-        "from gui.widgets import *\n",
-        "\n",
-    ] + lines[class_indices["SetupOverlay"]:class_indices["_ScrollSafeCombo"]]
+    overlays_content = (
+        base_imports
+        + [
+            "from gui.widgets import *\n",
+            "\n",
+        ]
+        + lines[class_indices["SetupOverlay"] : class_indices["_ScrollSafeCombo"]]
+    )
     with open("gui/overlays.py", "w", encoding="utf-8") as f:
         f.writelines(overlays_content)
 
     # Build gui/providers_panel.py
-    prov_content = base_imports + [
-        "from gui.overlays import _HudOverlay\n",
-        "\n",
-    ] + lines[class_indices["_ScrollSafeCombo"]:class_indices["ClipboardPanel"]]
+    prov_content = (
+        base_imports
+        + [
+            "from gui.overlays import _HudOverlay\n",
+            "\n",
+        ]
+        + lines[class_indices["_ScrollSafeCombo"] : class_indices["ClipboardPanel"]]
+    )
     with open("gui/providers_panel.py", "w", encoding="utf-8") as f:
         f.writelines(prov_content)
 
     # Build gui/settings_overlays.py
-    sett_content = base_imports + [
-        "from gui.overlays import _HudOverlay\n",
-        "\n",
-    ] + lines[class_indices["ClipboardPanel"]:class_indices["BottomChatDock"]]
+    sett_content = (
+        base_imports
+        + [
+            "from gui.overlays import _HudOverlay\n",
+            "\n",
+        ]
+        + lines[class_indices["ClipboardPanel"] : class_indices["BottomChatDock"]]
+    )
     with open("gui/settings_overlays.py", "w", encoding="utf-8") as f:
         f.writelines(sett_content)
 
     # Build gui/docks.py
-    docks_content = base_imports + [
-        "from gui.widgets import *\n",
-        "\n",
-    ] + lines[class_indices["BottomChatDock"]:class_indices["RemindersDisplayWindow"]]
+    docks_content = (
+        base_imports
+        + [
+            "from gui.widgets import *\n",
+            "\n",
+        ]
+        + lines[class_indices["BottomChatDock"] : class_indices["RemindersDisplayWindow"]]
+    )
     with open("gui/docks.py", "w", encoding="utf-8") as f:
         f.writelines(docks_content)
 
     # Build gui/display_windows.py
-    disp_content = base_imports + [
-        "from gui.widgets import *\n",
-        "\n",
-    ] + lines[class_indices["RemindersDisplayWindow"]:class_indices["ArmouryCrateTelemetryWidget"]]
+    disp_content = (
+        base_imports
+        + [
+            "from gui.widgets import *\n",
+            "\n",
+        ]
+        + lines[class_indices["RemindersDisplayWindow"] : class_indices["ArmouryCrateTelemetryWidget"]]
+    )
     with open("gui/display_windows.py", "w", encoding="utf-8") as f:
         f.writelines(disp_content)
 
     # Build gui/telemetry_and_displays.py
-    telem_content = base_imports + [
-        "from gui.widgets import *\n",
-        "\n",
-    ] + lines[class_indices["ArmouryCrateTelemetryWidget"]:class_indices["MainWindow"]]
+    telem_content = (
+        base_imports
+        + [
+            "from gui.widgets import *\n",
+            "\n",
+        ]
+        + lines[class_indices["ArmouryCrateTelemetryWidget"] : class_indices["MainWindow"]]
+    )
     with open("gui/telemetry_and_displays.py", "w", encoding="utf-8") as f:
         f.writelines(telem_content)
 
     # Split MainWindow into mixins
-    mw_lines = lines[class_indices["MainWindow"]:class_indices["_RootShim"]]
+    mw_lines = lines[class_indices["MainWindow"] : class_indices["_RootShim"]]
     method_offsets = {}
     for i, line in enumerate(mw_lines):
         if line.startswith("    def "):
@@ -219,41 +254,57 @@ def main():
     controls_end = len(mw_lines)
 
     # WindowMediaMixin
-    media_mixin_content = base_imports + [
-        "class WindowMediaMixin:\n",
-        '    """Video playback and desktop shortcut management for MainWindow."""\n',
-    ] + mw_lines[media_start:media_end]
+    media_mixin_content = (
+        base_imports
+        + [
+            "class WindowMediaMixin:\n",
+            '    """Video playback and desktop shortcut management for MainWindow."""\n',
+        ]
+        + mw_lines[media_start:media_end]
+    )
     with open("gui/window_media.py", "w", encoding="utf-8") as f:
         f.writelines(media_mixin_content)
 
     # WindowAudioMixin
-    audio_mixin_content = base_imports + [
-        "class WindowAudioMixin:\n",
-        '    """Cyber drawer and audio management for MainWindow."""\n',
-    ] + mw_lines[audio_start:audio_end]
+    audio_mixin_content = (
+        base_imports
+        + [
+            "class WindowAudioMixin:\n",
+            '    """Cyber drawer and audio management for MainWindow."""\n',
+        ]
+        + mw_lines[audio_start:audio_end]
+    )
     with open("gui/window_audio.py", "w", encoding="utf-8") as f:
         f.writelines(audio_mixin_content)
 
     # WindowPanelsMixin
-    panels_mixin_content = base_imports + [
-        "class WindowPanelsMixin:\n",
-        '    """Interactive content, quiz, code job, and review panels for MainWindow."""\n',
-    ] + mw_lines[panels_start:panels_end]
+    panels_mixin_content = (
+        base_imports
+        + [
+            "class WindowPanelsMixin:\n",
+            '    """Interactive content, quiz, code job, and review panels for MainWindow."""\n',
+        ]
+        + mw_lines[panels_start:panels_end]
+    )
     with open("gui/window_panels.py", "w", encoding="utf-8") as f:
         f.writelines(panels_mixin_content)
 
     # WindowControlsMixin
-    controls_mixin_content = base_imports + [
-        "class WindowControlsMixin:\n",
-        '    """Settings, PTT, wake word, overlays, and system controls for MainWindow."""\n',
-    ] + mw_lines[controls_start:controls_end]
+    controls_mixin_content = (
+        base_imports
+        + [
+            "class WindowControlsMixin:\n",
+            '    """Settings, PTT, wake word, overlays, and system controls for MainWindow."""\n',
+        ]
+        + mw_lines[controls_start:controls_end]
+    )
     with open("gui/window_controls.py", "w", encoding="utf-8") as f:
         f.writelines(controls_mixin_content)
 
     # Core MainWindow
     core_mw_content = (
-        base_imports +
-        [
+        base_imports
+        + [
             "from gui.hud import *\n",
             "from gui.widgets import *\n",
             "from gui.overlays import *\n",
@@ -275,19 +326,23 @@ def main():
             "    _FramelessWindowResizeMixin,\n",
             "    QMainWindow,\n",
             "):\n",
-        ] +
-        mw_lines[1:audio_start] +
-        mw_lines[audio_end:media_start] +
-        mw_lines[media_end:panels_start]
+        ]
+        + mw_lines[1:audio_start]
+        + mw_lines[audio_end:media_start]
+        + mw_lines[media_end:panels_start]
     )
     with open("gui/window.py", "w", encoding="utf-8") as f:
         f.writelines(core_mw_content)
 
     # Build gui/facade.py
-    facade_content = base_imports + [
-        "from gui.window import MainWindow\n",
-        "\n",
-    ] + lines[class_indices["_RootShim"]:]
+    facade_content = (
+        base_imports
+        + [
+            "from gui.window import MainWindow\n",
+            "\n",
+        ]
+        + lines[class_indices["_RootShim"] :]
+    )
     with open("gui/facade.py", "w", encoding="utf-8") as f:
         f.writelines(facade_content)
 
@@ -361,6 +416,7 @@ __all__ = list(_gui_all)
         f.write(ui_content)
 
     print("Successfully modularized ui.py into gui/ package!")
+
 
 if __name__ == "__main__":
     main()

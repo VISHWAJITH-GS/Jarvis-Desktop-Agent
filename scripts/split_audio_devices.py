@@ -2,7 +2,9 @@
 scripts/split_audio_devices.py — Extract WASAPI endpoint management from core/audio_devices.py
 into core/audio_endpoints.py.
 """
+
 from __future__ import annotations
+
 
 def main():
     with open("core/audio_devices.py", "r", encoding="utf-8") as f:
@@ -77,6 +79,7 @@ def _fold(text: str) -> str:
     with open("core/audio_devices.py", "w", encoding="utf-8") as f:
         f.writelines(new_audio_devices)
     print(f"Updated core/audio_devices.py: {len(new_audio_devices)} lines")
+
 
 if __name__ == "__main__":
     main()

@@ -44,13 +44,15 @@ def get_current_task_id() -> Optional[str]:
     """Retrieve the active background task ID for the current execution context."""
     return _current_task_id.get()
 
+
 # ── Risk Level Definitions ───────────────────────────────────────────────────
 
+
 class ActionRiskLevel(str, Enum):
-    IMMEDIATE = "immediate"                 # Level 1 - Immediate, no confirmation
+    IMMEDIATE = "immediate"  # Level 1 - Immediate, no confirmation
     CONFIRMATION_REQUIRED = "confirmation"  # Level 2 - Intended action explained, confirmation required
-    HIGH_IMPACT = "high_impact"             # Level 3 - High-impact, clear consequences explained
-    FORBIDDEN = "forbidden"                 # Blocked / Strictly prohibited (e.g. drive format)
+    HIGH_IMPACT = "high_impact"  # Level 3 - High-impact, clear consequences explained
+    FORBIDDEN = "forbidden"  # Blocked / Strictly prohibited (e.g. drive format)
 
 
 # Backward-compatible tier strings
@@ -75,7 +77,6 @@ ACTION_PERMISSIONS: dict[str, str] = {
     "observe_page": READ_ONLY,
     "code_helper": READ_ONLY,
     "leetcode_assistant": READ_ONLY,
-
     # Normal operational tools (Immediate)
     "open_app": NORMAL,
     "spotify_control": NORMAL,
@@ -105,28 +106,24 @@ ACTION_PERMISSIONS: dict[str, str] = {
     "skill_learner": NORMAL,
     "browser_qa": NORMAL,
     "browser_profile": NORMAL,
-
     # Task tools
     "start_task": NORMAL,
     "list_tasks": READ_ONLY,
     "task_status": READ_ONLY,
     "steer_task": NORMAL,
     "stop_task": NORMAL,
-
     # Routine tools
     "create_routine": NORMAL,
     "list_routines": READ_ONLY,
     "edit_routine": NORMAL,
     "delete_routine": NORMAL,
     "configure_quiet_hours": NORMAL,
-
     # Sensitive tools (Require confirmation by default unless sub-action is immediate)
     "computer_control": SENSITIVE,
     "windows_control": SENSITIVE,
     "computer_settings": SENSITIVE,
     "dev_agent": SENSITIVE,
     "game_updater": SENSITIVE,
-
     # Destructive actions (High-impact)
     "sleep_jarvis": NORMAL,
     "shutdown_jarvis": DESTRUCTIVE,
@@ -140,9 +137,10 @@ _audit_lock = Lock()
 
 # ── ActionPermissionManager ──────────────────────────────────────────────────
 
+
 class ActionPermissionManager:
     """Authoritative centralized permission manager for all JARVIS actions.
-    
+
     Implements the exact permission matrix. AI-generated instructions and Gemini
     cannot override these classifications.
     """
@@ -168,7 +166,16 @@ class ActionPermissionManager:
         sub_act = str(params.get("action") or "").lower().strip()
 
         # Tools that only display UI, search, or process non-system text cannot format drives
-        if act in ("display_window", "web_search", "observe_page", "reminder", "send_message", "notification_center", "spotify_control", "video_player"):
+        if act in (
+            "display_window",
+            "web_search",
+            "observe_page",
+            "reminder",
+            "send_message",
+            "notification_center",
+            "spotify_control",
+            "video_player",
+        ):
             return False
 
         # Direct format action on file/drive controller tools
@@ -206,7 +213,14 @@ class ActionPermissionManager:
         act = str(action_name or "").lower().strip()
         params = parameters or {}
         sub_act = str(params.get("action") or "").lower().strip()
-        target = str(params.get("target") or params.get("device") or params.get("name") or params.get("ssid") or params.get("path") or "").lower()
+        target = str(
+            params.get("target")
+            or params.get("device")
+            or params.get("name")
+            or params.get("ssid")
+            or params.get("path")
+            or ""
+        ).lower()
 
         # 0. Check FORBIDDEN (Drive Formatting)
         if cls.is_drive_format_attempt(act, params):
@@ -214,11 +228,13 @@ class ActionPermissionManager:
 
         # 1. JARVIS Shutdown vs Window Controls & Adjustments
         # Only shutdown/closing of JARVIS itself asks for user confirmation!
-        if act in ("shutdown_jarvis", "kill_jarvis") or (
-            sub_act in ("shutdown_jarvis", "close_jarvis", "kill_jarvis", "exit_jarvis", "quit_jarvis")
-        ) or (
-            sub_act in ("close_app", "kill", "quit", "exit", "close")
-            and any(k in target for k in ("jarvis", "assistant", "ai"))
+        if (
+            act in ("shutdown_jarvis", "kill_jarvis")
+            or (sub_act in ("shutdown_jarvis", "close_jarvis", "kill_jarvis", "exit_jarvis", "quit_jarvis"))
+            or (
+                sub_act in ("close_app", "kill", "quit", "exit", "close")
+                and any(k in target for k in ("jarvis", "assistant", "ai"))
+            )
         ):
             return ActionRiskLevel.HIGH_IMPACT
 
@@ -227,20 +243,85 @@ class ActionPermissionManager:
             return ActionRiskLevel.IMMEDIATE
 
         WINDOW_ADJUST_ACTIONS = (
-            "minimize_jarvis", "maximize_jarvis", "restore_jarvis", "mute_jarvis", "unmute_jarvis",
-            "minimize", "maximize", "restore", "minimize_window", "maximize_window", "restore_window", "close_window",
-            "switch_window", "show_desktop", "desktop", "full_screen", "fullscreen", "toggle_fullscreen", "exit_fullscreen",
-            "focus_display", "minimize_display", "maximize_display", "close_display", "list_displays", "open_display",
-            "fit_window", "center_window", "resize_window", "move_window", "adjust_window", "tile_window",
-            "toggle_minimize", "toggle_collapse", "toggle_chat", "toggle_chat_dock", "toggle_expanded", "mini_mode",
-            "show_reminders", "hide_reminders", "minimize_reminders",
-            "show_memory", "manage_memory", "show_actions", "manage_actions", "action_registry", "memory_platform",
+            "minimize_jarvis",
+            "maximize_jarvis",
+            "restore_jarvis",
+            "mute_jarvis",
+            "unmute_jarvis",
+            "minimize",
+            "maximize",
+            "restore",
+            "minimize_window",
+            "maximize_window",
+            "restore_window",
+            "close_window",
+            "switch_window",
+            "show_desktop",
+            "desktop",
+            "full_screen",
+            "fullscreen",
+            "toggle_fullscreen",
+            "exit_fullscreen",
+            "focus_display",
+            "minimize_display",
+            "maximize_display",
+            "close_display",
+            "list_displays",
+            "open_display",
+            "fit_window",
+            "center_window",
+            "resize_window",
+            "move_window",
+            "adjust_window",
+            "tile_window",
+            "toggle_minimize",
+            "toggle_collapse",
+            "toggle_chat",
+            "toggle_chat_dock",
+            "toggle_expanded",
+            "mini_mode",
+            "show_reminders",
+            "hide_reminders",
+            "minimize_reminders",
+            "show_memory",
+            "manage_memory",
+            "show_actions",
+            "manage_actions",
+            "action_registry",
+            "memory_platform",
         )
         if sub_act in WINDOW_ADJUST_ACTIONS:
             return ActionRiskLevel.IMMEDIATE
 
-        if any(k in target for k in ("jarvis", "arc reactor", "reactor", "hud", "display_window")) and any(w in sub_act for w in ("window", "display", "adjust", "move", "resize", "size", "fit", "show", "hide", "view", "toggle", "pos", "center")):
-            if sub_act not in ("shutdown", "shutdown_computer", "shutdown_laptop", "restart", "reboot", "format", "delete", "destroy", "kill"):
+        if any(k in target for k in ("jarvis", "arc reactor", "reactor", "hud", "display_window")) and any(
+            w in sub_act
+            for w in (
+                "window",
+                "display",
+                "adjust",
+                "move",
+                "resize",
+                "size",
+                "fit",
+                "show",
+                "hide",
+                "view",
+                "toggle",
+                "pos",
+                "center",
+            )
+        ):
+            if sub_act not in (
+                "shutdown",
+                "shutdown_computer",
+                "shutdown_laptop",
+                "restart",
+                "reboot",
+                "format",
+                "delete",
+                "destroy",
+                "kill",
+            ):
                 return ActionRiskLevel.IMMEDIATE
 
         # Destructive sub-action parameter escalation (kill, destroy, shutdown, etc.)
@@ -258,9 +339,19 @@ class ActionPermissionManager:
         # - Forget network: CONFIRMATION REQUIRED
         # - Change network configuration: CONFIRMATION REQUIRED
         if act in ("windows_control", "computer_settings") or "wifi" in act:
-            if sub_act in ("get_wifi_status", "wifi_status", "check_wifi", "is_wifi_on",
-                           "list_available_wifi_networks", "list_wifi_networks", "available_wifi", "wifi_networks",
-                           "current_wifi", "connected_wifi", "wifi_name"):
+            if sub_act in (
+                "get_wifi_status",
+                "wifi_status",
+                "check_wifi",
+                "is_wifi_on",
+                "list_available_wifi_networks",
+                "list_wifi_networks",
+                "available_wifi",
+                "wifi_networks",
+                "current_wifi",
+                "connected_wifi",
+                "wifi_name",
+            ):
                 return ActionRiskLevel.IMMEDIATE
 
             if sub_act in ("set_wifi_enabled", "wifi_on", "wifi_off", "enable_wifi", "disable_wifi", "toggle_wifi"):
@@ -286,9 +377,18 @@ class ActionPermissionManager:
         # - Turn Bluetooth OFF: CONFIRMATION REQUIRED
         # - Connect / Disconnect / Switch / Pair / Forget / Audio output: CONFIRMATION REQUIRED
         if act in ("windows_control", "computer_settings") or "bluetooth" in act or "bt" in act:
-            if sub_act in ("get_bluetooth_status", "bluetooth_status", "check_bluetooth", "is_bluetooth_on",
-                           "list_bluetooth_devices", "bluetooth_devices", "paired_bluetooth_devices",
-                           "list_connected_bluetooth_devices", "connected_bluetooth_devices", "connected_devices"):
+            if sub_act in (
+                "get_bluetooth_status",
+                "bluetooth_status",
+                "check_bluetooth",
+                "is_bluetooth_on",
+                "list_bluetooth_devices",
+                "bluetooth_devices",
+                "paired_bluetooth_devices",
+                "list_connected_bluetooth_devices",
+                "connected_bluetooth_devices",
+                "connected_devices",
+            ):
                 return ActionRiskLevel.IMMEDIATE
 
             if sub_act in ("bluetooth_on", "enable_bluetooth"):
@@ -315,13 +415,29 @@ class ActionPermissionManager:
             if sub_act in ("pair_bluetooth_device", "pair_bluetooth", "pair_device"):
                 return ActionRiskLevel.CONFIRMATION_REQUIRED
 
-            if sub_act in ("unpair_bluetooth_device", "forget_bluetooth_device", "remove_bluetooth_device", "forget_device"):
+            if sub_act in (
+                "unpair_bluetooth_device",
+                "forget_bluetooth_device",
+                "remove_bluetooth_device",
+                "forget_device",
+            ):
                 return ActionRiskLevel.CONFIRMATION_REQUIRED
 
-            if sub_act in ("set_audio_output", "switch_audio_output", "set_default_playback_device", "change_audio_output",
-                           "set_audio_input", "switch_audio_input", "set_default_recording_device", "change_audio_input",
-                           "set_audio_device", "switch_audio_device", "switch_audio",
-                           "reset_audio_devices", "use_default_audio_devices"):
+            if sub_act in (
+                "set_audio_output",
+                "switch_audio_output",
+                "set_default_playback_device",
+                "change_audio_output",
+                "set_audio_input",
+                "switch_audio_input",
+                "set_default_recording_device",
+                "change_audio_input",
+                "set_audio_device",
+                "switch_audio_device",
+                "switch_audio",
+                "reset_audio_devices",
+                "use_default_audio_devices",
+            ):
                 return ActionRiskLevel.CONFIRMATION_REQUIRED
 
         # =====================================================================
@@ -334,22 +450,61 @@ class ActionPermissionManager:
         # - Change power mode, Airplane mode, display resolution, display config: CONFIRMATION REQUIRED
         # - Shutdown, Restart, Hibernate, Sleep: HIGH-IMPACT
         if act in ("windows_control", "computer_settings", "computer_control", "system_status", "system_monitor"):
-            if sub_act in ("get_power_status", "battery_status", "battery", "battery_percentage",
-                           "cpu_usage", "ram_usage", "storage_usage", "disk_usage",
-                           "get_volume", "check_volume", "volume_status", "volume_get",
-                           "get_brightness", "brightness_get",
-                           "volume_up", "volume_down", "set_volume", "volume", "adjust_volume",
-                           "mute", "unmute", "mute_jarvis", "unmute_jarvis",
-                           "minimize_jarvis", "maximize_jarvis", "restore_jarvis",
-                           "show_memory", "manage_memory", "memory_platform",
-                           "show_actions", "manage_actions", "action_registry",
-                           "toggle_ducking", "enable_ducking", "disable_ducking",
-                           "brightness_up", "brightness_down", "set_brightness", "brightness",
-                           "list_audio_devices", "list_audio_input_devices", "list_audio_output_devices",
-                           "audio_devices", "sound_devices", "get_audio_devices",
-                           "list_sound_devices", "audio_status", "get_audio_status",
-                           "sleep_jarvis", "go_to_sleep",
-                           "lock_screen", "lock_laptop", "lock"):
+            if sub_act in (
+                "get_power_status",
+                "battery_status",
+                "battery",
+                "battery_percentage",
+                "cpu_usage",
+                "ram_usage",
+                "storage_usage",
+                "disk_usage",
+                "get_volume",
+                "check_volume",
+                "volume_status",
+                "volume_get",
+                "get_brightness",
+                "brightness_get",
+                "volume_up",
+                "volume_down",
+                "set_volume",
+                "volume",
+                "adjust_volume",
+                "mute",
+                "unmute",
+                "mute_jarvis",
+                "unmute_jarvis",
+                "minimize_jarvis",
+                "maximize_jarvis",
+                "restore_jarvis",
+                "show_memory",
+                "manage_memory",
+                "memory_platform",
+                "show_actions",
+                "manage_actions",
+                "action_registry",
+                "toggle_ducking",
+                "enable_ducking",
+                "disable_ducking",
+                "brightness_up",
+                "brightness_down",
+                "set_brightness",
+                "brightness",
+                "list_audio_devices",
+                "list_audio_input_devices",
+                "list_audio_output_devices",
+                "audio_devices",
+                "sound_devices",
+                "get_audio_devices",
+                "list_sound_devices",
+                "audio_status",
+                "get_audio_status",
+                "sleep_jarvis",
+                "go_to_sleep",
+                "lock_screen",
+                "lock_laptop",
+                "lock",
+            ):
                 return ActionRiskLevel.IMMEDIATE
 
             if sub_act in ("set_power_mode", "power_mode", "change_power_mode"):
@@ -384,10 +539,30 @@ class ActionPermissionManager:
         # - Delete files/folders, empty recycle bin: HIGH-IMPACT
         # - Format drive: FORBIDDEN
         if act in ("file_controller", "file_processor", "dev_agent"):
-            if sub_act in ("list", "find", "search", "search_files", "read", "extract_text", "summarize", "largest", "disk_usage", "info"):
+            if sub_act in (
+                "list",
+                "find",
+                "search",
+                "search_files",
+                "read",
+                "extract_text",
+                "summarize",
+                "largest",
+                "disk_usage",
+                "info",
+            ):
                 return ActionRiskLevel.IMMEDIATE
 
-            if sub_act in ("create_file", "create_folder", "write", "rename", "copy", "move", "organize_desktop", "edit_file"):
+            if sub_act in (
+                "create_file",
+                "create_folder",
+                "write",
+                "rename",
+                "copy",
+                "move",
+                "organize_desktop",
+                "edit_file",
+            ):
                 return ActionRiskLevel.CONFIRMATION_REQUIRED
 
             if sub_act in ("delete", "delete_file", "delete_folder", "remove"):
@@ -409,11 +584,31 @@ class ActionPermissionManager:
             if act in ("open_app", "web_search", "send_message"):
                 return ActionRiskLevel.IMMEDIATE
 
-            if sub_act in ("open_app", "close_app", "minimize_app", "maximize_app", "switch_app",
-                           "list_running_apps", "get_active_window",
-                           "observe", "click", "type", "navigate", "scroll", "press", "new_tab",
-                           "switch_tab", "close_tab", "back", "wait", "screenshot",
-                           "fill_form", "submit_form", "upload", "upload_file"):
+            if sub_act in (
+                "open_app",
+                "close_app",
+                "minimize_app",
+                "maximize_app",
+                "switch_app",
+                "list_running_apps",
+                "get_active_window",
+                "observe",
+                "click",
+                "type",
+                "navigate",
+                "scroll",
+                "press",
+                "new_tab",
+                "switch_tab",
+                "close_tab",
+                "back",
+                "wait",
+                "screenshot",
+                "fill_form",
+                "submit_form",
+                "upload",
+                "upload_file",
+            ):
                 return ActionRiskLevel.IMMEDIATE
 
             if sub_act in ("download", "download_file"):
@@ -438,7 +633,13 @@ class ActionPermissionManager:
         # - Change user settings: CONFIRMATION REQUIRED
         # - Delete system files: HIGH-IMPACT
         if act in ("windows_control", "computer_control"):
-            if sub_act in ("check_windows_version", "windows_version", "system_info", "install_app", "install_application"):
+            if sub_act in (
+                "check_windows_version",
+                "windows_version",
+                "system_info",
+                "install_app",
+                "install_application",
+            ):
                 return ActionRiskLevel.IMMEDIATE
 
             if sub_act in ("install_software", "install_package"):
@@ -475,12 +676,21 @@ class ActionPermissionManager:
         return ActionRiskLevel.CONFIRMATION_REQUIRED
 
     @classmethod
-    def get_confirmation_details(cls, action_name: str, parameters: dict | None = None) -> Tuple[str, str, Optional[dict]]:
+    def get_confirmation_details(
+        cls, action_name: str, parameters: dict | None = None
+    ) -> Tuple[str, str, Optional[dict]]:
         """Construct descriptive title, consequence details, and payment metadata."""
         act = str(action_name or "").lower().strip()
         params = parameters or {}
         sub_act = str(params.get("action") or "").lower().strip()
-        target = str(params.get("target") or params.get("device") or params.get("name") or params.get("ssid") or params.get("path") or "").strip()
+        target = str(
+            params.get("target")
+            or params.get("device")
+            or params.get("name")
+            or params.get("ssid")
+            or params.get("path")
+            or ""
+        ).strip()
         payment_info: Optional[dict] = None
 
         # Wi-Fi
@@ -498,7 +708,10 @@ class ActionPermissionManager:
             detail = "Apply changes to network interface configuration."
 
         # Bluetooth
-        elif sub_act in ("bluetooth_off", "disable_bluetooth") or (sub_act == "set_bluetooth_enabled" and str(params.get("value") or target).lower() in ("off", "false", "0", "disable")):
+        elif sub_act in ("bluetooth_off", "disable_bluetooth") or (
+            sub_act == "set_bluetooth_enabled"
+            and str(params.get("value") or target).lower() in ("off", "false", "0", "disable")
+        ):
             title = "Turn Bluetooth Off"
             detail = "Turn off the Bluetooth adapter and disconnect all connected devices."
         elif sub_act in ("connect_bluetooth_device", "connect_bluetooth", "connect_device"):
@@ -516,7 +729,12 @@ class ActionPermissionManager:
         elif sub_act in ("unpair_bluetooth_device", "forget_bluetooth_device", "remove_bluetooth_device"):
             title = "Remove Paired Device"
             detail = f"Unpair and remove Bluetooth device '{target}'."
-        elif sub_act in ("set_audio_output", "switch_audio_output", "set_default_playback_device", "change_audio_output"):
+        elif sub_act in (
+            "set_audio_output",
+            "switch_audio_output",
+            "set_default_playback_device",
+            "change_audio_output",
+        ):
             title = "Change Audio Output"
             detail = f"Switch audio speaker/output device to '{target or 'default'}'."
         elif sub_act in ("set_audio_input", "switch_audio_input", "set_default_recording_device", "change_audio_input"):
@@ -530,8 +748,13 @@ class ActionPermissionManager:
             detail = "Reset microphone and speaker devices to Windows system defaults."
 
         # JARVIS Shutdown vs System Controls
-        elif act in ("shutdown_jarvis", "kill_jarvis") or sub_act in ("shutdown_jarvis", "close_jarvis", "kill_jarvis") or (
-            sub_act in ("close_app", "kill", "quit", "exit") and any(k in target for k in ("jarvis", "assistant", "ai"))
+        elif (
+            act in ("shutdown_jarvis", "kill_jarvis")
+            or sub_act in ("shutdown_jarvis", "close_jarvis", "kill_jarvis")
+            or (
+                sub_act in ("close_app", "kill", "quit", "exit")
+                and any(k in target for k in ("jarvis", "assistant", "ai"))
+            )
         ):
             title = "Shut Down JARVIS"
             detail = "Are you sure you want to completely shut down and exit JARVIS?"
@@ -586,7 +809,9 @@ class ActionPermissionManager:
         # Applications & Browser
         elif sub_act in ("download", "download_file"):
             title = "Download File"
-            detail = f"Download file from '{params.get('url') or target or 'web'}'. Verify the source before confirming."
+            detail = (
+                f"Download file from '{params.get('url') or target or 'web'}'. Verify the source before confirming."
+            )
         elif sub_act in ("make_payment", "pay", "payment"):
             amt = params.get("amount") or "unspecified amount"
             recip = params.get("recipient") or params.get("merchant") or "merchant"
@@ -632,6 +857,7 @@ class ActionPermissionManager:
 
 
 # ── Centralized Action Execution Guard ───────────────────────────────────────
+
 
 class ActionExecutionGuard:
     """Authoritative execution guard for all registered actions."""
@@ -798,6 +1024,7 @@ def _call_handler_safe(fn: Callable, parameters: dict, ctx: dict) -> Any:
 
 # ── Backward Compatibility API ──────────────────────────────────────────────
 
+
 def get_action_permission(action_name: str, parameters: dict | None = None) -> str:
     """Map action to backward-compatible tier string."""
     risk = ActionPermissionManager.get_risk_level(action_name, parameters)
@@ -863,9 +1090,11 @@ def approve_sensitive_action_for_session(action_name: str) -> None:
 
 _untrusted_context: bool = False
 
+
 def set_untrusted_context(active: bool) -> None:
     global _untrusted_context
     _untrusted_context = bool(active)
+
 
 def is_untrusted_context() -> bool:
     return _untrusted_context
@@ -875,9 +1104,11 @@ def is_untrusted_context() -> bool:
 
 _MAX_AUDIT_ENTRIES = 5000
 
+
 def _get_audit_db_path() -> Path:
     try:
         from memory.config_manager import get_user_data_dir
+
         d = get_user_data_dir()
     except Exception:
         d = Path.home() / ".jarvis"
@@ -910,6 +1141,7 @@ def _init_audit_db(conn: sqlite3.Connection) -> None:
 def _sanitize_secrets(params: dict) -> str:
     """Mask sensitive fields such as passwords, pins, credentials, credit cards."""
     from memory.config_manager import redact_secret
+
     cleaned = dict(params or {})
     sensitive_keys = {"password", "pin", "cvv", "credit_card", "card_number", "ssid_password"}
     for k, v in list(cleaned.items()):
@@ -964,8 +1196,16 @@ def log_action_audit(
                     INSERT INTO audit_trail (timestamp, action, permission_level, status, verified, parameters, error, task_id)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (now_str, entry["action"], entry["permission_level"], entry["status"],
-                     1 if entry["verified"] else 0, entry["parameters"], entry["error"], entry["task_id"]),
+                    (
+                        now_str,
+                        entry["action"],
+                        entry["permission_level"],
+                        entry["status"],
+                        1 if entry["verified"] else 0,
+                        entry["parameters"],
+                        entry["error"],
+                        entry["task_id"],
+                    ),
                 )
                 conn.execute(
                     f"DELETE FROM audit_trail WHERE id NOT IN (SELECT id FROM audit_trail ORDER BY id DESC LIMIT {_MAX_AUDIT_ENTRIES})"
@@ -999,16 +1239,18 @@ def get_audit_trail(limit: int = 50) -> list[dict]:
                     if rows:
                         results = []
                         for r in reversed(rows):
-                            results.append({
-                                "timestamp": r[0],
-                                "action": r[1],
-                                "permission_level": r[2],
-                                "status": r[3],
-                                "verified": bool(r[4]),
-                                "parameters": r[5],
-                                "error": r[6],
-                                "task_id": r[7] if len(r) > 7 else None,
-                            })
+                            results.append(
+                                {
+                                    "timestamp": r[0],
+                                    "action": r[1],
+                                    "permission_level": r[2],
+                                    "status": r[3],
+                                    "verified": bool(r[4]),
+                                    "parameters": r[5],
+                                    "error": r[6],
+                                    "task_id": r[7] if len(r) > 7 else None,
+                                }
+                            )
                         return results
                 finally:
                     conn.close()

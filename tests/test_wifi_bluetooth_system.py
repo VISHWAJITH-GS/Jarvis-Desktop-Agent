@@ -1,4 +1,5 @@
 import pytest
+
 pytestmark = pytest.mark.requires_hardware
 
 """
@@ -50,7 +51,7 @@ class TestWiFiManagement(unittest.TestCase):
             "enabled": True,
             "connected": True,
             "connected_ssid": "Test_Network",
-            "has_internet": True
+            "has_internet": True,
         }
         res = wc.connect_wifi("Test_Network")
         self.assertTrue(res.get("verified"))
@@ -86,7 +87,7 @@ class TestBluetoothManagement(unittest.TestCase):
         """Verify connect_bluetooth_device verifies connection."""
         mock_status.return_value = {
             "enabled": True,
-            "connected_devices": [{"Name": "OPPO Enco Buds2", "IsConnected": True}]
+            "connected_devices": [{"Name": "OPPO Enco Buds2", "IsConnected": True}],
         }
         res = wc.connect_bluetooth_device("OPPO Enco Buds2")
         self.assertTrue(res.get("verified"))
@@ -96,9 +97,7 @@ class TestBluetoothManagement(unittest.TestCase):
     @patch("actions.windows_control.get_bluetooth_status")
     def test_disconnect_bluetooth_device(self, mock_status, mock_ps):
         """Verify disconnect_bluetooth_device verifies disconnection."""
-        mock_status.return_value = {
-            "connected_devices": []
-        }
+        mock_status.return_value = {"connected_devices": []}
         res = wc.disconnect_bluetooth_device("OPPO Enco Buds2")
         self.assertTrue(res.get("verified"))
 
@@ -108,7 +107,9 @@ class TestVoiceConfirmationWorkflow(unittest.TestCase):
         """Verify confirm resolves pending action without screen interaction."""
         executed = []
         confirm.bind(MagicMock(), MagicMock(), MagicMock())
-        msg = confirm.request("switch_wifi", "Switch Wi-Fi", "Connecting to new network", lambda: (executed.append(True) or "Done"))
+        msg = confirm.request(
+            "switch_wifi", "Switch Wi-Fi", "Connecting to new network", lambda: executed.append(True) or "Done"
+        )
         self.assertIn("[CONFIRMATION_PENDING]", msg)
         self.assertEqual(confirm.pending_title(), "Switch Wi-Fi")
 
@@ -121,7 +122,9 @@ class TestVoiceConfirmationWorkflow(unittest.TestCase):
         """Verify cancel rejects pending action."""
         executed = []
         confirm.bind(MagicMock(), MagicMock(), MagicMock())
-        confirm.request("switch_bt", "Switch Bluetooth", "Connecting to headphones", lambda: (executed.append(True) or "Done"))
+        confirm.request(
+            "switch_bt", "Switch Bluetooth", "Connecting to headphones", lambda: executed.append(True) or "Done"
+        )
         res = confirm.resolve_by_voice("cancel")
         self.assertFalse(res)
         self.assertEqual(confirm.pending_title(), "")
@@ -130,4 +133,3 @@ class TestVoiceConfirmationWorkflow(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

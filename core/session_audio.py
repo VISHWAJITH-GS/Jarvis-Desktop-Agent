@@ -1,6 +1,7 @@
 """
 core/session_audio.py — Audio streaming, listening, playback, and vision mixin.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -12,15 +13,20 @@ import numpy as np
 from google.genai import types
 
 from core.runtime_env import (
-    SEND_SAMPLE_RATE, RECEIVE_SAMPLE_RATE, CHUNK_SIZE,
-    _pcm_level, _pcm_visemes, _is_repeat_chunk, _clean_transcript,
+    SEND_SAMPLE_RATE,
+    RECEIVE_SAMPLE_RATE,
+    CHUNK_SIZE,
+    _pcm_level,
+    _pcm_visemes,
+    _is_repeat_chunk,
+    _clean_transcript,
     _ReconnectSignal,
 )
 from core import confirm as confirm_gate
 
 _REPEAT_MIN = 12
-_VIS_HOP = 480         # 20 ms between frames, i.e. 50 shapes a second
-_FIRST_SOUND = CHUNK_SIZE / RECEIVE_SAMPLE_RATE      # ~43 ms
+_VIS_HOP = 480  # 20 ms between frames, i.e. 50 shapes a second
+_FIRST_SOUND = CHUNK_SIZE / RECEIVE_SAMPLE_RATE  # ~43 ms
 _CURSOR_SLACK = 0.15
 
 
@@ -79,10 +85,7 @@ class LiveAudioMixin:
             # or manual sleep), mic audio NEVER leaves the machine to Gemini.
             # Frames go only to the local wake-word detector ("Jarvis"/"Hello")
             # on its own background thread; Ctrl+Alt+K also wakes globally.
-            is_sleeping = (
-                (hasattr(self, "voice_state") and self.voice_state.is_sleeping)
-                or (not self._awake)
-            )
+            is_sleeping = (hasattr(self, "voice_state") and self.voice_state.is_sleeping) or (not self._awake)
             if is_sleeping:
                 det = self._wake_detector
                 if det is None and self._wake_enabled:
@@ -123,10 +126,9 @@ class LiveAudioMixin:
             # replying the instant it stops still works.
             if self._tail_active():
                 try:
-                    if not self._echo.is_user_speech(
-                            indata, SEND_SAMPLE_RATE, _pcm_level(indata)):
+                    if not self._echo.is_user_speech(indata, SEND_SAMPLE_RATE, _pcm_level(indata)):
                         return
-                    self._tail_until = 0.0      # a real voice ends the tail early
+                    self._tail_until = 0.0  # a real voice ends the tail early
                 except Exception:
                     return
             elif self._echo._hist:
@@ -138,13 +140,10 @@ class LiveAudioMixin:
             # unless you are holding the key.
             if self._ptt_enabled and not self._ptt_held:
                 return
-            
+
             if not self.ui.muted and not self._phone_active:
                 data = indata.tobytes()
-                loop.call_soon_threadsafe(
-                    self.out_queue.put_nowait,
-                    {"data": data, "mime_type": "audio/pcm"}
-                )
+                loop.call_soon_threadsafe(self.out_queue.put_nowait, {"data": data, "mime_type": "audio/pcm"})
                 # Feed the live mic level to the HUD so the waveform reacts to
                 # the user's actual voice while listening. Purely cosmetic — any
                 # failure here must never disturb the mic.
@@ -188,6 +187,7 @@ class LiveAudioMixin:
             return False
 
         import base64 as _b64
+
         img_b, mime_t, question, angle = self._pending_vision
         self._pending_vision = None
         b64 = _b64.b64encode(img_b).decode("ascii")
@@ -199,10 +199,13 @@ class LiveAudioMixin:
         # label *means* is explained once, in the generated [SELF] block.
         src = "[IMAGE SOURCE: SCREEN CAPTURE]"
         await self.session.send_client_content(
-            turns={"role": "user", "parts": [
-                {"inline_data": {"mime_type": mime_t, "data": b64}},
-                {"text": f"{src}\n\n{question}"},
-            ]},
+            turns={
+                "role": "user",
+                "parts": [
+                    {"inline_data": {"mime_type": mime_t, "data": b64}},
+                    {"text": f"{src}\n\n{question}"},
+                ],
+            },
             turn_complete=True,
         )
 
@@ -238,7 +241,9 @@ class LiveAudioMixin:
                     _goaway = getattr(response, "go_away", None)
                     if _goaway is not None:
                         tl = getattr(_goaway, "time_left", None)
-                        print(f"[JARVIS] 🔄 Server GoAway signal received (time_left={tl}) — performing clean reconnect")
+                        print(
+                            f"[JARVIS] 🔄 Server GoAway signal received (time_left={tl}) — performing clean reconnect"
+                        )
                         raise _ReconnectSignal(keep_context=True)
 
                     if response.data:
@@ -302,7 +307,7 @@ class LiveAudioMixin:
                             # flag and skip all further processing for that turn.
                             if self._interrupted:
                                 self._interrupted = False
-                                in_buf  = []
+                                in_buf = []
                                 out_buf = []
                                 self._visemes.reset()
                                 if hasattr(self, "ui") and self.ui:
@@ -316,7 +321,7 @@ class LiveAudioMixin:
 
                             full_in = " ".join(in_buf).strip()
                             if full_in:
-                                self._last_out_logged = ""   # new exchange
+                                self._last_out_logged = ""  # new exchange
                                 self.ui.write_log(f"You: {full_in}")
                                 self._session_log.append(f"User: {full_in}")
 
@@ -332,11 +337,16 @@ class LiveAudioMixin:
                                     print(f"[Confirm] Voice check error: {c_err}")
 
                                 if self._dashboard:
-                                    asyncio.create_task(self._dashboard.broadcast({
-                                        "type": "log", "speaker": "user",
-                                        "text": full_in,
-                                        "ts": datetime.now().isoformat(),
-                                    }))
+                                    asyncio.create_task(
+                                        self._dashboard.broadcast(
+                                            {
+                                                "type": "log",
+                                                "speaker": "user",
+                                                "text": full_in,
+                                                "ts": datetime.now().isoformat(),
+                                            }
+                                        )
+                                    )
                             in_buf = []
 
                             full_out = " ".join(out_buf).strip()
@@ -351,11 +361,16 @@ class LiveAudioMixin:
                                 self.ui.write_log(f"{self._asst_name}: {full_out}")
                                 self._session_log.append(f"{self._asst_name}: {full_out}")
                                 if self._dashboard:
-                                    asyncio.create_task(self._dashboard.broadcast({
-                                        "type": "log", "speaker": "jarvis",
-                                        "text": full_out,
-                                        "ts": datetime.now().isoformat(),
-                                    }))
+                                    asyncio.create_task(
+                                        self._dashboard.broadcast(
+                                            {
+                                                "type": "log",
+                                                "speaker": "jarvis",
+                                                "text": full_out,
+                                                "ts": datetime.now().isoformat(),
+                                            }
+                                        )
+                                    )
                             out_buf = []
 
                     if response.tool_call:
@@ -364,9 +379,7 @@ class LiveAudioMixin:
                             print(f"[JARVIS] 📞 {fc.name}")
                             fr = await self._execute_tool(fc)
                             fn_responses.append(fr)
-                        await self.session.send_tool_response(
-                            function_responses=fn_responses
-                        )
+                        await self.session.send_tool_response(function_responses=fn_responses)
                         await self._flush_pending_vision()
         except Exception as e:
             print(f"[JARVIS] ❌ Recv: {e}")
@@ -383,22 +396,15 @@ class LiveAudioMixin:
         st = self.audio_manager.get_status()
         print(
             f"[JARVIS] 🔊 Output active: {st['output_device']} ({st['output_sample_rate']} Hz, "
-            f"latency {self._out_latency*1000:.0f} ms)"
+            f"latency {self._out_latency * 1000:.0f} ms)"
         )
 
         try:
             while True:
                 try:
-                    raw_item = await asyncio.wait_for(
-                        self.audio_in_queue.get(),
-                        timeout=0.1
-                    )
+                    raw_item = await asyncio.wait_for(self.audio_in_queue.get(), timeout=0.1)
                 except asyncio.TimeoutError:
-                    if (
-                        self._turn_done_event
-                        and self._turn_done_event.is_set()
-                        and self.audio_in_queue.empty()
-                    ):
+                    if self._turn_done_event and self._turn_done_event.is_set() and self.audio_in_queue.empty():
                         self.set_speaking(False)
                         if hasattr(self, "voice_state") and not self.voice_state.is_disabled:
                             self.voice_state.finish_speaking()
@@ -408,9 +414,8 @@ class LiveAudioMixin:
                 # Check generation ID and voice state to prevent stale audio playback
                 cur_gen = self.voice_state.generation_id if hasattr(self, "voice_state") else 0
                 is_dis = (
-                    (hasattr(self, "voice_state") and (self.voice_state.is_disabled or self.voice_state.is_sleeping))
-                    or getattr(self.ui, "muted", False)
-                )
+                    hasattr(self, "voice_state") and (self.voice_state.is_disabled or self.voice_state.is_sleeping)
+                ) or getattr(self.ui, "muted", False)
                 if isinstance(raw_item, tuple):
                     item_gen, chunk = raw_item
                     if item_gen != cur_gen or is_dis or self._interrupted:
@@ -426,7 +431,7 @@ class LiveAudioMixin:
 
                 # Batch all immediately-available chunks of the current generation
                 batch = bytearray(chunk)
-                while len(batch) < 9600:   # 9600 bytes ≈ 200 ms at 24 kHz / 16-bit mono
+                while len(batch) < 9600:  # 9600 bytes ≈ 200 ms at 24 kHz / 16-bit mono
                     try:
                         next_item = self.audio_in_queue.get_nowait()
                         if isinstance(next_item, tuple):
@@ -482,8 +487,7 @@ class LiveAudioMixin:
                         # Barge-in needs to know what we are playing, not just
                         # how loud: the guard subtracts this from the microphone.
                         self._out_level = max(f[0] for f in frames)
-                        self._echo.note_output(pcm, RECEIVE_SAMPLE_RATE,
-                                               self._out_level)
+                        self._echo.note_output(pcm, RECEIVE_SAMPLE_RATE, self._out_level)
                     else:
                         lvl = _pcm_level(pcm)
                         self.ui.set_audio_level(lvl)
@@ -495,7 +499,7 @@ class LiveAudioMixin:
                 try:
                     await asyncio.to_thread(self.audio_manager.write_output, bytes(batch))
                 except (RuntimeError, asyncio.CancelledError):
-                    break   # executor shutting down — exit cleanly
+                    break  # executor shutting down — exit cleanly
         except Exception as e:
             print(f"[JARVIS] ❌ Play: {e}")
             raise
@@ -503,4 +507,3 @@ class LiveAudioMixin:
             self.set_speaking(False)
 
     # ── Morning briefing ────────────────────────────────────────────────────────
-

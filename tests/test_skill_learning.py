@@ -1,5 +1,6 @@
 from __future__ import annotations
 import pytest
+
 pytestmark = pytest.mark.requires_hardware
 
 """
@@ -198,9 +199,7 @@ class TestSkillStorageAndManifest(unittest.TestCase):
             description="Testing storage persistence",
             category="user",
             application="Notepad",
-            steps=[
-                StepDefinition(step_id=1, thought="Type", tool="windows_uia", parameters={"text": "hello"})
-            ],
+            steps=[StepDefinition(step_id=1, thought="Type", tool="windows_uia", parameters={"text": "hello"})],
             status=SkillStatus.DRAFT.value,
         )
 
@@ -241,9 +240,13 @@ class TestObservationEngineAndTrace(unittest.TestCase):
         engine = ObservationEngine()
         events = [
             UIEvent(timestamp=1.0, event_type="click", app_name="Chrome", window_title="Claude", element_name="Upload"),
-            UIEvent(timestamp=2.0, event_type="type_text", app_name="Chrome", window_title="Claude", input_value="prompt 1"),
+            UIEvent(
+                timestamp=2.0, event_type="type_text", app_name="Chrome", window_title="Claude", input_value="prompt 1"
+            ),
             # Rapid consecutive typing should be handled
-            UIEvent(timestamp=2.1, event_type="type_text", app_name="Chrome", window_title="Claude", input_value="prompt 2"),
+            UIEvent(
+                timestamp=2.1, event_type="type_text", app_name="Chrome", window_title="Claude", input_value="prompt 2"
+            ),
         ]
 
         debounced = engine.debounce_events(events)
@@ -306,9 +309,7 @@ class TestSkillValidatorAndDryRun(unittest.TestCase):
             name="Sample Valid Skill",
             description="A test skill",
             application="Windows",
-            parameters=[
-                ParameterDefinition(name="target_name", type="string", required=True)
-            ],
+            parameters=[ParameterDefinition(name="target_name", type="string", required=True)],
             steps=[
                 StepDefinition(
                     step_id=1,
@@ -343,9 +344,7 @@ class TestSkillExecutorAndApprovalGate(unittest.TestCase):
             name="Execution Test Skill",
             description="Testing executor and gates",
             application="Desktop",
-            parameters=[
-                ParameterDefinition(name="query", type="string", required=True)
-            ],
+            parameters=[ParameterDefinition(name="query", type="string", required=True)],
             steps=[
                 StepDefinition(
                     step_id=1,
@@ -443,14 +442,26 @@ class TestLearningManagerLifecycle(unittest.TestCase):
         self.assertFalse(self.manager.is_learning_active())
         self.assertIsNone(self.manager.current_session)
 
-
     def test_auto_generation_on_stop(self):
         """stop_learning should automatically generate and approve the demonstrated skill."""
         self.manager.start_learning("Learn how to log in to Skillrack")
         # Add mock events
         self.manager.current_session.events = [
-            UIEvent(timestamp=1.0, event_type="click", app_name="Chrome", window_title="Skillrack", element_name="Login", selector={"x": 500, "y": 300}),
-            UIEvent(timestamp=2.0, event_type="type_text", app_name="Chrome", window_title="Skillrack", input_value="user@tce.edu"),
+            UIEvent(
+                timestamp=1.0,
+                event_type="click",
+                app_name="Chrome",
+                window_title="Skillrack",
+                element_name="Login",
+                selector={"x": 500, "y": 300},
+            ),
+            UIEvent(
+                timestamp=2.0,
+                event_type="type_text",
+                app_name="Chrome",
+                window_title="Skillrack",
+                input_value="user@tce.edu",
+            ),
         ]
 
         with patch.object(self.manager.generator.analyzer, "analyze_demonstration") as mock_ana:
@@ -460,7 +471,12 @@ class TestLearningManagerLifecycle(unittest.TestCase):
                 "application": "Chrome",
                 "description": "Log into Skillrack",
                 "steps": [
-                    {"step_id": 1, "thought": "Click Login", "tool": "windows_uia", "parameters": {"action": "click", "name": "Login", "x": 500, "y": 300}},
+                    {
+                        "step_id": 1,
+                        "thought": "Click Login",
+                        "tool": "windows_uia",
+                        "parameters": {"action": "click", "name": "Login", "x": 500, "y": 300},
+                    },
                 ],
             }
             res = self.manager.stop_learning()
@@ -481,7 +497,11 @@ class TestLearningManagerLifecycle(unittest.TestCase):
             description="Log in to Skillrack student portal",
             application="Chrome",
             intent_examples=["login to skillrack", "skillrack login"],
-            steps=[StepDefinition(step_id=1, thought="Click", tool="windows_uia", parameters={"action": "click", "name": "Login"})],
+            steps=[
+                StepDefinition(
+                    step_id=1, thought="Click", tool="windows_uia", parameters={"action": "click", "name": "Login"}
+                )
+            ],
             status=SkillStatus.APPROVED.value,
         )
         self.manager.registry.save_and_register(test_skill)
@@ -538,6 +558,7 @@ class TestSkillLearnerToolAction(unittest.TestCase):
     def tearDown(self):
         try:
             from core.skill_learning.learning_manager import LearningManager
+
             LearningManager.get_instance().delete_skill("skillrack_student_login")
             LearningManager.get_instance().cancel_learning()
         except Exception:
@@ -577,12 +598,54 @@ class TestSkillLearnerToolAction(unittest.TestCase):
         t = time.time()
         raw_events = [
             UIEvent(timestamp=t, event_type="window_activate", app_name="msedge", window_title="Microsoft Edge"),
-            UIEvent(timestamp=t + 1, event_type="click", app_name="msedge", window_title="Microsoft Edge", element_name="Student", bounding_box={"x": 450, "y": 320, "w": 80, "h": 25}),
-            UIEvent(timestamp=t + 2, event_type="type_text", app_name="msedge", window_title="Microsoft Edge", element_name="Address bar", input_value="skillrack.com"),
-            UIEvent(timestamp=t + 3, event_type="click", app_name="msedge", window_title="Microsoft Edge", element_name="Login", bounding_box={"x": 800, "y": 200, "w": 60, "h": 25}),
-            UIEvent(timestamp=t + 4, event_type="type_text", app_name="msedge", window_title="Microsoft Edge", element_name="Student ID", input_value="2403917714821034@tce"),
-            UIEvent(timestamp=t + 5, event_type="type_text", app_name="msedge", window_title="Microsoft Edge", element_name="Password", input_value="forskillrack@2006"),
-            UIEvent(timestamp=t + 6, event_type="click", app_name="msedge", window_title="Microsoft Edge", element_name="Submit", bounding_box={"x": 800, "y": 450, "w": 60, "h": 25}),
+            UIEvent(
+                timestamp=t + 1,
+                event_type="click",
+                app_name="msedge",
+                window_title="Microsoft Edge",
+                element_name="Student",
+                bounding_box={"x": 450, "y": 320, "w": 80, "h": 25},
+            ),
+            UIEvent(
+                timestamp=t + 2,
+                event_type="type_text",
+                app_name="msedge",
+                window_title="Microsoft Edge",
+                element_name="Address bar",
+                input_value="skillrack.com",
+            ),
+            UIEvent(
+                timestamp=t + 3,
+                event_type="click",
+                app_name="msedge",
+                window_title="Microsoft Edge",
+                element_name="Login",
+                bounding_box={"x": 800, "y": 200, "w": 60, "h": 25},
+            ),
+            UIEvent(
+                timestamp=t + 4,
+                event_type="type_text",
+                app_name="msedge",
+                window_title="Microsoft Edge",
+                element_name="Student ID",
+                input_value="2403917714821034@tce",
+            ),
+            UIEvent(
+                timestamp=t + 5,
+                event_type="type_text",
+                app_name="msedge",
+                window_title="Microsoft Edge",
+                element_name="Password",
+                input_value="forskillrack@2006",
+            ),
+            UIEvent(
+                timestamp=t + 6,
+                event_type="click",
+                app_name="msedge",
+                window_title="Microsoft Edge",
+                element_name="Submit",
+                bounding_box={"x": 800, "y": 450, "w": 60, "h": 25},
+            ),
         ]
         manager.current_session.events = raw_events
 
@@ -595,15 +658,42 @@ class TestSkillLearnerToolAction(unittest.TestCase):
                 "description": "Log into Skillrack student portal via Student profile",
                 "intent_examples": ["Login into my skill rack", "Open skillrack student"],
                 "parameters": [
-                    {"name": "username", "type": "string", "description": "Student register ID", "required": True, "is_credential": True},
-                    {"name": "password", "type": "string", "description": "Skillrack password", "required": True, "is_credential": True},
+                    {
+                        "name": "username",
+                        "type": "string",
+                        "description": "Student register ID",
+                        "required": True,
+                        "is_credential": True,
+                    },
+                    {
+                        "name": "password",
+                        "type": "string",
+                        "description": "Skillrack password",
+                        "required": True,
+                        "is_credential": True,
+                    },
                 ],
                 "preconditions": ["Microsoft Edge is installed"],
                 "steps": [
                     {"step_id": 1, "thought": "Open Edge", "tool": "open_app", "parameters": {"app_name": "msedge"}},
-                    {"step_id": 2, "thought": "Select Student Profile", "tool": "browser_profile", "parameters": {"profile_name": "Student", "x": 450, "y": 320}},
-                    {"step_id": 3, "thought": "Navigate to Skillrack", "tool": "browser_control", "parameters": {"action": "navigate", "url": "https://skillrack.com"}},
-                    {"step_id": 4, "thought": "Enter credentials", "tool": "windows_uia", "parameters": {"action": "type_text", "text": "{password}"}},
+                    {
+                        "step_id": 2,
+                        "thought": "Select Student Profile",
+                        "tool": "browser_profile",
+                        "parameters": {"profile_name": "Student", "x": 450, "y": 320},
+                    },
+                    {
+                        "step_id": 3,
+                        "thought": "Navigate to Skillrack",
+                        "tool": "browser_control",
+                        "parameters": {"action": "navigate", "url": "https://skillrack.com"},
+                    },
+                    {
+                        "step_id": 4,
+                        "thought": "Enter credentials",
+                        "tool": "windows_uia",
+                        "parameters": {"action": "type_text", "text": "{password}"},
+                    },
                 ],
             }
             stop_res = manager.stop_learning()
@@ -632,7 +722,10 @@ class TestSkillLearnerToolAction(unittest.TestCase):
             # 6. Execute skill
             with patch.object(manager.executor.registry, "execute") as mock_exec:
                 mock_exec.return_value = ActionResult.done("step", message="Logged in")
-                exec_res = manager.execute_skill("skillrack_student_login", parameters={"username": "std1", "password": "secret", "__user_confirmed__": True})
+                exec_res = manager.execute_skill(
+                    "skillrack_student_login",
+                    parameters={"username": "std1", "password": "secret", "__user_confirmed__": True},
+                )
                 self.assertTrue(exec_res.is_success())
 
     def test_browser_profile_tool(self):

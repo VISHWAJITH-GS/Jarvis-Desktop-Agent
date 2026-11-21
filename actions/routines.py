@@ -8,6 +8,7 @@ Exposes:
 - delete_routine: remove or cancel a routine
 - configure_quiet_hours: adjust quiet hours window and speech suppression
 """
+
 from __future__ import annotations
 
 import uuid
@@ -177,11 +178,20 @@ TOOLS = [
             "type": "OBJECT",
             "properties": {
                 "title": {"type": "STRING", "description": "Title or summary of the routine"},
-                "schedule_type": {"type": "STRING", "description": "once | daily | weekly | monthly | every_n_minutes | at_startup | after_idle"},
+                "schedule_type": {
+                    "type": "STRING",
+                    "description": "once | daily | weekly | monthly | every_n_minutes | at_startup | after_idle",
+                },
                 "action_type": {"type": "STRING", "description": "speak | tool | task"},
                 "message": {"type": "STRING", "description": "Message to speak if action_type is speak"},
-                "schedule_config": {"type": "OBJECT", "description": "Optional schedule details (due_time, time, interval_minutes, idle_seconds)"},
-                "action_config": {"type": "OBJECT", "description": "Optional action parameters (message, tool_name, parameters, task_prompt)"},
+                "schedule_config": {
+                    "type": "OBJECT",
+                    "description": "Optional schedule details (due_time, time, interval_minutes, idle_seconds)",
+                },
+                "action_config": {
+                    "type": "OBJECT",
+                    "description": "Optional action parameters (message, tool_name, parameters, task_prompt)",
+                },
             },
             "required": ["title"],
         },
@@ -193,9 +203,7 @@ TOOLS = [
         "description": "List all active, scheduled, or completed routines.",
         "parameters": {
             "type": "OBJECT",
-            "properties": {
-                "status": {"type": "STRING", "description": "Filter: 'active', 'completed', 'all'"}
-            },
+            "properties": {"status": {"type": "STRING", "description": "Filter: 'active', 'completed', 'all'"}},
         },
         "handler": list_routines,
         "permission": "read_only",
@@ -220,9 +228,7 @@ TOOLS = [
         "description": "Delete a scheduled routine by ID.",
         "parameters": {
             "type": "OBJECT",
-            "properties": {
-                "routine_id": {"type": "STRING", "description": "ID of the routine to delete"}
-            },
+            "properties": {"routine_id": {"type": "STRING", "description": "ID of the routine to delete"}},
             "required": ["routine_id"],
         },
         "handler": delete_routine,

@@ -5,6 +5,7 @@ Design reference: Mark LVII (CC BY-NC 4.0).
 Provides crash-resilient persistence for task definitions, execution rounds,
 conversation checkpoints, steering instructions, and outcome results.
 """
+
 from __future__ import annotations
 
 from contextlib import contextmanager
@@ -145,7 +146,8 @@ class TaskStore:
         now_str = datetime.now().isoformat()
         task.updated_at = now_str
         with self._lock, self._connection() as conn:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT INTO background_tasks (
                     id, title, description, state, checkpoint, attempts, max_attempts,
                     round_count, round_budget, time_budget_sec, elapsed_sec, result,
@@ -170,27 +172,29 @@ class TaskStore:
                     steer_notes=excluded.steer_notes,
                     pending_confirmation=excluded.pending_confirmation,
                     updated_at=excluded.updated_at;
-            """, (
-                task.id,
-                task.title,
-                task.description,
-                task.state,
-                json.dumps(task.checkpoint),
-                task.attempts,
-                task.max_attempts,
-                task.round_count,
-                task.round_budget,
-                task.time_budget_sec,
-                task.elapsed_sec,
-                task.result,
-                task.error,
-                json.dumps(task.allowlist),
-                task.workspace_dir,
-                json.dumps(task.steer_notes),
-                json.dumps(task.pending_confirmation) if task.pending_confirmation else None,
-                task.created_at,
-                task.updated_at,
-            ))
+            """,
+                (
+                    task.id,
+                    task.title,
+                    task.description,
+                    task.state,
+                    json.dumps(task.checkpoint),
+                    task.attempts,
+                    task.max_attempts,
+                    task.round_count,
+                    task.round_budget,
+                    task.time_budget_sec,
+                    task.elapsed_sec,
+                    task.result,
+                    task.error,
+                    json.dumps(task.allowlist),
+                    task.workspace_dir,
+                    json.dumps(task.steer_notes),
+                    json.dumps(task.pending_confirmation) if task.pending_confirmation else None,
+                    task.created_at,
+                    task.updated_at,
+                ),
+            )
 
     def get_task(self, task_id: str) -> Optional[TaskRecord]:
         """Fetch a single task record by ID."""
@@ -229,7 +233,8 @@ class TaskStore:
         """Atomically persist round results, state, and checkpoint."""
         now_str = datetime.now().isoformat()
         with self._lock, self._connection() as conn:
-            cur = conn.execute("""
+            cur = conn.execute(
+                """
                 UPDATE background_tasks SET
                     state = ?,
                     round_count = ?,
@@ -241,32 +246,37 @@ class TaskStore:
                     pending_confirmation = ?,
                     updated_at = ?
                 WHERE id = ?;
-            """, (
-                state,
-                round_count,
-                elapsed_sec,
-                json.dumps(checkpoint),
-                result,
-                error,
-                json.dumps(steer_notes) if steer_notes is not None else None,
-                json.dumps(pending_confirmation) if pending_confirmation is not None else None,
-                now_str,
-                task_id,
-            ))
+            """,
+                (
+                    state,
+                    round_count,
+                    elapsed_sec,
+                    json.dumps(checkpoint),
+                    result,
+                    error,
+                    json.dumps(steer_notes) if steer_notes is not None else None,
+                    json.dumps(pending_confirmation) if pending_confirmation is not None else None,
+                    now_str,
+                    task_id,
+                ),
+            )
             return cur.rowcount > 0
 
     def update_state(self, task_id: str, state: str, error: Optional[str] = None, result: Optional[str] = None) -> bool:
         """Update task status with optional error or result string."""
         now_str = datetime.now().isoformat()
         with self._lock, self._connection() as conn:
-            cur = conn.execute("""
+            cur = conn.execute(
+                """
                 UPDATE background_tasks SET
                     state = ?,
                     error = COALESCE(?, error),
                     result = COALESCE(?, result),
                     updated_at = ?
                 WHERE id = ?;
-            """, (state, error, result, now_str, task_id))
+            """,
+                (state, error, result, now_str, task_id),
+            )
             return cur.rowcount > 0
 
     def add_steer_note(self, task_id: str, note: str) -> bool:

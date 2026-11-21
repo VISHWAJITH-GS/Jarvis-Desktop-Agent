@@ -6,7 +6,6 @@ from memory import config_manager
 
 
 class TestProviderFallback(unittest.TestCase):
-
     def setUp(self):
         config_manager.set_provider_fallback_enabled(False)
         gemini._prov_cache = (-1.0, "", False)
@@ -32,10 +31,11 @@ class TestProviderFallback(unittest.TestCase):
         mock_prov = MagicMock()
         mock_prov.complete.return_value = ("Hello from fallback", [])
 
-        with patch("memory.config_manager.get_sidecar_provider", return_value="ollama_mock"), \
-             patch("memory.config_manager.get_provider_config", return_value={}), \
-             patch("providers.registry.build", return_value=mock_prov):
-
+        with (
+            patch("memory.config_manager.get_sidecar_provider", return_value="ollama_mock"),
+            patch("memory.config_manager.get_provider_config", return_value={}),
+            patch("providers.registry.build", return_value=mock_prov),
+        ):
             res = gemini._provider_call("prov:ollama_mock", "What is the capital of France?", None, 5000)
             self.assertEqual(res.text, "Hello from fallback")
 
@@ -55,12 +55,13 @@ class TestProviderFallback(unittest.TestCase):
         mock_client = MagicMock()
         mock_client.models.generate_content.side_effect = Exception("429 RESOURCE_EXHAUSTED: Quota exceeded")
 
-        with patch("memory.config_manager.get_sidecar_provider", return_value="ollama_mock"), \
-             patch("memory.config_manager.get_provider_config", return_value={}), \
-             patch("providers.registry.build", return_value=mock_prov), \
-             patch("core.gemini.client", return_value=mock_client), \
-             patch("core.gemini.api_key", return_value="fake_key"):
-
+        with (
+            patch("memory.config_manager.get_sidecar_provider", return_value="ollama_mock"),
+            patch("memory.config_manager.get_provider_config", return_value={}),
+            patch("providers.registry.build", return_value=mock_prov),
+            patch("core.gemini.client", return_value=mock_client),
+            patch("core.gemini.api_key", return_value="fake_key"),
+        ):
             res = gemini.call("test prompt", tier=gemini.FAST)
             self.assertIsNotNone(res)
             self.assertEqual(res.text, "Recovered via fallback")

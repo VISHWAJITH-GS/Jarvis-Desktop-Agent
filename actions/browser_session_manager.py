@@ -3,6 +3,7 @@ actions/browser_session_manager.py — Compatibility bridge redirecting to actio
 
 Deprecated legacy isolated test profile launcher in favor of live Edge CDP session attachment.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

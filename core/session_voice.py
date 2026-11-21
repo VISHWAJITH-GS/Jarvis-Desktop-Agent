@@ -1,21 +1,31 @@
 """
 core/session_voice.py — Voice state, wake word, PTT, mute, and reconnection mixin.
 """
+
 from __future__ import annotations
 import asyncio
 import threading
 import time
 from typing import Any
 from core.runtime_env import (
-    _ReconnectSignal, _is_reconnect_signal, _keep_context_of,
-    SEND_SAMPLE_RATE, RECEIVE_SAMPLE_RATE, CHUNK_SIZE
+    _ReconnectSignal,
+    _is_reconnect_signal,
+    _keep_context_of,
+    SEND_SAMPLE_RATE,
+    RECEIVE_SAMPLE_RATE,
+    CHUNK_SIZE,
 )
 from core.wake_word import WakeWordDetector, is_ready as wake_is_ready, install_and_download as wake_install
 from core.voice_state import VoiceState
 from core import audio_devices
 from memory.config_manager import (
-    get_input_device, get_output_device, save_wake_word_enabled, save_auto_sleep_enabled,
-    get_push_to_talk_enabled, get_idle_sleep_timeout, DEFAULT_IDLE_SLEEP_TIMEOUT,
+    get_input_device,
+    get_output_device,
+    save_wake_word_enabled,
+    save_auto_sleep_enabled,
+    get_push_to_talk_enabled,
+    get_idle_sleep_timeout,
+    DEFAULT_IDLE_SLEEP_TIMEOUT,
 )
 
 IDLE_SLEEP_TIMEOUT = 180.0
@@ -23,8 +33,10 @@ WAKE_SLEEP_TIMEOUT = 180.0
 _STALL_LIMIT = 45.0
 _TAIL_MARGIN = 0.25
 
+
 class LiveVoiceMixin:
     """Voice state management, wake word, and control handling."""
+
     def _on_audio_status_changed(self, status: dict) -> None:
         """Push verified AudioManager status snapshots to the HUD thread-safely."""
         try:
@@ -75,11 +87,7 @@ class LiveVoiceMixin:
         # A loaded, running detector is definitively ready; otherwise fall back
         # to the cheap on-disk model-file check (no Model construction).
         ready = bool(self._wake_detector and self._wake_detector.ready) or wake_is_ready()
-        awake = (
-            not self.voice_state.is_sleeping
-            if hasattr(self, "voice_state")
-            else bool(self._awake)
-        )
+        awake = not self.voice_state.is_sleeping if hasattr(self, "voice_state") else bool(self._awake)
         return {
             "enabled": self._wake_enabled,
             "awake": awake,
@@ -123,7 +131,7 @@ class LiveVoiceMixin:
     def _on_wake_detected(self, word: str = "wake word") -> None:
         """Called from the detector thread when an active wake word is heard."""
         if hasattr(self, "voice_state") and self.voice_state.is_disabled:
-            return   # Never wake from muted state via wake word
+            return  # Never wake from muted state via wake word
         label = f"wake word '{word}'" if word and word != "wake word" else "wake word"
         self.wake(reason=label)
 
@@ -138,17 +146,19 @@ class LiveVoiceMixin:
         elif self._awake:
             return
         self._awake = True
-        self._record_activity()   # start the 3-minute auto-sleep clock fresh
+        self._record_activity()  # start the 3-minute auto-sleep clock fresh
         if not hasattr(self, "voice_state") and not self.ui.muted:
             self.ui.set_state("LISTENING")
         self.ui.write_log(f"SYS: Awake — {reason}.")
         if "wake word" in str(reason).lower() and getattr(self, "session", None):
-            self.speak("The user called 'Jarvis' to wake you up. Acknowledge briefly and naturally, like 'Yes, Sir?' or 'At your service, Sir.'")
+            self.speak(
+                "The user called 'Jarvis' to wake you up. Acknowledge briefly and naturally, like 'Yes, Sir?' or 'At your service, Sir.'"
+            )
 
     def sleep(self, reason: str = "idle for 3 minutes") -> None:
         if hasattr(self, "voice_state"):
             if self.voice_state.is_disabled:
-                return   # Do not override muted state with sleep
+                return  # Do not override muted state with sleep
             changed = self.voice_state.enter_sleep()
             if not changed and not self._awake:
                 return
@@ -174,7 +184,9 @@ class LiveVoiceMixin:
         """Auto-sleep after inactivity (default 3 minutes), unless auto-sleep is disabled."""
         while True:
             await asyncio.sleep(2)
-            if not getattr(self, "_auto_sleep_enabled", True) or (self._wake_sleep_timeout is not None and self._wake_sleep_timeout <= 0):
+            if not getattr(self, "_auto_sleep_enabled", True) or (
+                self._wake_sleep_timeout is not None and self._wake_sleep_timeout <= 0
+            ):
                 continue
             with self._speaking_lock:
                 speaking = self._is_speaking
@@ -231,11 +243,7 @@ class LiveVoiceMixin:
 
     def _ui_wake_manual(self) -> None:
         """Manual sleep/wake button in the UI."""
-        is_sleeping = (
-            self.voice_state.is_sleeping
-            if hasattr(self, "voice_state")
-            else (not self._awake)
-        )
+        is_sleeping = self.voice_state.is_sleeping if hasattr(self, "voice_state") else (not self._awake)
         if is_sleeping:
             self.wake(reason="you tapped wake")
         else:
@@ -245,8 +253,7 @@ class LiveVoiceMixin:
         """Download openwakeword + the model (runs in a UI worker thread)."""
         # Triggered by the user pressing the button, so its progress is exactly
         # what they are waiting to see.
-        return wake_install(logger=lambda m: print(f"[Wake] {m}"),
-                            notify=lambda m: self.ui.write_log(f"SYS: {m}"))
+        return wake_install(logger=lambda m: print(f"[Wake] {m}"), notify=lambda m: self.ui.write_log(f"SYS: {m}"))
 
     # ── Hybrid Bluetooth Audio Routing & Transition Control ──────────────────
 
@@ -259,7 +266,9 @@ class LiveVoiceMixin:
         if mode == "built_in_only":
             threading.Thread(
                 target=lambda: self.audio_manager.switch_input(
-                    self.audio_manager.builtin_mic_name or audio_devices.find_builtin_microphone() or audio_devices.DEFAULT_LABEL
+                    self.audio_manager.builtin_mic_name
+                    or audio_devices.find_builtin_microphone()
+                    or audio_devices.DEFAULT_LABEL
                 ),
                 daemon=True,
                 name="routing-mode-builtin",
@@ -267,16 +276,15 @@ class LiveVoiceMixin:
         elif mode == "bluetooth_only":
             threading.Thread(
                 target=lambda: self.audio_manager.switch_input(
-                    self.audio_manager.bluetooth_mic_name or audio_devices.find_bluetooth_microphone() or audio_devices.DEFAULT_LABEL
+                    self.audio_manager.bluetooth_mic_name
+                    or audio_devices.find_bluetooth_microphone()
+                    or audio_devices.DEFAULT_LABEL
                 ),
                 daemon=True,
                 name="routing-mode-bt",
             ).start()
         elif mode == "auto_hybrid":
-            is_sleeping = (
-                (hasattr(self, "voice_state") and self.voice_state.is_sleeping)
-                or (not self._awake)
-            )
+            is_sleeping = (hasattr(self, "voice_state") and self.voice_state.is_sleeping) or (not self._awake)
             target = "sleep" if is_sleeping else "conversation"
             self._trigger_async_transition(target, reason="mode_change_auto_hybrid")
 
@@ -382,11 +390,12 @@ class LiveVoiceMixin:
             if deadline is None or time.monotonic() < deadline:
                 continue
             self._clear_stall()
-            print(f"[JARVIS] ⚠️  No response for {_STALL_LIMIT:.0f}s — "
-                  f"the live session is not answering. Rebuilding it.")
+            print(
+                f"[JARVIS] ⚠️  No response for {_STALL_LIMIT:.0f}s — the live session is not answering. Rebuilding it."
+            )
             self.ui.write_log("SYS: The model stopped answering — reconnecting.")
             self.request_reconnect(keep_context=True, reason="no response")
-            return          # this session is going away; the new one gets its own watcher
+            return  # this session is going away; the new one gets its own watcher
 
     def request_reconnect(self, keep_context: bool = True, reason: str = ""):
         """Thread-safe: ask the run loop to tear down and rebuild the Live
@@ -397,8 +406,8 @@ class LiveVoiceMixin:
         starts empty — only for changes the server cannot apply to a resumed
         session."""
         loop = getattr(self, "_loop", None)
-        ev   = self._reconnect_event
-        self._reconnect_keep   = keep_context
+        ev = self._reconnect_event
+        self._reconnect_keep = keep_context
         self._reconnect_reason = reason
         if loop and ev is not None:
             loop.call_soon_threadsafe(ev.set)
@@ -447,10 +456,10 @@ class LiveVoiceMixin:
         The loop owns a pool of our own rather than asyncio's default, sized so
         a long coding job or a slow tool cannot starve address lookups."""
         from concurrent.futures import ThreadPoolExecutor
+
         loop = asyncio.get_running_loop()
         ex = getattr(loop, "_default_executor", None)
-        dead = ex is not None and (getattr(ex, "_shutdown", False)
-                                   or getattr(ex, "_broken", False))
+        dead = ex is not None and (getattr(ex, "_shutdown", False) or getattr(ex, "_broken", False))
         if ex is None or dead or getattr(loop, "_executor_shutdown_called", False):
             if dead:
                 print("[JARVIS] ⚠️  Thread pool was shut down — replacing it")
@@ -458,8 +467,7 @@ class LiveVoiceMixin:
             # Without this flag reset, asyncio refuses the new pool as well.
             if getattr(loop, "_executor_shutdown_called", False):
                 loop._executor_shutdown_called = False
-            loop.set_default_executor(
-                ThreadPoolExecutor(max_workers=32, thread_name_prefix="jarvis"))
+            loop.set_default_executor(ThreadPoolExecutor(max_workers=32, thread_name_prefix="jarvis"))
 
     async def _watch_reconnect(self):
         """Session-scoped task: when a voluntary reconnect is requested, raise a
@@ -467,11 +475,10 @@ class LiveVoiceMixin:
         assert self._reconnect_event is not None
         await self._reconnect_event.wait()
         self._reconnect_event.clear()
-        keep   = self._reconnect_keep
+        keep = self._reconnect_keep
         reason = getattr(self, "_reconnect_reason", "") or "settings"
         self.ui.write_log(
-            f"SYS: Applying {reason} — reconnecting"
-            + ("..." if keep else " (starting a fresh conversation)...")
+            f"SYS: Applying {reason} — reconnecting" + ("..." if keep else " (starting a fresh conversation)...")
         )
         raise _ReconnectSignal(keep_context=keep)
 
@@ -480,6 +487,7 @@ class LiveVoiceMixin:
         connected or disconnected after startup) and seamlessly updates audio routing."""
         try:
             from core import audio_devices
+
             initial_spk_id, initial_spk_name = audio_devices.get_current_default_endpoint("output")
             last_snapshot = audio_devices.get_connected_endpoints_snapshot()
             check_count = 0
@@ -490,11 +498,7 @@ class LiveVoiceMixin:
 
                 # 1. Check if default Windows playback device changed
                 cur_spk_id, cur_spk_name = audio_devices.get_current_default_endpoint("output")
-                default_changed = bool(
-                    cur_spk_id
-                    and initial_spk_id
-                    and cur_spk_id != initial_spk_id
-                )
+                default_changed = bool(cur_spk_id and initial_spk_id and cur_spk_id != initial_spk_id)
 
                 # 2. Check every ~3s if device topology changed
                 topology_changed = False
@@ -520,7 +524,9 @@ class LiveVoiceMixin:
                     active_label = new_spk_name or cur_spk_name or "New Device"
 
                     print(f"[JARVIS] 🎧 Audio device change detected ('{active_label}') — switching audio routing")
-                    self.ui.write_log(f"SYS: 🎧 Audio device change detected ('{active_label}') — switching audio routing.")
+                    self.ui.write_log(
+                        f"SYS: 🎧 Audio device change detected ('{active_label}') — switching audio routing."
+                    )
                     if hasattr(self.ui, "refresh_audio_devices"):
                         self.ui.refresh_audio_devices()
 
@@ -534,50 +540,42 @@ class LiveVoiceMixin:
     def _make_remote_key(self):
         """Called from Qt main thread when user presses Remote Control."""
         if self._dashboard is None:
-            self.ui.write_log(
-                "SYS: Dashboard unavailable. "
-                "Run: pip install fastapi \"uvicorn[standard]\" cryptography"
-            )
+            self.ui.write_log('SYS: Dashboard unavailable. Run: pip install fastapi "uvicorn[standard]" cryptography')
             return None
         # The firewall is fixed HERE, not at startup: this is the moment the
         # user asked for the phone dashboard, so a Windows admin prompt now has
         # an obvious reason. Once per run, and a no-op when nothing is blocked.
         try:
             from dashboard.server import PORT, SECURE_PORT, fix_network_access
-            threading.Thread(target=fix_network_access, args=(PORT, SECURE_PORT),
-                             daemon=True, name="dashboard-firewall").start()
+
+            threading.Thread(
+                target=fix_network_access, args=(PORT, SECURE_PORT), daemon=True, name="dashboard-firewall"
+            ).start()
         except Exception as e:
             print(f"[Dashboard] Firewall check skipped: {e}")
-        key    = self._dashboard.new_key()
-        url    = self._dashboard.get_url()
+        key = self._dashboard.new_key()
+        url = self._dashboard.get_url()
         manual = self._dashboard.get_manual_url()
         # The bind error travels with the URL because the UI has no reference to
         # this object — it only ever sees what this callback returns.
-        return (url, key, f"{url}/auto-login?key={key}", manual,
-                getattr(self._dashboard, "_bind_error", "") or "")
+        return (url, key, f"{url}/auto-login?key={key}", manual, getattr(self._dashboard, "_bind_error", "") or "")
 
     def _on_text_command(self, text: str):
         if not self._loop or not self.session:
             return
         # Respect sleep mode: a typed command must not be answered while asleep.
         is_sleeping = (
-            self.voice_state.is_sleeping
-            if hasattr(self, "voice_state")
-            else (self._wake_enabled and not self._awake)
+            self.voice_state.is_sleeping if hasattr(self, "voice_state") else (self._wake_enabled and not self._awake)
         )
         if is_sleeping:
             self.ui.write_log(
-                f"SYS: I'm asleep — say {self._wake_words_label()}, "
-                f"press Ctrl+Alt+K, or tap WAKE NOW first."
+                f"SYS: I'm asleep — say {self._wake_words_label()}, press Ctrl+Alt+K, or tap WAKE NOW first."
             )
             return
         self._record_activity()
         asyncio.run_coroutine_threadsafe(
-            self.session.send_client_content(
-                turns={"role": "user", "parts": [{"text": text}]},
-                turn_complete=True
-            ),
-            self._loop
+            self.session.send_client_content(turns={"role": "user", "parts": [{"text": text}]}, turn_complete=True),
+            self._loop,
         )
 
     def _tail_active(self) -> bool:
@@ -589,6 +587,7 @@ class LiveVoiceMixin:
             self._is_speaking = value
         try:
             from core.ducking import notify_speech_activity
+
             notify_speech_activity(bool(value))
         except Exception:
             pass
@@ -611,9 +610,9 @@ class LiveVoiceMixin:
             is_muted = getattr(self.ui, "muted", False) or (
                 hasattr(self, "voice_state") and self.voice_state.is_disabled
             )
-            is_sleeping = (
-                hasattr(self, "voice_state") and self.voice_state.is_sleeping
-            ) or (not getattr(self, "_awake", True))
+            is_sleeping = (hasattr(self, "voice_state") and self.voice_state.is_sleeping) or (
+                not getattr(self, "_awake", True)
+            )
             if not is_muted and not is_sleeping:
                 self.ui.set_state("LISTENING")
 
@@ -638,8 +637,8 @@ class LiveVoiceMixin:
         try:
             self.ui.write_log(
                 f"SYS: Push-to-talk on — hold {self._ptt.label}"
-                + ("." if scope == "global"
-                   else " (works while this window is focused)."))
+                + ("." if scope == "global" else " (works while this window is focused).")
+            )
         except Exception:
             pass
         return scope
@@ -663,8 +662,7 @@ class LiveVoiceMixin:
         # hotkey thread.
         if not held and self._engine is not None and self._loop is not None:
             try:
-                asyncio.run_coroutine_threadsafe(
-                    self._engine.flush_microphone(SEND_SAMPLE_RATE), self._loop)
+                asyncio.run_coroutine_threadsafe(self._engine.flush_microphone(SEND_SAMPLE_RATE), self._loop)
             except Exception as e:
                 print(f"[JARVIS] PTT flush failed: {e}")
         try:
@@ -712,12 +710,13 @@ class LiveVoiceMixin:
             self.set_speaking(False)
             try:
                 from core.ducking import restore_background_audio
+
                 restore_background_audio()
             except Exception:
                 pass
             # The words we were about to mouth are never going to be spoken now.
             self._visemes.reset()
-            self._play_cursor = 0.0     # next batch starts a fresh timeline
+            self._play_cursor = 0.0  # next batch starts a fresh timeline
             if self._turn_done_event:
                 self._turn_done_event.clear()
             if hasattr(self, "ui") and self.ui:
@@ -753,11 +752,7 @@ class LiveVoiceMixin:
             # Sticky sleep: never change state when Ctrl+Alt+J is pressed in SLEEPING
             return VoiceState.SLEEPING
 
-        was_speaking = bool(
-            self._is_speaking
-            or self.voice_state.is_speaking
-            or self.voice_state.is_processing
-        )
+        was_speaking = bool(self._is_speaking or self.voice_state.is_speaking or self.voice_state.is_processing)
         new_state = self.voice_state.handle_mute_or_sleep()
 
         if new_state == VoiceState.DISABLED:
@@ -765,21 +760,15 @@ class LiveVoiceMixin:
                 self.interrupt()
             self._drain_out_queue()
             self._sync_ui_state(True, "MUTED")
-            self.ui.write_log(
-                "SYS: 🔇 Muted. Press Ctrl+Alt+J again for sleep, or Ctrl+Alt+K to listen."
-            )
+            self.ui.write_log("SYS: 🔇 Muted. Press Ctrl+Alt+J again for sleep, or Ctrl+Alt+K to listen.")
         elif new_state == VoiceState.SLEEPING:
             self._awake = False
             self._sync_ui_state(False, "SLEEPING")
             if self._wake_enabled:
                 self._ensure_wake_detector_async()
-                self.ui.write_log(
-                    f"SYS: 😴 Sleeping. Say {self._wake_words_label()} or press Ctrl+Alt+K to wake."
-                )
+                self.ui.write_log(f"SYS: 😴 Sleeping. Say {self._wake_words_label()} or press Ctrl+Alt+K to wake.")
             else:
-                self.ui.write_log(
-                    "SYS: 😴 Sleeping. Press Ctrl+Alt+K or tap WAKE NOW to wake."
-                )
+                self.ui.write_log("SYS: 😴 Sleeping. Press Ctrl+Alt+K or tap WAKE NOW to wake.")
         return new_state
 
     def global_toggle_listening(self) -> VoiceState:
@@ -795,11 +784,7 @@ class LiveVoiceMixin:
         already in LISTENING keep it in LISTENING and never mute or sleep.
         """
         prev_state = self.voice_state.state
-        was_speaking = bool(
-            self._is_speaking
-            or self.voice_state.is_speaking
-            or self.voice_state.is_processing
-        )
+        was_speaking = bool(self._is_speaking or self.voice_state.is_speaking or self.voice_state.is_processing)
         if was_speaking:
             self.interrupt()
         else:
@@ -857,8 +842,10 @@ class LiveVoiceMixin:
         loop = getattr(self, "_loop", None)
         if dash and loop and not loop.is_closed():
             dash_state = (
-                "sleeping" if new_state == VoiceState.SLEEPING
-                else "muted" if new_state == VoiceState.DISABLED
+                "sleeping"
+                if new_state == VoiceState.SLEEPING
+                else "muted"
+                if new_state == VoiceState.DISABLED
                 else "active"
             )
             try:
@@ -873,11 +860,8 @@ class LiveVoiceMixin:
         if not self._loop or not self.session:
             return
         asyncio.run_coroutine_threadsafe(
-            self.session.send_client_content(
-                turns={"role": "user", "parts": [{"text": text}]},
-                turn_complete=True
-            ),
-            self._loop
+            self.session.send_client_content(turns={"role": "user", "parts": [{"text": text}]}, turn_complete=True),
+            self._loop,
         )
 
     def speak_error(self, tool_name: str, error: str):
@@ -887,4 +871,3 @@ class LiveVoiceMixin:
         except Exception:
             pass
         self.speak(f"Sir, {tool_name} encountered an error. {short}")
-

@@ -13,6 +13,7 @@ Capabilities:
 - Supports Python, Java, C++, JavaScript and all standard LeetCode languages
 - Maintains session problem context across turns
 """
+
 from __future__ import annotations
 
 import json
@@ -63,6 +64,7 @@ class LeetCodeAssistant:
         """
         try:
             from actions import windows_uia
+
             if windows_uia.is_available():
                 wins = windows_uia.list_open_windows()
                 for w in wins:
@@ -100,11 +102,13 @@ class LeetCodeAssistant:
           }
         }
         """
-        req_data = json.dumps({
-            "operationName": "getQuestionDetail",
-            "variables": {"titleSlug": slug},
-            "query": query,
-        }).encode("utf-8")
+        req_data = json.dumps(
+            {
+                "operationName": "getQuestionDetail",
+                "variables": {"titleSlug": slug},
+                "query": query,
+            }
+        ).encode("utf-8")
 
         req = urllib.request.Request(
             "https://leetcode.com/graphql",
@@ -226,7 +230,9 @@ Keep the hint under 3 concise sentences. Tone: Encouraging, analytical, concise.
             if found:
                 self.fetch_problem_data(title)
             else:
-                return outcome.failed("leetcode_approach", "Please specify the LeetCode problem name or open it in your browser.")
+                return outcome.failed(
+                    "leetcode_approach", "Please specify the LeetCode problem name or open it in your browser."
+                )
 
         prompt = f"""You are JARVIS, an expert computer science mentor.
 Problem: "{self.context.problem_title}"
@@ -280,7 +286,7 @@ Keep the explanation clear, structured, and under 150 words. Do not output full 
             )
 
         prompt = f"""You are JARVIS, an elite algorithmic debugging assistant.
-Problem: "{self.context.problem_title or 'LeetCode Problem'}"
+Problem: "{self.context.problem_title or "LeetCode Problem"}"
 Language: {language}
 User's Code:
 ```{language.lower()}
@@ -314,9 +320,9 @@ Be precise and constructive."""
         """Explains time and space complexity of problem or code."""
         code_snip = code or self.context.user_code
         prompt = f"""Analyze the Time and Space complexity for:
-Problem: "{self.context.problem_title or 'Active Problem'}"
+Problem: "{self.context.problem_title or "Active Problem"}"
 Code snippet (if provided):
-{code_snip if code_snip else 'General optimal solution'}
+{code_snip if code_snip else "General optimal solution"}
 
 Provide:
 1. Time Complexity: Big-O notation with exact explanation of iterations/operations.
@@ -450,4 +456,3 @@ TOOL = {
     },
     "handler": leetcode_assistant,
 }
-

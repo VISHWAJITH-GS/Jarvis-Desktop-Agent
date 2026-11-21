@@ -14,11 +14,41 @@ import threading
 import time
 from pathlib import Path
 from gui.base import *
-from gui.base import _WIN_HIDE, _base_dir, BASE_DIR, CONFIG_DIR, API_FILE, _read_full_config, _DEFAULT_W, _DEFAULT_H, _MIN_W, _MIN_H, _LEFT_W, _RIGHT_W, _OS, _ResizeEdge, _detect_resize_edge, _cursor_for_edge, _FramelessWindowResizeMixin, _SysMetrics, _metrics, _nvml_gpu_windows, _load_app_fonts, keena_font, HAVE_VIDEO, HoloAvatar, get_uicon, QGraphicsVideoItem, QAudioOutput, QMediaPlayer
+from gui.base import (
+    _WIN_HIDE,
+    _base_dir,
+    BASE_DIR,
+    CONFIG_DIR,
+    API_FILE,
+    _read_full_config,
+    _DEFAULT_W,
+    _DEFAULT_H,
+    _MIN_W,
+    _MIN_H,
+    _LEFT_W,
+    _RIGHT_W,
+    _OS,
+    _ResizeEdge,
+    _detect_resize_edge,
+    _cursor_for_edge,
+    _FramelessWindowResizeMixin,
+    _SysMetrics,
+    _metrics,
+    _nvml_gpu_windows,
+    _load_app_fonts,
+    keena_font,
+    HAVE_VIDEO,
+    HoloAvatar,
+    get_uicon,
+    QGraphicsVideoItem,
+    QAudioOutput,
+    QMediaPlayer,
+)
 from gui.theme import *
 from gui.theme import _RESIZE_MARGIN, _NO_SCROLLBAR_STYLE, _HUE_LINKED, _PALETTE_DEFAULTS, _lerp_color
 
 from gui.widgets import *
+
 
 class RemindersDisplayWindow(_FramelessWindowResizeMixin, QWidget):
     """
@@ -30,15 +60,12 @@ class RemindersDisplayWindow(_FramelessWindowResizeMixin, QWidget):
       - Quick-add input bar to create new reminders on the fly
       - Collapsible to a sleek header bar with minimize/restore toggle
     """
+
     def __init__(self, main_win: "MainWindow" = None, parent=None):
         super().__init__(parent)
         self._main_win = main_win
         self.setWindowTitle("JARVIS Reminders Matrix")
-        self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint |
-            Qt.WindowType.WindowStaysOnTopHint |
-            Qt.WindowType.Tool
-        )
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setMinimumSize(420, 360)
         self._init_frameless_resize()
@@ -338,7 +365,9 @@ class RemindersDisplayWindow(_FramelessWindowResizeMixin, QWidget):
         self._count_lbl.setText(f"[ {active_count} ACTIVE ]")
 
         if not filtered:
-            empty_lbl = QLabel(f"◈ NO REMINDERS IN '{self._active_scope.upper()}' VIEW ◈\nAdd one below or ask JARVIS to schedule.")
+            empty_lbl = QLabel(
+                f"◈ NO REMINDERS IN '{self._active_scope.upper()}' VIEW ◈\nAdd one below or ask JARVIS to schedule."
+            )
             empty_lbl.setFont(QFont("Montserrat", 8))
             empty_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             empty_lbl.setStyleSheet(f"color: {C.TEXT_DIM}; padding: 30px 10px;")
@@ -351,6 +380,7 @@ class RemindersDisplayWindow(_FramelessWindowResizeMixin, QWidget):
 
     def _create_reminder_card(self, r: dict) -> QFrame:
         from datetime import datetime, timedelta
+
         card = QFrame()
         status = r.get("status", "pending")
         recurrence = r.get("recurrence", "none")
@@ -358,7 +388,7 @@ class RemindersDisplayWindow(_FramelessWindowResizeMixin, QWidget):
         msg = r.get("message", "Reminder")
         rem_id = r.get("id", "")
 
-        is_completed = (status == "completed")
+        is_completed = status == "completed"
         border_accent = "#00e676" if is_completed else ("#ff9100" if recurrence != "none" else "#ff1744")
 
         card.setStyleSheet(f"""
@@ -464,7 +494,9 @@ class RemindersDisplayWindow(_FramelessWindowResizeMixin, QWidget):
 
         m_lbl = QLabel(msg)
         m_lbl.setFont(QFont("Montserrat", 9))
-        m_lbl.setStyleSheet(f"color: {'#aaaaaa' if is_completed else '#ffffff'}; background: transparent; border: none;")
+        m_lbl.setStyleSheet(
+            f"color: {'#aaaaaa' if is_completed else '#ffffff'}; background: transparent; border: none;"
+        )
         m_lbl.setWordWrap(True)
         c_lay.addWidget(m_lbl)
 
@@ -472,6 +504,7 @@ class RemindersDisplayWindow(_FramelessWindowResizeMixin, QWidget):
 
     def _on_complete(self, rem_id: str):
         from actions.reminder import complete_reminder
+
         res = complete_reminder(rem_id)
         if self._main_win and hasattr(self._main_win, "write_log"):
             self._main_win.write_log(f"SYS: Reminder marked completed.")
@@ -479,6 +512,7 @@ class RemindersDisplayWindow(_FramelessWindowResizeMixin, QWidget):
 
     def _on_delete(self, rem_id: str):
         from actions.reminder import delete_reminder
+
         res = delete_reminder(rem_id)
         if self._main_win and hasattr(self._main_win, "write_log"):
             self._main_win.write_log(f"SYS: Reminder deleted.")
@@ -495,6 +529,7 @@ class RemindersDisplayWindow(_FramelessWindowResizeMixin, QWidget):
             return
 
         from actions.reminder import parse_datetime, create_reminder
+
         target_dt, _ = parse_datetime(date_str="", time_str=when, natural_text=when)
         if not target_dt:
             self._in_when.clear()
@@ -590,22 +625,19 @@ class MemoryActionsDisplayWindow(_FramelessWindowResizeMixin, QWidget):
     Dedicated interactive management platform for inspecting, managing, editing,
     and deleting JARVIS's long-term memory and viewing/controlling registered actions and permissions.
     """
+
     def __init__(self, main_win: "MainWindow" = None, parent=None):
         super().__init__(parent)
         self._main_win = main_win
         self.setWindowTitle("JARVIS Memory & Actions Platform")
-        self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint |
-            Qt.WindowType.WindowStaysOnTopHint |
-            Qt.WindowType.Tool
-        )
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setMinimumSize(560, 500)
         self._init_frameless_resize()
 
-        self._active_tab = "memory"          # "memory" or "actions"
-        self._active_category = "all"        # "all" or specific category
-        self._active_risk = "all"            # "all" or specific risk level
+        self._active_tab = "memory"  # "memory" or "actions"
+        self._active_category = "all"  # "all" or specific category
+        self._active_risk = "all"  # "all" or specific risk level
         self._collapsed = False
 
         screen = QApplication.primaryScreen().availableGeometry()
@@ -1168,11 +1200,9 @@ class MemoryActionsDisplayWindow(_FramelessWindowResizeMixin, QWidget):
 
     def _on_edit_memory(self, cat: str, key: str, cur_val: str):
         from memory.memory_manager import remember
+
         new_val, ok = QInputDialog.getText(
-            self,
-            "Edit Memory Entry",
-            f"Update memory for [{cat.upper()}] {key}:",
-            text=cur_val
+            self, "Edit Memory Entry", f"Update memory for [{cat.upper()}] {key}:", text=cur_val
         )
         if ok and new_val.strip():
             remember(key, new_val.strip(), cat)
@@ -1182,6 +1212,7 @@ class MemoryActionsDisplayWindow(_FramelessWindowResizeMixin, QWidget):
 
     def _on_forget_memory(self, cat: str, key: str):
         from memory.memory_manager import forget
+
         forget(key, cat)
         if self._main_win and hasattr(self._main_win, "write_log"):
             self._main_win.write_log(f"SYS: Forgotten memory '{key}'.")
@@ -1200,6 +1231,7 @@ class MemoryActionsDisplayWindow(_FramelessWindowResizeMixin, QWidget):
             return
 
         from memory.memory_manager import remember
+
         remember(key, val, cat)
         self._add_key_in.clear()
         self._add_val_in.clear()
@@ -1228,6 +1260,7 @@ class MemoryActionsDisplayWindow(_FramelessWindowResizeMixin, QWidget):
 
         try:
             from core.plugin_loader import discover_plugins
+
             p_reg = discover_plugins()
             plugins_dict = p_reg._plugins if hasattr(p_reg, "_plugins") else {}
         except Exception:
@@ -1413,5 +1446,3 @@ class MemoryActionsDisplayWindow(_FramelessWindowResizeMixin, QWidget):
             if self._filter_child_mouse_event(watched, event):
                 return True
         return super().eventFilter(watched, event)
-
-

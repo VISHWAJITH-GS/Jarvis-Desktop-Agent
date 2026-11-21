@@ -10,6 +10,7 @@ Provides:
      preview dimensions, and crops.
   6. Mouse cursor position retrieval and active window bounding rectangle tracking.
 """
+
 from __future__ import annotations
 
 import io
@@ -27,12 +28,14 @@ _IS_WINDOWS = platform.system() == "Windows"
 try:
     import mss
     import mss.tools
+
     _MSS_AVAILABLE = True
 except ImportError:
     _MSS_AVAILABLE = False
 
 try:
     from PIL import Image
+
     _PIL_AVAILABLE = True
 except ImportError:
     _PIL_AVAILABLE = False
@@ -40,11 +43,13 @@ except ImportError:
 if _IS_WINDOWS:
     import ctypes
     from ctypes import wintypes
+
     try:
         import win32gui
         import win32process
         import win32api
         import win32con
+
         _WIN32_AVAILABLE = True
     except ImportError:
         _WIN32_AVAILABLE = False
@@ -123,9 +128,7 @@ class DisplayManager:
     def get_monitors(self) -> List[MonitorInfo]:
         """Enumerate all connected monitors with origin, dimensions, and DPI scale."""
         if not _MSS_AVAILABLE:
-            return [
-                MonitorInfo(index=1, left=0, top=0, width=1920, height=1080, is_primary=True, name="Default")
-            ]
+            return [MonitorInfo(index=1, left=0, top=0, width=1920, height=1080, is_primary=True, name="Default")]
 
         with mss.mss() as sct:
             raw_monitors = sct.monitors
@@ -206,8 +209,10 @@ class DisplayManager:
                 pass
         if _IS_WINDOWS:
             try:
+
                 class POINT(ctypes.Structure):
                     _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+
                 pt = POINT()
                 ctypes.windll.user32.GetCursorPos(ctypes.byref(pt))
                 return int(pt.x), int(pt.y)
@@ -231,6 +236,7 @@ class DisplayManager:
             proc_name = ""
             try:
                 import psutil
+
                 proc_name = psutil.Process(pid).name()
             except Exception:
                 pass
@@ -407,4 +413,3 @@ def get_display_manager() -> DisplayManager:
     if _DEFAULT_DISPLAY_MANAGER is None:
         _DEFAULT_DISPLAY_MANAGER = DisplayManager()
     return _DEFAULT_DISPLAY_MANAGER
-

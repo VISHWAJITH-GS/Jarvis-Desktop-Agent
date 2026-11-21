@@ -14,7 +14,36 @@ import threading
 import time
 from pathlib import Path
 from gui.base import *
-from gui.base import _WIN_HIDE, _base_dir, BASE_DIR, CONFIG_DIR, API_FILE, _read_full_config, _DEFAULT_W, _DEFAULT_H, _MIN_W, _MIN_H, _LEFT_W, _RIGHT_W, _OS, _ResizeEdge, _detect_resize_edge, _cursor_for_edge, _FramelessWindowResizeMixin, _SysMetrics, _metrics, _nvml_gpu_windows, _load_app_fonts, keena_font, HAVE_VIDEO, HoloAvatar, get_uicon, QGraphicsVideoItem, QAudioOutput, QMediaPlayer
+from gui.base import (
+    _WIN_HIDE,
+    _base_dir,
+    BASE_DIR,
+    CONFIG_DIR,
+    API_FILE,
+    _read_full_config,
+    _DEFAULT_W,
+    _DEFAULT_H,
+    _MIN_W,
+    _MIN_H,
+    _LEFT_W,
+    _RIGHT_W,
+    _OS,
+    _ResizeEdge,
+    _detect_resize_edge,
+    _cursor_for_edge,
+    _FramelessWindowResizeMixin,
+    _SysMetrics,
+    _metrics,
+    _nvml_gpu_windows,
+    _load_app_fonts,
+    keena_font,
+    HAVE_VIDEO,
+    HoloAvatar,
+    get_uicon,
+    QGraphicsVideoItem,
+    QAudioOutput,
+    QMediaPlayer,
+)
 from gui.theme import *
 from gui.theme import _RESIZE_MARGIN, _NO_SCROLLBAR_STYLE, _HUE_LINKED, _PALETTE_DEFAULTS, _lerp_color
 
@@ -31,6 +60,7 @@ from gui.window_audio import WindowAudioMixin
 from gui.window_panels import WindowPanelsMixin
 from gui.window_controls import WindowControlsMixin
 
+
 class MainWindow(
     WindowMediaMixin,
     WindowAudioMixin,
@@ -39,38 +69,38 @@ class MainWindow(
     _FramelessWindowResizeMixin,
     QMainWindow,
 ):
-    _log_sig        = pyqtSignal(str)
-    _state_sig      = pyqtSignal(str)
-    _content_sig    = pyqtSignal(str, str)   # (title, text) — thread-safe content display
-    _codejob_sig    = pyqtSignal(object)     # dev_agent job state — live coding panel
-    _reconfig_sig   = pyqtSignal()           # trigger setup overlay from any thread
-    _video_open_sig  = pyqtSignal(str, str, bool, str)  # video, title, muted, audio
-    _wake_btns_sig   = pyqtSignal()          # wake state resolved off-thread
+    _log_sig = pyqtSignal(str)
+    _state_sig = pyqtSignal(str)
+    _content_sig = pyqtSignal(str, str)  # (title, text) — thread-safe content display
+    _codejob_sig = pyqtSignal(object)  # dev_agent job state — live coding panel
+    _reconfig_sig = pyqtSignal()  # trigger setup overlay from any thread
+    _video_open_sig = pyqtSignal(str, str, bool, str)  # video, title, muted, audio
+    _wake_btns_sig = pyqtSignal()  # wake state resolved off-thread
     _video_close_sig = pyqtSignal()
-    _video_mute_sig  = pyqtSignal(bool)
-    _clipboard_sig  = pyqtSignal(str)        # clipboard text changed (thread-safe)
-    _mute_sig       = pyqtSignal(bool)       # thread-safe mute state toggle
+    _video_mute_sig = pyqtSignal(bool)
+    _clipboard_sig = pyqtSignal(str)  # clipboard text changed (thread-safe)
+    _mute_sig = pyqtSignal(bool)  # thread-safe mute state toggle
     _mute_state_sig = pyqtSignal(bool, str)  # thread-safe atomic (muted, hud_state) sync
-    _confirm_sig    = pyqtSignal(str, str)   # (title, detail) — irreversible-action gate
+    _confirm_sig = pyqtSignal(str, str)  # (title, detail) — irreversible-action gate
     _confirm_hide_sig = pyqtSignal()
-    _wake_dl_sig    = pyqtSignal(bool, str)  # wake-word install finished (ok, message)
-    _quiz_sig       = pyqtSignal(str, object, object)  # (topic, questions, grader)
-    _quiz_hide_sig  = pyqtSignal()
-    _review_sig     = pyqtSignal(str, str, object, object)  # document review payload
-    _open_display_sig = pyqtSignal(str, str, str)   # (content_type, source, encoded_title)
-    _focus_display_sig = pyqtSignal(int)            # (display_id)
-    _maximize_display_sig = pyqtSignal(int)         # (display_id: 0 = all)
-    _minimize_display_sig = pyqtSignal(int)         # (display_id: 0 = all)
-    _close_display_sig = pyqtSignal(int)            # (display_id)
-    _stream_user_sig = pyqtSignal(str)              # (streamed user transcript)
-    _stream_reply_sig = pyqtSignal(str)             # (streamed assistant transcript)
-    _jarvis_window_sig = pyqtSignal(str)            # ("minimize" | "maximize" | "restore")
-    _slide_alert_sig = pyqtSignal(str, str)         # (title, message)
-    _reminders_sig   = pyqtSignal(str)              # (scope)
-    _memory_actions_sig = pyqtSignal(str)          # (tab: "memory" | "actions")
-    _screen_glow_sig = pyqtSignal(int)              # (duration_ms)
-    _refresh_audio_sig = pyqtSignal()               # Trigger audio device dropdown refresh
-    _audio_status_sig = pyqtSignal(object)          # Thread-safe AudioManager status snapshot
+    _wake_dl_sig = pyqtSignal(bool, str)  # wake-word install finished (ok, message)
+    _quiz_sig = pyqtSignal(str, object, object)  # (topic, questions, grader)
+    _quiz_hide_sig = pyqtSignal()
+    _review_sig = pyqtSignal(str, str, object, object)  # document review payload
+    _open_display_sig = pyqtSignal(str, str, str)  # (content_type, source, encoded_title)
+    _focus_display_sig = pyqtSignal(int)  # (display_id)
+    _maximize_display_sig = pyqtSignal(int)  # (display_id: 0 = all)
+    _minimize_display_sig = pyqtSignal(int)  # (display_id: 0 = all)
+    _close_display_sig = pyqtSignal(int)  # (display_id)
+    _stream_user_sig = pyqtSignal(str)  # (streamed user transcript)
+    _stream_reply_sig = pyqtSignal(str)  # (streamed assistant transcript)
+    _jarvis_window_sig = pyqtSignal(str)  # ("minimize" | "maximize" | "restore")
+    _slide_alert_sig = pyqtSignal(str, str)  # (title, message)
+    _reminders_sig = pyqtSignal(str)  # (scope)
+    _memory_actions_sig = pyqtSignal(str)  # (tab: "memory" | "actions")
+    _screen_glow_sig = pyqtSignal(int)  # (duration_ms)
+    _refresh_audio_sig = pyqtSignal()  # Trigger audio device dropdown refresh
+    _audio_status_sig = pyqtSignal(object)  # Thread-safe AudioManager status snapshot
 
     def __init__(self, face_path: str):
         super().__init__()
@@ -91,10 +121,7 @@ class MainWindow(
             apply_ui_accent(_ui_color)
 
         self.setWindowTitle(f"{_display} — {APP_VERSION}")
-        self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint |
-            Qt.WindowType.WindowStaysOnTopHint
-        )
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setMinimumSize(280, 380)
         self._init_frameless_resize()
@@ -108,25 +135,25 @@ class MainWindow(
         init_y = max(screen.top() + 20, screen.bottom() - hud_h - 24)
         self.setGeometry(init_x, init_y, hud_w, hud_h)
 
-        self.on_text_command   = None
-        self.on_remote_clicked = None   # callable: () -> (url, key) | None
-        self.on_interrupt      = None   # callable: () -> None — stop JARVIS mid-speech
-        self.on_mute_toggle    = None   # callable: () -> None — central VoiceStateManager mute toggle
-        self.on_voice_change   = None   # callable: () -> None — rebuild session with new voice
+        self.on_text_command = None
+        self.on_remote_clicked = None  # callable: () -> (url, key) | None
+        self.on_interrupt = None  # callable: () -> None — stop JARVIS mid-speech
+        self.on_mute_toggle = None  # callable: () -> None — central VoiceStateManager mute toggle
+        self.on_voice_change = None  # callable: () -> None — rebuild session with new voice
         self.on_audio_device_change = None  # callable: () -> None — reopen audio streams
-        self._confirm_overlay  = None   # live ConfirmBanner, if one is on screen
-        self.get_plugins       = None   # callable: () -> list[dict], set by JarvisLive
-        self.get_plugin_settings = None # callable: () -> list[dict] settings schemas, set by JarvisLive
-        self.on_wake_toggle    = None   # callable: (enable: bool) -> str, set by JarvisLive
-        self.on_wake_manual    = None   # callable: () -> None — manual sleep/wake
-        self.on_auto_sleep_toggle = None # callable: (enable: bool) -> bool, set by JarvisLive
-        self.auto_sleep_is_enabled = None # callable: () -> bool, set by JarvisLive
-        self.on_routing_mode_change = None # callable: (mode: str) -> None, set by JarvisLive
-        self.get_routing_mode  = None   # callable: () -> str, set by JarvisLive
-        self.on_push_to_talk   = None   # callable: (enable: bool) -> str scope
-        self.ptt_hold          = None   # callable: (held: bool) -> None — windowed chord
-        self.wake_get_state    = None   # callable: () -> dict {enabled, awake, ready}
-        self._muted            = False
+        self._confirm_overlay = None  # live ConfirmBanner, if one is on screen
+        self.get_plugins = None  # callable: () -> list[dict], set by JarvisLive
+        self.get_plugin_settings = None  # callable: () -> list[dict] settings schemas, set by JarvisLive
+        self.on_wake_toggle = None  # callable: (enable: bool) -> str, set by JarvisLive
+        self.on_wake_manual = None  # callable: () -> None — manual sleep/wake
+        self.on_auto_sleep_toggle = None  # callable: (enable: bool) -> bool, set by JarvisLive
+        self.auto_sleep_is_enabled = None  # callable: () -> bool, set by JarvisLive
+        self.on_routing_mode_change = None  # callable: (mode: str) -> None, set by JarvisLive
+        self.get_routing_mode = None  # callable: () -> str, set by JarvisLive
+        self.on_push_to_talk = None  # callable: (enable: bool) -> str scope
+        self.ptt_hold = None  # callable: (held: bool) -> None — windowed chord
+        self.wake_get_state = None  # callable: () -> dict {enabled, awake, ready}
+        self._muted = False
         self._current_file: str | None = None
         self._remote_overlay: RemoteKeyOverlay | None = None
         self._customize_overlay: CustomizeOverlay | None = None
@@ -141,8 +168,8 @@ class MainWindow(
         self._quiz_panel = self._build_quiz_panel()
 
         # ── Video surface ────────────────────────────────────────────────
-        self._video_split = False        # is the sound a separate stream?
-        self._video_auto_muted = False   # did JARVIS close the mic, or the user?
+        self._video_split = False  # is the sound a separate stream?
+        self._video_auto_muted = False  # did JARVIS close the mic, or the user?
         self._video_on = False
         self._video_cont = QWidget()
         self._video_cont.setStyleSheet(f"background: {C.BG};")
@@ -186,13 +213,9 @@ class MainWindow(
             self._video_widget = QGraphicsView(self._video_scene)
             self._video_widget.setStyleSheet("background: #000; border: none;")
             self._video_widget.setFrameShape(QGraphicsView.Shape.NoFrame)
-            self._video_widget.setHorizontalScrollBarPolicy(
-                Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-            self._video_widget.setVerticalScrollBarPolicy(
-                Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-            self._video_widget.setSizePolicy(
-                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
-            )
+            self._video_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            self._video_widget.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            self._video_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
             _vid_v.addWidget(self._video_widget, stretch=1)
 
             self._video_audio = QAudioOutput()
@@ -283,6 +306,7 @@ class MainWindow(
         self._warm_wake_state()
         self._update_autostart_btn(self._check_autostart())
         from memory.config_manager import get_brief_enabled as _gbe
+
         self._update_brief_btn(_gbe())
 
         self._clock_tmr = QTimer(self)
@@ -548,8 +572,13 @@ class MainWindow(
 
         screen = QApplication.primaryScreen().availableGeometry()
         offset = ((disp_id - 1) % 6) * 36
-        x = max(screen.left() + 20, min(screen.right() - win.width() - 20, screen.center().x() - win.width() // 2 + offset))
-        y = max(screen.top() + 20, min(screen.bottom() - win.height() - 20, screen.center().y() - win.height() // 2 + offset))
+        x = max(
+            screen.left() + 20, min(screen.right() - win.width() - 20, screen.center().x() - win.width() // 2 + offset)
+        )
+        y = max(
+            screen.top() + 20,
+            min(screen.bottom() - win.height() - 20, screen.center().y() - win.height() // 2 + offset),
+        )
         win.move(x, y)
         win.show()
         win.raise_()
@@ -750,7 +779,7 @@ class MainWindow(
             self.hud.set_user_text(text[5:].strip())
         elif text.startswith(f"{asst}: ") or text.startswith("JARVIS: "):
             idx = text.find(": ")
-            self.hud.set_reply_text(text[idx + 2:].strip())
+            self.hud.set_reply_text(text[idx + 2 :].strip())
         elif any(text.startswith(p) for p in ("SYS: ", "ACT: ", "TOOL: ", "ERR: ")):
             parts = text.split(":", 1)
             if len(parts) > 1:
@@ -823,38 +852,42 @@ class MainWindow(
         if getattr(self, "_overlay", None) and self._overlay.isVisible():
             ow, oh = 460, 390
             self._overlay.setGeometry(
-                (cw.width()  - ow) // 2,
+                (cw.width() - ow) // 2,
                 (cw.height() - oh) // 2,
-                ow, oh,
+                ow,
+                oh,
             )
         if getattr(self, "_remote_overlay", None) and self._remote_overlay.isVisible():
             ow, oh = RemoteKeyOverlay._OW, RemoteKeyOverlay._OH
             self._remote_overlay.setGeometry(
-                (cw.width()  - ow) // 2,
+                (cw.width() - ow) // 2,
                 (cw.height() - oh) // 2,
-                ow, oh,
+                ow,
+                oh,
             )
         if getattr(self, "_customize_overlay", None) and self._customize_overlay.isVisible():
             ow, oh = CustomizeOverlay._OW, CustomizeOverlay._OH
             self._customize_overlay.setGeometry(
-                (cw.width()  - ow) // 2,
+                (cw.width() - ow) // 2,
                 (cw.height() - oh) // 2,
-                ow, oh,
+                ow,
+                oh,
             )
         if getattr(self, "_confirm_overlay", None) and self._confirm_overlay.isVisible():
             ov = self._confirm_overlay
             ov.setGeometry(
-                max(0, (cw.width()  - ov.width())  // 2),
+                max(0, (cw.width() - ov.width()) // 2),
                 max(0, (cw.height() - ov.height()) // 2),
-                ov.width(), ov.height(),
+                ov.width(),
+                ov.height(),
             )
         # Clipboard panel — bottom-center (triggers removed)
-        if getattr(self, '_clipboard_panel', None) is not None and self._clipboard_panel.isVisible():
+        if getattr(self, "_clipboard_panel", None) is not None and self._clipboard_panel.isVisible():
             self._position_clipboard_panel()
         # Quick drawer — reposition if open
-        if hasattr(self, '_quick_drawer') and self._quick_drawer.isVisible():
+        if hasattr(self, "_quick_drawer") and self._quick_drawer.isVisible():
             self._position_quick_drawer()
-        if hasattr(self, '_ctrl_drawer') and self._ctrl_drawer.isVisible():
+        if hasattr(self, "_ctrl_drawer") and self._ctrl_drawer.isVisible():
             self._position_ctrl_drawer()
         self._fit_video()
 
@@ -872,7 +905,7 @@ class MainWindow(
         # NET
         net = snap["net"]
         if net < 1.0:
-            net_str = f"{net*1024:.0f}KB/s"
+            net_str = f"{net * 1024:.0f}KB/s"
         else:
             net_str = f"{net:.1f}MB/s"
         net_pct = min(100, net * 10)  # 10 MB/s = %100
@@ -894,7 +927,7 @@ class MainWindow(
             self._bar_tmp.set_value(0, "N/A")
 
         try:
-            boot_t  = psutil.boot_time()
+            boot_t = psutil.boot_time()
             elapsed = time.time() - boot_t
             h = int(elapsed // 3600)
             m = int((elapsed % 3600) // 60)
@@ -918,7 +951,6 @@ class MainWindow(
                 self._armoury_telemetry.update_metrics(snap)
             except Exception:
                 pass
-
 
     def _build_header(self) -> QWidget:
         w = QWidget()
@@ -971,16 +1003,15 @@ class MainWindow(
         lay.addWidget(self._ctrl_btn)
         lay.addStretch()
 
-        mid = QVBoxLayout(); mid.setSpacing(1)
+        mid = QVBoxLayout()
+        mid.setSpacing(1)
         _disp = self._assistant_name.upper()
         self._title_lbl = QLabel(_disp)
         self._title_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._title_lbl.setFont(QFont("Montserrat", 17, QFont.Weight.Bold))
         self._title_lbl.setStyleSheet(f"color: {C.PRI}; background: transparent;")
         mid.addWidget(self._title_lbl)
-        _sub_text = ("A Friendly Assistant"
-                     if _disp in ("JARVIS", "J.A.R.V.I.S")
-                     else "Personal AI Assistant")
+        _sub_text = "A Friendly Assistant" if _disp in ("JARVIS", "J.A.R.V.I.S") else "Personal AI Assistant"
         self._sub_lbl = QLabel(_sub_text)
         self._sub_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._sub_lbl.setFont(QFont("Montserrat", 7))
@@ -989,7 +1020,8 @@ class MainWindow(
         lay.addLayout(mid)
         lay.addStretch()
 
-        right_col = QVBoxLayout(); right_col.setSpacing(2)
+        right_col = QVBoxLayout()
+        right_col.setSpacing(2)
         self._clock_lbl = QLabel("00:00:00")
         self._clock_lbl.setFont(QFont("Montserrat", 14, QFont.Weight.Bold))
         self._clock_lbl.setStyleSheet(f"color: {C.PRI}; background: transparent;")
@@ -1019,8 +1051,9 @@ class MainWindow(
 
         hdr = QLabel("◈ SYS MONITOR")
         hdr.setFont(QFont("Montserrat", 7, QFont.Weight.Bold))
-        hdr.setStyleSheet(f"color: {C.PRI}; background: transparent; "
-                          f"border-bottom: 1px solid {C.BORDER}; padding-bottom: 4px;")
+        hdr.setStyleSheet(
+            f"color: {C.PRI}; background: transparent; border-bottom: 1px solid {C.BORDER}; padding-bottom: 4px;"
+        )
         lay.addWidget(hdr)
         lay.addSpacing(2)
 
@@ -1030,16 +1063,13 @@ class MainWindow(
         self._bar_gpu = MetricBar("GPU", C.ACC)
         self._bar_tmp = MetricBar("TMP", "#ff4444")
 
-        for bar in [self._bar_cpu, self._bar_mem, self._bar_net,
-                    self._bar_gpu, self._bar_tmp]:
+        for bar in [self._bar_cpu, self._bar_mem, self._bar_net, self._bar_gpu, self._bar_tmp]:
             lay.addWidget(bar)
 
         lay.addSpacing(4)
 
         info_panel = QWidget()
-        info_panel.setStyleSheet(
-            f"background: {C.PANEL2}; border: 1px solid {C.BORDER}; border-radius: 4px;"
-        )
+        info_panel.setStyleSheet(f"background: {C.PANEL2}; border: 1px solid {C.BORDER}; border-radius: 4px;")
         ip_lay = QVBoxLayout(info_panel)
         ip_lay.setContentsMargins(6, 5, 6, 5)
         ip_lay.setSpacing(3)
@@ -1066,9 +1096,9 @@ class MainWindow(
         lay.addStretch()
 
         for txt, col in [
-            ("AI CORE\nACTIVE",  C.GREEN),
-            ("SEC\nCLEARED",     C.PRI),
-            ("PROTOCOL\n" + APP_PROTOCOL,   C.TEXT_DIM),
+            ("AI CORE\nACTIVE", C.GREEN),
+            ("SEC\nCLEARED", C.PRI),
+            ("PROTOCOL\n" + APP_PROTOCOL, C.TEXT_DIM),
         ]:
             lbl = QLabel(txt)
             lbl.setFont(QFont("Montserrat", 7, QFont.Weight.Bold))
@@ -1080,6 +1110,7 @@ class MainWindow(
             lay.addWidget(lbl)
 
         return w
+
     def _build_right_panel(self) -> QWidget:
         w = QWidget()
         w.setFixedWidth(_RIGHT_W)
@@ -1098,7 +1129,8 @@ class MainWindow(
         self._log = LogWidget()
         lay.addWidget(self._log, stretch=1)
 
-        sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
         sep.setStyleSheet(f"color: {C.BORDER}; margin: 2px 0;")
         lay.addWidget(sep)
 
@@ -1113,7 +1145,8 @@ class MainWindow(
         self._file_hint.setWordWrap(True)
         lay.addWidget(self._file_hint)
 
-        sep2 = QFrame(); sep2.setFrameShape(QFrame.Shape.HLine)
+        sep2 = QFrame()
+        sep2.setFrameShape(QFrame.Shape.HLine)
         sep2.setStyleSheet(f"color: {C.BORDER}; margin: 2px 0;")
         lay.addWidget(sep2)
 
@@ -1187,8 +1220,9 @@ class MainWindow(
 
         hdr = QLabel("◈ SETUP")
         hdr.setFont(QFont("Montserrat", 7, QFont.Weight.Bold))
-        hdr.setStyleSheet(f"color: {C.PRI_DIM}; background: transparent; "
-                          f"border-bottom: 1px solid {C.BORDER}; padding-bottom: 4px;")
+        hdr.setStyleSheet(
+            f"color: {C.PRI_DIM}; background: transparent; border-bottom: 1px solid {C.BORDER}; padding-bottom: 4px;"
+        )
         lay.addWidget(hdr)
 
         remote_btn = QPushButton("◉  REMOTE CONTROL")
@@ -1283,8 +1317,9 @@ class MainWindow(
 
         hdr = QLabel("◈ CONTROLS")
         hdr.setFont(QFont("Montserrat", 7, QFont.Weight.Bold))
-        hdr.setStyleSheet(f"color: {C.PRI_DIM}; background: transparent; "
-                          f"border-bottom: 1px solid {C.BORDER}; padding-bottom: 4px;")
+        hdr.setStyleSheet(
+            f"color: {C.PRI_DIM}; background: transparent; border-bottom: 1px solid {C.BORDER}; padding-bottom: 4px;"
+        )
         lay.addWidget(hdr)
 
         def _row(button, style=None, height=26):
@@ -1341,12 +1376,14 @@ class MainWindow(
         import. Afterwards the same check costs about a millisecond, so it only
         ever needed to happen somewhere other than in front of the user.
         """
+
         def work():
             try:
                 self._wake_state()
             except Exception:
                 pass
             self._wake_btns_sig.emit()
+
         threading.Thread(target=work, daemon=True, name="wake-state-warm").start()
 
     def _toggle_drawer(self, checked: bool):
@@ -1361,7 +1398,7 @@ class MainWindow(
     def _toggle_controls(self, checked: bool):
         if checked:
             self._close_setup()
-            self._refresh_wake_btns()   # cheap now: the state was warmed at boot
+            self._refresh_wake_btns()  # cheap now: the state was warmed at boot
             self._position_ctrl_drawer()
             self._ctrl_drawer.show()
             self._ctrl_drawer.raise_()
@@ -1395,9 +1432,7 @@ class MainWindow(
         if hasattr(self, "_ctrl_drawer"):
             left = 12
             try:
-                left = max(12, self._ctrl_btn.mapTo(self.centralWidget(),
-                                                    QPoint(0, 0)).x() - 8)
+                left = max(12, self._ctrl_btn.mapTo(self.centralWidget(), QPoint(0, 0)).x() - 8)
             except Exception:
                 pass
             self._place_drawer(self._ctrl_drawer, left)
-

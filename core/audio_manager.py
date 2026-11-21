@@ -79,7 +79,9 @@ def get_audio_manager() -> Optional["AudioManager"]:
         return _active_manager
 
 
-def _run_with_timeout(fn: Callable[[], Any], timeout_s: float = OPEN_TIMEOUT_S) -> Tuple[bool, Any, Optional[Exception]]:
+def _run_with_timeout(
+    fn: Callable[[], Any], timeout_s: float = OPEN_TIMEOUT_S
+) -> Tuple[bool, Any, Optional[Exception]]:
     """Run a potentially blocking audio open/close call with a hard timeout."""
     box: Dict[str, Any] = {"done": False, "value": None, "error": None}
 
@@ -241,6 +243,7 @@ class AudioManager:
 
     def set_routing_mode(self, mode: str) -> None:
         from memory import config_manager
+
         config_manager.save_audio_routing_mode(mode)
         with self._state_lock:
             self._routing_mode = config_manager.get_audio_routing_mode()
@@ -379,16 +382,16 @@ class AudioManager:
 
             # Load saved preferences if not explicitly provided
             from memory.config_manager import (
-                get_input_device, get_output_device,
-                get_audio_routing_mode, get_builtin_microphone, get_bluetooth_microphone,
+                get_input_device,
+                get_output_device,
+                get_audio_routing_mode,
+                get_builtin_microphone,
+                get_bluetooth_microphone,
             )
+
             self._routing_mode = get_audio_routing_mode()
-            self._preferred_input = (
-                preferred_input if preferred_input is not None else get_input_device()
-            ).strip()
-            self._preferred_output = (
-                preferred_output if preferred_output is not None else get_output_device()
-            ).strip()
+            self._preferred_input = (preferred_input if preferred_input is not None else get_input_device()).strip()
+            self._preferred_output = (preferred_output if preferred_output is not None else get_output_device()).strip()
 
             # Single discovery pass at startup
             audio_devices.list_devices("input")
@@ -398,11 +401,7 @@ class AudioManager:
             self._update_bluetooth_presence()
 
             # Configure hybrid endpoints
-            self._builtin_mic_name = (
-                get_builtin_microphone()
-                or audio_devices.find_builtin_microphone()
-                or ""
-            )
+            self._builtin_mic_name = get_builtin_microphone() or audio_devices.find_builtin_microphone() or ""
             self._bluetooth_mic_name = (
                 get_bluetooth_microphone()
                 or audio_devices.find_bluetooth_microphone(self._preferred_input)
@@ -476,6 +475,7 @@ class AudioManager:
             return ep_name or fallback_name or audio_devices.DEFAULT_LABEL
         try:
             import sounddevice as sd
+
             info = sd.query_devices(idx)
             raw_name = (info.get("name") or "").strip()
             if fallback_name and fallback_name != audio_devices.DEFAULT_LABEL:
@@ -492,7 +492,7 @@ class AudioManager:
         self._close_input_locked()
 
         wanted = (requested_name or "").strip()
-        is_default_req = (not wanted or wanted == audio_devices.DEFAULT_LABEL)
+        is_default_req = not wanted or wanted == audio_devices.DEFAULT_LABEL
         using_fallback = False
 
         # Determine target index & supported sample rate
@@ -601,11 +601,7 @@ class AudioManager:
             if not using_fallback:
                 self._last_error = ""
 
-        rate_desc = (
-            f"{hw_rate} Hz -> {self._target_in_rate} Hz"
-            if hw_rate != self._target_in_rate
-            else f"{hw_rate} Hz"
-        )
+        rate_desc = f"{hw_rate} Hz -> {self._target_in_rate} Hz" if hw_rate != self._target_in_rate else f"{hw_rate} Hz"
         self._emit_event(
             f"input_{reason}",
             prev_in,
@@ -631,7 +627,7 @@ class AudioManager:
         self._close_output_locked()
 
         wanted = (requested_name or "").strip()
-        is_default_req = (not wanted or wanted == audio_devices.DEFAULT_LABEL)
+        is_default_req = not wanted or wanted == audio_devices.DEFAULT_LABEL
         using_fallback = False
 
         if is_default_req:
@@ -732,9 +728,7 @@ class AudioManager:
                 self._last_error = ""
 
         rate_desc = (
-            f"{self._target_out_rate} Hz -> {hw_rate} Hz"
-            if hw_rate != self._target_out_rate
-            else f"{hw_rate} Hz"
+            f"{self._target_out_rate} Hz -> {hw_rate} Hz" if hw_rate != self._target_out_rate else f"{hw_rate} Hz"
         )
         self._emit_event(
             f"output_{reason}",
@@ -778,6 +772,7 @@ class AudioManager:
         if hw_rate != self._target_out_rate:
             try:
                 import numpy as np
+
                 pcm = np.frombuffer(pcm_24k_bytes, dtype=np.int16)
                 resampled = audio_devices.resample_pcm_int16(pcm, self._target_out_rate, hw_rate)
                 payload = resampled.tobytes()
@@ -937,7 +932,11 @@ class AudioManager:
         """
         with self._transition_lock:
             with self._state_lock:
-                if self._active_input_role == "bluetooth" and self._in_stream is not None and getattr(self._in_stream, "active", False):
+                if (
+                    self._active_input_role == "bluetooth"
+                    and self._in_stream is not None
+                    and getattr(self._in_stream, "active", False)
+                ):
                     return True, self._active_input_name
                 self._transition_state = "switching_to_conversation"
                 self._switching_status = "Connecting Bluetooth mic..."
@@ -952,7 +951,9 @@ class AudioManager:
                     if not bt_dev:
                         print("[AudioManager] ⚠ Bluetooth microphone endpoint not found; keeping current input.")
                         if self._in_stream is None or not getattr(self._in_stream, "active", False):
-                            self._open_input_locked(self._builtin_mic_name or audio_devices.DEFAULT_LABEL, reason="hybrid_fallback")
+                            self._open_input_locked(
+                                self._builtin_mic_name or audio_devices.DEFAULT_LABEL, reason="hybrid_fallback"
+                            )
                         with self._state_lock:
                             self._active_input_role = "builtin"
                             self._transition_state = "idle"
@@ -966,8 +967,12 @@ class AudioManager:
                     # 3. Open Bluetooth microphone stream
                     ok = self._open_input_locked(bt_dev, reason="hybrid_conversation")
                     if not ok:
-                        print(f"[AudioManager] ⚠ Failed to open Bluetooth mic '{bt_dev}'; falling back to built-in mic.")
-                        self._open_input_locked(self._builtin_mic_name or audio_devices.DEFAULT_LABEL, reason="hybrid_fallback")
+                        print(
+                            f"[AudioManager] ⚠ Failed to open Bluetooth mic '{bt_dev}'; falling back to built-in mic."
+                        )
+                        self._open_input_locked(
+                            self._builtin_mic_name or audio_devices.DEFAULT_LABEL, reason="hybrid_fallback"
+                        )
                         with self._state_lock:
                             self._active_input_role = "builtin"
                             self._transition_state = "idle"
@@ -985,7 +990,9 @@ class AudioManager:
                         self._switching_status = "Idle"
                     self._notify_status()
 
-                    print(f"[AudioManager] 🎧 Conversation mode active: using Bluetooth mic '{self._active_input_name}'")
+                    print(
+                        f"[AudioManager] 🎧 Conversation mode active: using Bluetooth mic '{self._active_input_name}'"
+                    )
                     return True, self._active_input_name
             finally:
                 with self._state_lock:
@@ -1001,7 +1008,11 @@ class AudioManager:
         """
         with self._transition_lock:
             with self._state_lock:
-                if self._active_input_role == "builtin" and self._in_stream is not None and getattr(self._in_stream, "active", False):
+                if (
+                    self._active_input_role == "builtin"
+                    and self._in_stream is not None
+                    and getattr(self._in_stream, "active", False)
+                ):
                     return True, self._active_input_name
                 self._transition_state = "switching_to_sleep"
                 self._switching_status = "Releasing Bluetooth mic..."
@@ -1116,6 +1127,7 @@ class AudioManager:
             if persist:
                 try:
                     from memory.config_manager import save_input_device
+
                     save_input_device(matched)
                 except Exception as exc:
                     logger.warning("[AudioManager] Could not persist input device: %s", exc)
@@ -1199,6 +1211,7 @@ class AudioManager:
             if persist:
                 try:
                     from memory.config_manager import save_output_device
+
                     save_output_device(matched)
                 except Exception as exc:
                     logger.warning("[AudioManager] Could not persist output device: %s", exc)
@@ -1256,6 +1269,7 @@ class AudioManager:
     def apply_saved_preferences(self) -> Dict[str, Any]:
         """Re-read config/api_keys.json preferences and hot-switch streams in-place."""
         from memory.config_manager import get_input_device, get_output_device
+
         return self.switch_devices(
             input_query=get_input_device(),
             output_query=get_output_device(),
@@ -1331,12 +1345,8 @@ class AudioManager:
         added = cur_snap - self._last_snapshot if self._last_snapshot else set()
         removed = self._last_snapshot - cur_snap if self._last_snapshot else set()
 
-        default_out_changed = bool(
-            cur_out[0] and self._last_default_out[0] and cur_out[0] != self._last_default_out[0]
-        )
-        default_in_changed = bool(
-            cur_in[0] and self._last_default_in[0] and cur_in[0] != self._last_default_in[0]
-        )
+        default_out_changed = bool(cur_out[0] and self._last_default_out[0] and cur_out[0] != self._last_default_out[0])
+        default_in_changed = bool(cur_in[0] and self._last_default_in[0] and cur_in[0] != self._last_default_in[0])
 
         # Detect Bluetooth device connection or disconnection
         bt_added = [item for item in added if not item.startswith("{") and audio_devices.is_bluetooth_device(item)]
@@ -1345,19 +1355,35 @@ class AudioManager:
         # Detect user's preferred device reappearing or disappearing
         pref_out_reappeared = bool(
             self._preferred_output
-            and any(audio_devices._fold(self._preferred_output) in audio_devices._fold(x) for x in added if not x.startswith("{"))
+            and any(
+                audio_devices._fold(self._preferred_output) in audio_devices._fold(x)
+                for x in added
+                if not x.startswith("{")
+            )
         )
         pref_in_reappeared = bool(
             self._preferred_input
-            and any(audio_devices._fold(self._preferred_input) in audio_devices._fold(x) for x in added if not x.startswith("{"))
+            and any(
+                audio_devices._fold(self._preferred_input) in audio_devices._fold(x)
+                for x in added
+                if not x.startswith("{")
+            )
         )
         active_out_removed = bool(
             self._active_output_name
-            and any(audio_devices._fold(self._active_output_name) in audio_devices._fold(x) for x in removed if not x.startswith("{"))
+            and any(
+                audio_devices._fold(self._active_output_name) in audio_devices._fold(x)
+                for x in removed
+                if not x.startswith("{")
+            )
         )
         active_in_removed = bool(
             self._active_input_name
-            and any(audio_devices._fold(self._active_input_name) in audio_devices._fold(x) for x in removed if not x.startswith("{"))
+            and any(
+                audio_devices._fold(self._active_input_name) in audio_devices._fold(x)
+                for x in removed
+                if not x.startswith("{")
+            )
         )
 
         # Update baseline snapshots
@@ -1408,9 +1434,12 @@ class AudioManager:
                 target_in = cur_in[1] or ""
 
             reason = (
-                "bluetooth_connect" if bt_added
-                else "bluetooth_disconnect" if bt_removed
-                else "preferred_restored" if (pref_out_reappeared or pref_in_reappeared)
+                "bluetooth_connect"
+                if bt_added
+                else "bluetooth_disconnect"
+                if bt_removed
+                else "preferred_restored"
+                if (pref_out_reappeared or pref_in_reappeared)
                 else "default_changed"
             )
             self._rescan_and_reopen_locked(target_in, target_out, reason=reason)

@@ -6,6 +6,7 @@ Tests:
 2. Notification reader parses notifications without JSON syntax errors (handling leading booleans).
 3. Notification reader extracts recent messages from messaging apps (e.g. WhatsApp) and system notifications.
 """
+
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -14,13 +15,14 @@ from actions.video_player import video_player
 
 
 class TestNotificationsAndVideoDisplay(unittest.TestCase):
-
     @patch("webbrowser.open")
     def test_video_opens_in_browser_not_in_display(self, mock_web_open):
         """Video player must NOT invoke player.show_video to embed video in HUD display."""
         mock_player = MagicMock()
 
-        res = video_player({"action": "play", "source": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"}, player=mock_player)
+        res = video_player(
+            {"action": "play", "source": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"}, player=mock_player
+        )
         self.assertIn("Opened", res)
         self.assertIn("browser", res)
 

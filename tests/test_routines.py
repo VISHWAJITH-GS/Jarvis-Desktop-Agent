@@ -9,6 +9,7 @@ Covers:
 - Voice tools (create, list, edit, delete, configure quiet hours)
 - Legacy reminders auto-migration (from fixtures/databases without loss)
 """
+
 from __future__ import annotations
 
 from datetime import datetime, time as dtime, timedelta
@@ -238,12 +239,14 @@ class TestRoutinesEngine(unittest.TestCase):
     def test_voice_tools_lifecycle(self):
         with patch("actions.routines.get_routine_engine", return_value=self.engine):
             # Create
-            res_create = create_routine({
-                "title": "Evening Stretch",
-                "schedule_type": "daily",
-                "schedule_config": {"time": "20:00"},
-                "message": "Time for evening stretching",
-            })
+            res_create = create_routine(
+                {
+                    "title": "Evening Stretch",
+                    "schedule_type": "daily",
+                    "schedule_config": {"time": "20:00"},
+                    "message": "Time for evening stretching",
+                }
+            )
             self.assertIn("Created daily routine 'Evening Stretch'", res_create)
 
             # List

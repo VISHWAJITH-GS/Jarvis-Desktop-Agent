@@ -8,6 +8,7 @@ Enforces:
 3. Tool allowlist enforcement (default unattended is read-only + workspace folder writes).
 4. Content read from web or files is wrapped as untrusted data to prevent prompt injection.
 """
+
 from __future__ import annotations
 
 import os
@@ -90,6 +91,7 @@ def execute_task_tool(
     set_untrusted_context(True)
     try:
         from core.action_loader import get_default_registry
+
         reg = get_default_registry()
         # 4. Route through centralized ActionRegistry and ActionExecutionGuard
         res = reg.execute(tool_name, parameters, ctx={"player": None})

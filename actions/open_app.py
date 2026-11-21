@@ -34,6 +34,7 @@ WHY IT IS NOT A LIST OF APPLICATIONS
     through untouched, which is what makes software nobody here has heard of
     work exactly as well as the software we have.
 """
+
 import os
 import platform
 import shutil
@@ -47,7 +48,7 @@ from core.lazyimport import LazyModule, installed
 _PYAUTOGUI = installed("pyautogui")
 pyautogui = LazyModule("pyautogui")
 
-_SYSTEM = platform.system()          # "Windows" | "Darwin" | "Linux"
+_SYSTEM = platform.system()  # "Windows" | "Darwin" | "Linux"
 
 # How long to keep watching for the application to appear. Chosen from the two
 # ends of the range rather than the middle: a text editor is up in a fraction
@@ -127,6 +128,7 @@ def _resolve_windows_known_app(app_name: str) -> tuple[list[str] | None, list[st
     # 3. Python IDLE
     if clean in ("idle", "python idle", "idle python", "idle3"):
         import sys
+
         base_dir = os.path.dirname(sys.executable)
         pythonw = os.path.join(base_dir, "pythonw.exe")
         exe = pythonw if os.path.exists(pythonw) else sys.executable
@@ -202,7 +204,7 @@ def _launch_windows(app_name: str) -> bool:
     scheme, _, rest = app_name.partition(":")
     if rest and scheme and scheme.isalnum() and len(scheme) > 1:
         try:
-            os.startfile(app_name)               # noqa: S606 — no shell involved
+            os.startfile(app_name)  # noqa: S606 — no shell involved
             return True
         except Exception as exc:
             print(f"[open_app] startfile failed for {app_name!r}: {exc}")
@@ -213,9 +215,7 @@ def _launch_windows(app_name: str) -> bool:
 def _launch_macos(app_name: str) -> bool:
     for candidate in (app_name, f"{app_name}.app"):
         try:
-            result = subprocess.run(
-                ["open", "-a", candidate], capture_output=True, timeout=8
-            )
+            result = subprocess.run(["open", "-a", candidate], capture_output=True, timeout=8)
             if result.returncode == 0:
                 return True
         except Exception:
@@ -224,9 +224,7 @@ def _launch_macos(app_name: str) -> bool:
     binary = shutil.which(app_name) or shutil.which(app_name.lower())
     if binary:
         try:
-            subprocess.Popen(
-                [binary], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-            )
+            subprocess.Popen([binary], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             return True
         except Exception:
             pass
@@ -235,8 +233,16 @@ def _launch_macos(app_name: str) -> bool:
 
 
 _LINUX_TERMINALS = [
-    "x-terminal-emulator", "gnome-terminal", "konsole", "xfce4-terminal",
-    "xterm", "lxterminal", "mate-terminal", "tilix", "alacritty", "kitty",
+    "x-terminal-emulator",
+    "gnome-terminal",
+    "konsole",
+    "xfce4-terminal",
+    "xterm",
+    "lxterminal",
+    "mate-terminal",
+    "tilix",
+    "alacritty",
+    "kitty",
 ]
 
 
@@ -248,9 +254,7 @@ def _launch_linux(app_name: str) -> bool:
             if not path:
                 continue
             try:
-                subprocess.Popen(
-                    [path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-                )
+                subprocess.Popen([path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 return True
             except Exception:
                 continue
@@ -263,9 +267,7 @@ def _launch_linux(app_name: str) -> bool:
     )
     if binary:
         try:
-            subprocess.Popen(
-                [binary], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-            )
+            subprocess.Popen([binary], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             return True
         except Exception:
             pass
@@ -276,9 +278,7 @@ def _launch_linux(app_name: str) -> bool:
         app_name.lower().replace(" ", ""),
     ):
         try:
-            result = subprocess.run(
-                ["gtk-launch", name], capture_output=True, timeout=5
-            )
+            result = subprocess.run(["gtk-launch", name], capture_output=True, timeout=5)
             if result.returncode == 0:
                 return True
         except FileNotFoundError:
@@ -287,9 +287,7 @@ def _launch_linux(app_name: str) -> bool:
             pass
 
     try:
-        result = subprocess.run(
-            ["xdg-open", app_name], capture_output=True, timeout=5
-        )
+        result = subprocess.run(["xdg-open", app_name], capture_output=True, timeout=5)
         if result.returncode == 0:
             return True
     except Exception:
@@ -327,8 +325,7 @@ def _say(player, instruction: str) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 #  Launch + verify, off the conversation's thread
 # ─────────────────────────────────────────────────────────────────────────────
-def _launch_and_verify(player, spoken: str, launcher_name: str,
-                       before: set[int]) -> None:
+def _launch_and_verify(player, spoken: str, launcher_name: str, before: set[int]) -> None:
     """The part that takes seconds. Speaks ONLY when something needs saying.
 
     Silence means it worked: the window is on the user's screen and a second
@@ -341,43 +338,43 @@ def _launch_and_verify(player, spoken: str, launcher_name: str,
         if not requested and launcher_name.lower() != spoken.lower():
             requested = launcher(spoken)
 
-        appeared = appidentity.wait_for_launch(
-            spoken, before, timeout=_LAUNCH_TIMEOUT
-        )
+        appeared = appidentity.wait_for_launch(spoken, before, timeout=_LAUNCH_TIMEOUT)
         if appeared is not None:
             _log(player, f"JARVIS: {appeared.label} is open.")
             return
 
         if not requested:
-            trouble = (f"{spoken} could not be started - nothing on this system "
-                       f"answers to that name, so it may not be installed")
+            trouble = (
+                f"{spoken} could not be started - nothing on this system "
+                f"answers to that name, so it may not be installed"
+            )
         else:
-            trouble = (f"{spoken} was asked to start but no new application "
-                       f"appeared within {int(_LAUNCH_TIMEOUT)} seconds, so it "
-                       f"is NOT confirmed open - it may be slow to load, or not "
-                       f"installed under that name")
+            trouble = (
+                f"{spoken} was asked to start but no new application "
+                f"appeared within {int(_LAUNCH_TIMEOUT)} seconds, so it "
+                f"is NOT confirmed open - it may be slow to load, or not "
+                f"installed under that name"
+            )
 
         _log(player, f"JARVIS: {trouble}")
-        _say(player, "Tell the user, in one short sentence in their own "
-                     f"language: {trouble}")
+        _say(player, f"Tell the user, in one short sentence in their own language: {trouble}")
     except Exception as exc:
         print(f"[open_app] {type(exc).__name__}: {exc}")
-        _say(player, "Tell the user, in one short sentence in their own "
-                     f"language: opening {spoken} failed - {exc}")
+        _say(player, f"Tell the user, in one short sentence in their own language: opening {spoken} failed - {exc}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  Entry point
 # ─────────────────────────────────────────────────────────────────────────────
-def open_app(parameters=None, response=None, player=None,
-             session_memory=None) -> str:
+def open_app(parameters=None, response=None, player=None, session_memory=None) -> str:
     spoken = ((parameters or {}).get("app_name") or "").strip()
     if not spoken:
         return outcome.failed("open_app", "no application name was given")
 
     if _SYSTEM not in _LAUNCHERS:
         return outcome.failed(
-            "open_app", f"this operating system ({_SYSTEM}) is not supported",
+            "open_app",
+            f"this operating system ({_SYSTEM}) is not supported",
             app=spoken,
         )
 
@@ -426,17 +423,24 @@ def open_app(parameters=None, response=None, player=None,
             if appidentity.focus(candidate):
                 _log(player, f"JARVIS: {candidate.label} brought to the front.")
                 return outcome.done(
-                    "open_app", app=spoken, matched=candidate.label,
-                    already_running=True, focused=True, verified=True,
+                    "open_app",
+                    app=spoken,
+                    matched=candidate.label,
+                    already_running=True,
+                    focused=True,
+                    verified=True,
                 )
-        print(f"[open_app] {best.label} is running but no window could be "
-              f"raised — launching it instead, which is what brings back an "
-              f"app that is only in the tray.")
+        print(
+            f"[open_app] {best.label} is running but no window could be "
+            f"raised — launching it instead, which is what brings back an "
+            f"app that is only in the tray."
+        )
 
     # Check if this refers to an item inside an active/open File Explorer window
     if _SYSTEM == "Windows":
         try:
             from actions import windows_uia
+
             if windows_uia.is_available():
                 exp_win = windows_uia._get_file_explorer_window()
                 if exp_win:
@@ -456,7 +460,8 @@ def open_app(parameters=None, response=None, player=None,
     threading.Thread(
         target=_launch_and_verify,
         args=(player, spoken, launcher_name, before),
-        daemon=True, name=f"open-app-{spoken[:20]}",
+        daemon=True,
+        name=f"open-app-{spoken[:20]}",
     ).start()
 
     # Facts, not a sentence. Handing the model a finished English sentence is

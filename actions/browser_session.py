@@ -6,6 +6,7 @@ Attaches to an already-running Microsoft Edge instance with remote debugging ena
 Preserves existing authenticated sessions (Gmail, WhatsApp Web, Spotify, ChatGPT, Claude)
 without re-logging in or launching isolated/unauthenticated browser profiles.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -65,6 +66,7 @@ class BrowserSessionManager:
     Authoritative CDP Browser Session Controller.
     Attaches to live Microsoft Edge session via Chrome DevTools Protocol.
     """
+
     _instance: Optional[BrowserSessionManager] = None
     _singleton_lock = threading.Lock()
 
@@ -160,11 +162,24 @@ class BrowserSessionManager:
     def _try_auto_launch(self) -> bool:
         """Attempt to auto-launch Chrome or Edge with remote debugging if not already running."""
         import subprocess
+
         candidates = [
-            (r"C:\Program Files\Google\Chrome\Application\chrome.exe", os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\User Data\JarvisProfile")),
-            (r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe", os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\User Data\JarvisProfile")),
-            (r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe", os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\Edge\User Data\JarvisProfile")),
-            (r"C:\Program Files\Microsoft\Edge\Application\msedge.exe", os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\Edge\User Data\JarvisProfile")),
+            (
+                r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\User Data\JarvisProfile"),
+            ),
+            (
+                r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+                os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\User Data\JarvisProfile"),
+            ),
+            (
+                r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+                os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\Edge\User Data\JarvisProfile"),
+            ),
+            (
+                r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+                os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\Edge\User Data\JarvisProfile"),
+            ),
         ]
         for exe, profile in candidates:
             if os.path.exists(exe):
@@ -214,6 +229,7 @@ class BrowserSessionManager:
         # Start Playwright if needed
         if self._pw is None:
             from playwright.async_api import async_playwright
+
             self._pw = await async_playwright().start()
 
         # Connect over CDP
@@ -259,7 +275,7 @@ class BrowserSessionManager:
             except Exception:
                 title = "(unknown)"
             url = page.url
-            is_active = (page == self._active_page)
+            is_active = page == self._active_page
             tabs.append(TabInfo(index=i, title=title, url=url, is_active=is_active))
         return tabs
 
@@ -270,7 +286,7 @@ class BrowserSessionManager:
         await self._ensure_attached()
         pages = self._context.pages
         if tab_index < 0 or tab_index >= len(pages):
-            raise IndexError(f"Tab index {tab_index} out of range (0..{len(pages)-1})")
+            raise IndexError(f"Tab index {tab_index} out of range (0..{len(pages) - 1})")
         target_page = pages[tab_index]
         await target_page.bring_to_front()
         self._active_page = target_page
@@ -304,7 +320,11 @@ class BrowserSessionManager:
         pages = self._context.pages
         if not pages:
             return "No tabs to close"
-        idx = tab_index if tab_index is not None else (pages.index(self._active_page) if self._active_page in pages else 0)
+        idx = (
+            tab_index
+            if tab_index is not None
+            else (pages.index(self._active_page) if self._active_page in pages else 0)
+        )
         if idx < 0 or idx >= len(pages):
             raise IndexError(f"Tab index {idx} out of range")
         closing_page = pages[idx]
@@ -327,12 +347,14 @@ class BrowserSessionManager:
             return []
         frames_out: List[FrameInfo] = []
         for f in self._active_page.frames:
-            frames_out.append(FrameInfo(
-                name=f.name or "(unnamed)",
-                url=f.url,
-                origin=f.url.split("/")[2] if "://" in f.url else "",
-                is_main=(f == self._active_page.main_frame),
-            ))
+            frames_out.append(
+                FrameInfo(
+                    name=f.name or "(unnamed)",
+                    url=f.url,
+                    origin=f.url.split("/")[2] if "://" in f.url else "",
+                    is_main=(f == self._active_page.main_frame),
+                )
+            )
         return frames_out
 
     def get_all_frames(self) -> List[FrameInfo]:
@@ -401,10 +423,11 @@ def get_browser_session_manager(cdp_url: Optional[str] = None) -> BrowserSession
 
 try:
     from core import platform_hooks
+
     def _browser_nav(url: str):
         mgr = get_browser_session_manager()
         return mgr.open_tab(url)
+
     platform_hooks.register_hook("browser_navigate", _browser_nav)
 except Exception:
     pass
-

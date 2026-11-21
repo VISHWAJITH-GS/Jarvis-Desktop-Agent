@@ -15,6 +15,7 @@ After every action:
   - Strictly invalidates ephemeral index lookup table
   - Runs a fresh Perception extraction pass so the LLM always has current state.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -57,7 +58,10 @@ class ActionExecutor:
     """
     Executes trusted browser actions via CDP and stabilizes the DOM.
     """
-    def __init__(self, session_manager: Optional[BrowserSessionManager] = None, distiller: Optional[DOMDistiller] = None):
+
+    def __init__(
+        self, session_manager: Optional[BrowserSessionManager] = None, distiller: Optional[DOMDistiller] = None
+    ):
         self.session_mgr = session_manager or get_browser_session_manager()
         self.distiller = distiller or get_dom_distiller()
 
@@ -67,7 +71,9 @@ class ActionExecutor:
         if page and not page.is_closed():
             try:
                 # Allow any microtasks / pending DOM mutations to settle
-                await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 50)))")
+                await page.evaluate(
+                    "() => new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 50)))"
+                )
             except Exception:
                 pass
 
@@ -115,9 +121,13 @@ class ActionExecutor:
 
         # Dispatch real trusted hardware mouse events
         await cdp.send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": x, "y": y})
-        await cdp.send("Input.dispatchMouseEvent", {"type": "mousePressed", "x": x, "y": y, "button": "left", "clickCount": 1})
+        await cdp.send(
+            "Input.dispatchMouseEvent", {"type": "mousePressed", "x": x, "y": y, "button": "left", "clickCount": 1}
+        )
         await asyncio.sleep(0.05)
-        await cdp.send("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": x, "y": y, "button": "left", "clickCount": 1})
+        await cdp.send(
+            "Input.dispatchMouseEvent", {"type": "mouseReleased", "x": x, "y": y, "button": "left", "clickCount": 1}
+        )
 
         header, obs = await self._post_action_refresh(page, cdp)
         return f"Clicked [{index}] <{elem.role or elem.tag}> '{elem.aria_label or elem.text or elem.name}'.\n{header}\nUpdated Elements:\n{obs}"
@@ -148,17 +158,45 @@ class ActionExecutor:
 
         # 1. Click to focus
         await cdp.send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": x, "y": y})
-        await cdp.send("Input.dispatchMouseEvent", {"type": "mousePressed", "x": x, "y": y, "button": "left", "clickCount": 1})
-        await cdp.send("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": x, "y": y, "button": "left", "clickCount": 1})
+        await cdp.send(
+            "Input.dispatchMouseEvent", {"type": "mousePressed", "x": x, "y": y, "button": "left", "clickCount": 1}
+        )
+        await cdp.send(
+            "Input.dispatchMouseEvent", {"type": "mouseReleased", "x": x, "y": y, "button": "left", "clickCount": 1}
+        )
         await asyncio.sleep(0.05)
 
         # 2. Clear existing text (Ctrl+A -> Backspace)
-        await cdp.send("Input.dispatchKeyEvent", {"type": "rawKeyDown", "windowsVirtualKeyCode": 17, "code": "ControlLeft", "key": "Control", "modifiers": 2})
-        await cdp.send("Input.dispatchKeyEvent", {"type": "rawKeyDown", "windowsVirtualKeyCode": 65, "code": "KeyA", "key": "a", "modifiers": 2})
-        await cdp.send("Input.dispatchKeyEvent", {"type": "keyUp", "windowsVirtualKeyCode": 65, "code": "KeyA", "key": "a", "modifiers": 0})
-        await cdp.send("Input.dispatchKeyEvent", {"type": "keyUp", "windowsVirtualKeyCode": 17, "code": "ControlLeft", "key": "Control", "modifiers": 0})
-        await cdp.send("Input.dispatchKeyEvent", {"type": "rawKeyDown", "windowsVirtualKeyCode": 8, "code": "Backspace", "key": "Backspace"})
-        await cdp.send("Input.dispatchKeyEvent", {"type": "keyUp", "windowsVirtualKeyCode": 8, "code": "Backspace", "key": "Backspace"})
+        await cdp.send(
+            "Input.dispatchKeyEvent",
+            {
+                "type": "rawKeyDown",
+                "windowsVirtualKeyCode": 17,
+                "code": "ControlLeft",
+                "key": "Control",
+                "modifiers": 2,
+            },
+        )
+        await cdp.send(
+            "Input.dispatchKeyEvent",
+            {"type": "rawKeyDown", "windowsVirtualKeyCode": 65, "code": "KeyA", "key": "a", "modifiers": 2},
+        )
+        await cdp.send(
+            "Input.dispatchKeyEvent",
+            {"type": "keyUp", "windowsVirtualKeyCode": 65, "code": "KeyA", "key": "a", "modifiers": 0},
+        )
+        await cdp.send(
+            "Input.dispatchKeyEvent",
+            {"type": "keyUp", "windowsVirtualKeyCode": 17, "code": "ControlLeft", "key": "Control", "modifiers": 0},
+        )
+        await cdp.send(
+            "Input.dispatchKeyEvent",
+            {"type": "rawKeyDown", "windowsVirtualKeyCode": 8, "code": "Backspace", "key": "Backspace"},
+        )
+        await cdp.send(
+            "Input.dispatchKeyEvent",
+            {"type": "keyUp", "windowsVirtualKeyCode": 8, "code": "Backspace", "key": "Backspace"},
+        )
         await asyncio.sleep(0.05)
 
         # 3. Insert text via CDP Input.insertText (triggers real onInput/onChange events)
@@ -167,12 +205,27 @@ class ActionExecutor:
         # 4. Optional Enter key press
         if press_enter:
             await asyncio.sleep(0.05)
-            await cdp.send("Input.dispatchKeyEvent", {"type": "rawKeyDown", "windowsVirtualKeyCode": 13, "code": "Enter", "key": "Enter", "text": "\r", "unmodifiedText": "\r"})
-            await cdp.send("Input.dispatchKeyEvent", {"type": "keyUp", "windowsVirtualKeyCode": 13, "code": "Enter", "key": "Enter"})
+            await cdp.send(
+                "Input.dispatchKeyEvent",
+                {
+                    "type": "rawKeyDown",
+                    "windowsVirtualKeyCode": 13,
+                    "code": "Enter",
+                    "key": "Enter",
+                    "text": "\r",
+                    "unmodifiedText": "\r",
+                },
+            )
+            await cdp.send(
+                "Input.dispatchKeyEvent",
+                {"type": "keyUp", "windowsVirtualKeyCode": 13, "code": "Enter", "key": "Enter"},
+            )
 
         header, obs = await self._post_action_refresh(page, cdp)
         enter_str = " (pressed Enter)" if press_enter else ""
-        return f"Typed '{text}'{enter_str} into [{index}] <{elem.role or elem.tag}>.\n{header}\nUpdated Elements:\n{obs}"
+        return (
+            f"Typed '{text}'{enter_str} into [{index}] <{elem.role or elem.tag}>.\n{header}\nUpdated Elements:\n{obs}"
+        )
 
     async def scroll_page(self, direction: Literal["up", "down"] = "down", amount: int = 500) -> str:
         """
@@ -185,13 +238,16 @@ class ActionExecutor:
         cx, cy = 600.0, 400.0
         delta_y = float(amount if str(direction).lower() == "down" else -amount)
 
-        await cdp.send("Input.dispatchMouseEvent", {
-            "type": "mouseWheel",
-            "x": cx,
-            "y": cy,
-            "deltaX": 0.0,
-            "deltaY": delta_y,
-        })
+        await cdp.send(
+            "Input.dispatchMouseEvent",
+            {
+                "type": "mouseWheel",
+                "x": cx,
+                "y": cy,
+                "deltaX": 0.0,
+                "deltaY": delta_y,
+            },
+        )
 
         header, obs = await self._post_action_refresh(page, cdp, delay=0.3)
         return f"Scrolled {direction} by {amount}px.\n{header}\nUpdated Elements:\n{obs}"
@@ -211,13 +267,16 @@ class ActionExecutor:
         x, y = elem.bounding_box.center
         delta_y = 350.0 if str(direction).lower() == "down" else -350.0
 
-        await cdp.send("Input.dispatchMouseEvent", {
-            "type": "mouseWheel",
-            "x": x,
-            "y": y,
-            "deltaX": 0.0,
-            "deltaY": delta_y,
-        })
+        await cdp.send(
+            "Input.dispatchMouseEvent",
+            {
+                "type": "mouseWheel",
+                "x": x,
+                "y": y,
+                "deltaX": 0.0,
+                "deltaY": delta_y,
+            },
+        )
 
         header, obs = await self._post_action_refresh(page, cdp, delay=0.3)
         return f"Scrolled element [{index}] {direction}.\n{header}\nUpdated Elements:\n{obs}"
@@ -230,11 +289,14 @@ class ActionExecutor:
         page = self.session_mgr.active_page
         await self.distiller.remove_som_overlay(page)
 
-        key_info = KEY_MAP.get(key, {
-            "windowsVirtualKeyCode": 0,
-            "code": key,
-            "key": key,
-        })
+        key_info = KEY_MAP.get(
+            key,
+            {
+                "windowsVirtualKeyCode": 0,
+                "code": key,
+                "key": key,
+            },
+        )
 
         payload_down: Dict[str, Any] = {"type": "rawKeyDown", "key": key_info["key"]}
         if key_info.get("windowsVirtualKeyCode"):
@@ -326,6 +388,7 @@ class ActionExecutor:
         obs_text, _ = await self.distiller.distill_page(page, cdp, enable_som_overlay=enable_som)
         from core import outcome
         from core.permissions import set_untrusted_context
+
         set_untrusted_context(True)
         return outcome.untrusted("web", f"{tabs_text}\n\n{header}\nInteractive Elements in Viewport:\n{obs_text}")
 
@@ -341,6 +404,7 @@ def get_action_executor() -> ActionExecutor:
 
 
 # ── Synchronous Tool Handlers for Tool Registry / Planner Loop ────────────────
+
 
 def tool_click_element(parameters: dict, **kwargs) -> str:
     executor = get_action_executor()
@@ -467,10 +531,10 @@ TOOLS = [
             "properties": {
                 "enable_som": {
                     "type": "BOOLEAN",
-                    "description": "Whether to inject Set-of-Mark numbered visual overlays on interactive elements."
+                    "description": "Whether to inject Set-of-Mark numbered visual overlays on interactive elements.",
                 }
             },
-            "required": []
+            "required": [],
         },
         "handler": tool_observe_page,
     },
@@ -483,10 +547,10 @@ TOOLS = [
             "properties": {
                 "index": {
                     "type": "INTEGER",
-                    "description": "The [index] number of the element from the latest observation (e.g. 1, 2, 3)."
+                    "description": "The [index] number of the element from the latest observation (e.g. 1, 2, 3).",
                 }
             },
-            "required": ["index"]
+            "required": ["index"],
         },
         "handler": tool_click_element,
     },
@@ -499,18 +563,12 @@ TOOLS = [
             "properties": {
                 "index": {
                     "type": "INTEGER",
-                    "description": "The [index] number of the input/textbox element to type into."
+                    "description": "The [index] number of the input/textbox element to type into.",
                 },
-                "text": {
-                    "type": "STRING",
-                    "description": "The text to insert into the element."
-                },
-                "press_enter": {
-                    "type": "BOOLEAN",
-                    "description": "Whether to press Enter immediately after typing."
-                }
+                "text": {"type": "STRING", "description": "The text to insert into the element."},
+                "press_enter": {"type": "BOOLEAN", "description": "Whether to press Enter immediately after typing."},
             },
-            "required": ["index", "text"]
+            "required": ["index", "text"],
         },
         "handler": tool_input_text,
     },
@@ -521,16 +579,10 @@ TOOLS = [
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "direction": {
-                    "type": "STRING",
-                    "description": "Scroll direction: 'up' or 'down' (default: down)."
-                },
-                "amount": {
-                    "type": "INTEGER",
-                    "description": "Scroll distance in pixels (default: 500)."
-                }
+                "direction": {"type": "STRING", "description": "Scroll direction: 'up' or 'down' (default: down)."},
+                "amount": {"type": "INTEGER", "description": "Scroll distance in pixels (default: 500)."},
             },
-            "required": ["direction"]
+            "required": ["direction"],
         },
         "handler": tool_scroll_page,
     },
@@ -541,16 +593,10 @@ TOOLS = [
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "index": {
-                    "type": "INTEGER",
-                    "description": "The [index] number of the scrollable container element."
-                },
-                "direction": {
-                    "type": "STRING",
-                    "description": "Scroll direction: 'up' or 'down' (default: down)."
-                }
+                "index": {"type": "INTEGER", "description": "The [index] number of the scrollable container element."},
+                "direction": {"type": "STRING", "description": "Scroll direction: 'up' or 'down' (default: down)."},
             },
-            "required": ["index"]
+            "required": ["index"],
         },
         "handler": tool_scroll_element,
     },
@@ -563,10 +609,10 @@ TOOLS = [
             "properties": {
                 "key": {
                     "type": "STRING",
-                    "description": "Key name: 'Enter', 'Escape', 'Tab', 'ArrowDown', 'ArrowUp', 'Backspace', 'Space'."
+                    "description": "Key name: 'Enter', 'Escape', 'Tab', 'ArrowDown', 'ArrowUp', 'Backspace', 'Space'.",
                 }
             },
-            "required": ["key"]
+            "required": ["key"],
         },
         "handler": tool_press_key,
     },
@@ -579,10 +625,10 @@ TOOLS = [
             "properties": {
                 "url": {
                     "type": "STRING",
-                    "description": "The destination URL (e.g. 'https://mail.google.com', 'https://web.whatsapp.com')."
+                    "description": "The destination URL (e.g. 'https://mail.google.com', 'https://web.whatsapp.com').",
                 }
             },
-            "required": ["url"]
+            "required": ["url"],
         },
         "handler": tool_navigate_to,
     },
@@ -592,13 +638,8 @@ TOOLS = [
         "permission": "normal",
         "parameters": {
             "type": "OBJECT",
-            "properties": {
-                "tab_index": {
-                    "type": "INTEGER",
-                    "description": "Tab index from the open tabs list."
-                }
-            },
-            "required": ["tab_index"]
+            "properties": {"tab_index": {"type": "INTEGER", "description": "Tab index from the open tabs list."}},
+            "required": ["tab_index"],
         },
         "handler": tool_switch_tab,
     },
@@ -606,11 +647,7 @@ TOOLS = [
         "name": "go_back",
         "description": "Navigates back to the previous page in history in the active tab.",
         "permission": "normal",
-        "parameters": {
-            "type": "OBJECT",
-            "properties": {},
-            "required": []
-        },
+        "parameters": {"type": "OBJECT", "properties": {}, "required": []},
         "handler": tool_go_back,
     },
     {
@@ -619,13 +656,8 @@ TOOLS = [
         "permission": "normal",
         "parameters": {
             "type": "OBJECT",
-            "properties": {
-                "seconds": {
-                    "type": "NUMBER",
-                    "description": "Duration to wait in seconds (default: 2.0)."
-                }
-            },
-            "required": []
+            "properties": {"seconds": {"type": "NUMBER", "description": "Duration to wait in seconds (default: 2.0)."}},
+            "required": [],
         },
         "handler": tool_wait,
     },

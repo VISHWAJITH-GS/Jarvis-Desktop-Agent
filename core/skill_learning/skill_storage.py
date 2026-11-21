@@ -11,6 +11,7 @@ Folders structure:
     workflow_skills/
     user_skills/
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -81,22 +82,25 @@ def _init_sqlite_db() -> None:
                             legacy = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
                             skills_dict = legacy.get("skills", {})
                             for sid, meta in skills_dict.items():
-                                cur.execute("""
+                                cur.execute(
+                                    """
                                     INSERT OR REPLACE INTO skills
                                     (id, name, category, application, version, status, permissions, file, updated_at, last_validated_at)
                                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                                """, (
-                                    meta.get("id", sid),
-                                    meta.get("name", ""),
-                                    meta.get("category", "user"),
-                                    meta.get("application", ""),
-                                    meta.get("version", "1.0.0"),
-                                    meta.get("status", "draft"),
-                                    meta.get("permissions", "normal"),
-                                    meta.get("file", ""),
-                                    meta.get("updated_at", datetime.now().isoformat()),
-                                    meta.get("last_validated_at")
-                                ))
+                                """,
+                                    (
+                                        meta.get("id", sid),
+                                        meta.get("name", ""),
+                                        meta.get("category", "user"),
+                                        meta.get("application", ""),
+                                        meta.get("version", "1.0.0"),
+                                        meta.get("status", "draft"),
+                                        meta.get("permissions", "normal"),
+                                        meta.get("file", ""),
+                                        meta.get("updated_at", datetime.now().isoformat()),
+                                        meta.get("last_validated_at"),
+                                    ),
+                                )
                         except Exception as me:
                             print(f"[SkillStorage] ⚠️ Migration from manifest.json failed: {me}")
         finally:
@@ -106,11 +110,7 @@ def _init_sqlite_db() -> None:
 def _sync_legacy_manifest() -> None:
     """Sync state to legacy manifest.json for backward compatibility."""
     try:
-        manifest_data = {
-            "version": "1.0.0",
-            "updated_at": datetime.now().isoformat(),
-            "skills": {}
-        }
+        manifest_data = {"version": "1.0.0", "updated_at": datetime.now().isoformat(), "skills": {}}
         with _storage_lock:
             conn = sqlite3.connect(str(DB_PATH), timeout=15)
             conn.row_factory = sqlite3.Row
@@ -130,11 +130,7 @@ def _sync_legacy_manifest() -> None:
 def _read_manifest() -> dict:
     """Read skills manifest dictionary, backed by SQLite."""
     _ensure_directories()
-    manifest_data = {
-        "version": "1.0.0",
-        "updated_at": datetime.now().isoformat(),
-        "skills": {}
-    }
+    manifest_data = {"version": "1.0.0", "updated_at": datetime.now().isoformat(), "skills": {}}
     with _storage_lock:
         conn = sqlite3.connect(str(DB_PATH), timeout=15)
         conn.row_factory = sqlite3.Row
@@ -159,22 +155,25 @@ def _write_manifest(data: dict) -> None:
                 cur = conn.cursor()
                 cur.execute("DELETE FROM skills")
                 for sid, meta in data.get("skills", {}).items():
-                    cur.execute("""
+                    cur.execute(
+                        """
                         INSERT OR REPLACE INTO skills
                         (id, name, category, application, version, status, permissions, file, updated_at, last_validated_at)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (
-                        meta.get("id", sid),
-                        meta.get("name", ""),
-                        meta.get("category", "user"),
-                        meta.get("application", ""),
-                        meta.get("version", "1.0.0"),
-                        meta.get("status", "draft"),
-                        meta.get("permissions", "normal"),
-                        meta.get("file", ""),
-                        meta.get("updated_at", datetime.now().isoformat()),
-                        meta.get("last_validated_at")
-                    ))
+                    """,
+                        (
+                            meta.get("id", sid),
+                            meta.get("name", ""),
+                            meta.get("category", "user"),
+                            meta.get("application", ""),
+                            meta.get("version", "1.0.0"),
+                            meta.get("status", "draft"),
+                            meta.get("permissions", "normal"),
+                            meta.get("file", ""),
+                            meta.get("updated_at", datetime.now().isoformat()),
+                            meta.get("last_validated_at"),
+                        ),
+                    )
         finally:
             conn.close()
     _sync_legacy_manifest()
@@ -210,22 +209,25 @@ def save_skill(skill: SkillDefinition) -> Path:
         conn = sqlite3.connect(str(DB_PATH), timeout=15)
         try:
             with conn:
-                conn.execute("""
+                conn.execute(
+                    """
                     INSERT OR REPLACE INTO skills
                     (id, name, category, application, version, status, permissions, file, updated_at, last_validated_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    skill.id,
-                    skill.name,
-                    skill.category,
-                    skill.application,
-                    skill.version,
-                    skill.status,
-                    skill.permissions,
-                    rel_file,
-                    now_str,
-                    getattr(skill, "last_validated_at", None)
-                ))
+                """,
+                    (
+                        skill.id,
+                        skill.name,
+                        skill.category,
+                        skill.application,
+                        skill.version,
+                        skill.status,
+                        skill.permissions,
+                        rel_file,
+                        now_str,
+                        getattr(skill, "last_validated_at", None),
+                    ),
+                )
         finally:
             conn.close()
 
@@ -367,6 +369,7 @@ def backup_skill(skill_id: str) -> Optional[Path]:
 
 class SkillStorage:
     """Object-oriented wrapper around functional skill storage APIs."""
+
     save_skill = staticmethod(save_skill)
     load_skill = staticmethod(load_skill)
     list_skills = staticmethod(list_skills)

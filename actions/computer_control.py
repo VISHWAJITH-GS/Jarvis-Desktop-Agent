@@ -1,4 +1,4 @@
-#computer_control.py
+# computer_control.py
 from __future__ import annotations
 import io
 import json
@@ -39,11 +39,12 @@ def _cc_log(msg: str) -> None:
 def _configure_pyautogui(module) -> None:
     """Settings that used to sit beside the import, run once when it happens."""
     module.FAILSAFE = True
-    module.PAUSE    = 0.05
+    module.PAUSE = 0.05
 
 
 pyautogui = LazyModule("pyautogui", _configure_pyautogui)
 pyperclip = LazyModule("pyperclip")
+
 
 def _base_dir() -> Path:
     if getattr(sys, "frozen", False):
@@ -51,9 +52,10 @@ def _base_dir() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
-_BASE         = _base_dir()
-_CONFIG_PATH  = _BASE / "config" / "api_keys.json"
-_MEMORY_PATH  = _BASE / "memory" / "long_term.json"
+_BASE = _base_dir()
+_CONFIG_PATH = _BASE / "config" / "api_keys.json"
+_MEMORY_PATH = _BASE / "memory" / "long_term.json"
+
 
 def _load_config() -> dict:
     try:
@@ -61,10 +63,10 @@ def _load_config() -> dict:
     except Exception:
         return {}
 
+
 def _platform_os() -> str:
-    return {"Windows": "windows", "Darwin": "mac", "Linux": "linux"}.get(
-        platform.system(), "linux"
-    )
+    return {"Windows": "windows", "Darwin": "mac", "Linux": "linux"}.get(platform.system(), "linux")
+
 
 def _get_os() -> str:
     return _load_config().get("os_system", _platform_os()).lower()
@@ -73,6 +75,7 @@ def _get_os() -> str:
 def _get_api_key() -> str:
     try:
         from memory.config_manager import get_gemini_key
+
         k = get_gemini_key()
         if k:
             return k
@@ -80,9 +83,9 @@ def _get_api_key() -> str:
         pass
     return _load_config().get("gemini_api_key", "")
 
-_SAFE_SCREENSHOT_ROOTS = (
-    Path.home(),
-)
+
+_SAFE_SCREENSHOT_ROOTS = (Path.home(),)
+
 
 def _safe_screenshot_path(requested: str | None) -> Path:
     fallback = Path.home() / "Desktop" / "jarvis_screenshot.png"
@@ -97,6 +100,7 @@ def _safe_screenshot_path(requested: str | None) -> Path:
     except Exception:
         pass
     return fallback
+
 
 def _require_pyautogui():
     """Refuse early, with the sentence that says what to install.
@@ -116,13 +120,39 @@ def _require_pyperclip() -> bool:
     survive it."""
     return _PYPERCLIP
 
+
 _FIRST_NAMES = [
-    "Alex", "Jordan", "Taylor", "Morgan", "Casey", "Riley", "Drew", "Quinn",
-    "Avery", "Blake", "Cameron", "Dakota", "Emerson", "Finley", "Harper",
+    "Alex",
+    "Jordan",
+    "Taylor",
+    "Morgan",
+    "Casey",
+    "Riley",
+    "Drew",
+    "Quinn",
+    "Avery",
+    "Blake",
+    "Cameron",
+    "Dakota",
+    "Emerson",
+    "Finley",
+    "Harper",
 ]
 _LAST_NAMES = [
-    "Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller",
-    "Davis", "Wilson", "Moore", "Taylor", "Anderson", "Thomas", "Jackson",
+    "Smith",
+    "Johnson",
+    "Williams",
+    "Brown",
+    "Jones",
+    "Garcia",
+    "Miller",
+    "Davis",
+    "Wilson",
+    "Moore",
+    "Taylor",
+    "Anderson",
+    "Thomas",
+    "Jackson",
 ]
 _DOMAINS = ["gmail.com", "yahoo.com", "outlook.com", "proton.me", "mail.com"]
 
@@ -141,8 +171,8 @@ def _random_data(data_type: str) -> str:
 
     if dt == "email":
         first = random.choice(_FIRST_NAMES).lower()
-        last  = random.choice(_LAST_NAMES).lower()
-        num   = random.randint(10, 999)
+        last = random.choice(_LAST_NAMES).lower()
+        num = random.randint(10, 999)
         return f"{first}.{last}{num}@{random.choice(_DOMAINS)}"
 
     if dt == "username":
@@ -150,7 +180,7 @@ def _random_data(data_type: str) -> str:
 
     if dt == "password":
         chars = string.ascii_letters + string.digits + "!@#$%"
-        raw   = (
+        raw = (
             random.choice(string.ascii_uppercase)
             + random.choice(string.digits)
             + random.choice("!@#$%")
@@ -159,7 +189,7 @@ def _random_data(data_type: str) -> str:
         return "".join(random.sample(raw, len(raw)))
 
     if dt == "phone":
-        return f"+1{random.randint(200,999)}{random.randint(1_000_000, 9_999_999)}"
+        return f"+1{random.randint(200, 999)}{random.randint(1_000_000, 9_999_999)}"
 
     if dt == "birthday":
         y = random.randint(1980, 2000)
@@ -168,7 +198,7 @@ def _random_data(data_type: str) -> str:
         return f"{m:02d}/{d:02d}/{y}"
 
     if dt == "address":
-        num    = random.randint(100, 9999)
+        num = random.randint(100, 9999)
         street = random.choice(["Main St", "Oak Ave", "Park Blvd", "Elm St", "Cedar Ln"])
         return f"{num} {street}"
 
@@ -180,16 +210,18 @@ def _random_data(data_type: str) -> str:
 
     return f"random_{data_type}_{random.randint(1000, 9999)}"
 
+
 def _user_profile() -> dict:
     """Read identity fields from long-term memory."""
     try:
         if _MEMORY_PATH.exists():
-            data     = json.loads(_MEMORY_PATH.read_text(encoding="utf-8"))
+            data = json.loads(_MEMORY_PATH.read_text(encoding="utf-8"))
             identity = data.get("identity", {})
             return {k: v.get("value", "") for k, v in identity.items()}
     except Exception:
         pass
     return {}
+
 
 def _is_code_or_multiline(text: str) -> bool:
     """Detect whether a text snippet contains code or multi-line formatted text."""
@@ -198,10 +230,26 @@ def _is_code_or_multiline(text: str) -> bool:
     if "\n" in text or "\r" in text:
         return True
     code_indicators = [
-        "#include", "#define", "import ", "from ", "def ", "class ",
-        "int main", "void ", "public static", "System.out", "console.log",
-        "<html>", "<!doctype", "select ", "insert into", "create table",
-        "{", "}", "();", "};",
+        "#include",
+        "#define",
+        "import ",
+        "from ",
+        "def ",
+        "class ",
+        "int main",
+        "void ",
+        "public static",
+        "System.out",
+        "console.log",
+        "<html>",
+        "<!doctype",
+        "select ",
+        "insert into",
+        "create table",
+        "{",
+        "}",
+        "();",
+        "};",
     ]
     t_lower = text.lower()
     return any(ind in t_lower for ind in code_indicators)
@@ -224,6 +272,7 @@ def _insert_code(code: str, editor_title: Optional[str] = None, language: Option
         active_title = ""
         try:
             from actions import windows_uia
+
             win_info = windows_uia.get_active_window()
             if isinstance(win_info, dict):
                 active_title = (win_info.get("title") or "").lower()
@@ -336,8 +385,8 @@ def _press(key: str) -> str:
 
 def _scroll(direction: str = "down", amount: int = 3) -> str:
     _require_pyautogui()
-    vertical   = direction in ("up", "down")
-    clicks     = amount if direction in ("up", "right") else -amount
+    vertical = direction in ("up", "down")
+    clicks = amount if direction in ("up", "right") else -amount
     pyautogui.scroll(clicks) if vertical else pyautogui.hscroll(clicks)
     return f"Scrolled {direction} ×{amount}"
 
@@ -377,7 +426,7 @@ def _clipboard_paste(text: str) -> str:
 def _screenshot(save_path: str | None = None) -> str:
     _require_pyautogui()
     path = _safe_screenshot_path(save_path)
-    img  = pyautogui.screenshot()
+    img = pyautogui.screenshot()
     img.save(str(path))
     return f"Screenshot saved: {path}"
 
@@ -390,6 +439,7 @@ def _clear_field() -> str:
     pyautogui.press("delete")
     return "Field cleared"
 
+
 def _focus_window(title: str) -> str:
     os_name = _get_os()
 
@@ -398,7 +448,9 @@ def _focus_window(title: str) -> str:
             script = f'(New-Object -ComObject WScript.Shell).AppActivate("{title}")'
             subprocess.run(
                 ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
-                capture_output=True, timeout=5, **_WIN_HIDE,
+                capture_output=True,
+                timeout=5,
+                **_WIN_HIDE,
             )
             time.sleep(0.3)
             return f"Focused window: {title}"
@@ -413,7 +465,8 @@ def _focus_window(title: str) -> str:
         try:
             subprocess.run(
                 ["osascript", "-e", script],
-                capture_output=True, timeout=5,
+                capture_output=True,
+                timeout=5,
             )
             time.sleep(0.3)
             return f"Focused window: {title}"
@@ -424,7 +477,8 @@ def _focus_window(title: str) -> str:
         try:
             result = subprocess.run(
                 ["wmctrl", "-a", title],
-                capture_output=True, timeout=5,
+                capture_output=True,
+                timeout=5,
             )
             if result.returncode == 0:
                 time.sleep(0.3)
@@ -434,7 +488,8 @@ def _focus_window(title: str) -> str:
         try:
             result = subprocess.run(
                 ["xdotool", "search", "--name", title, "windowactivate"],
-                capture_output=True, timeout=5,
+                capture_output=True,
+                timeout=5,
             )
             time.sleep(0.3)
             return f"Focused window: {title}"
@@ -444,6 +499,7 @@ def _focus_window(title: str) -> str:
             return f"focus_window (Linux) failed: {e}"
 
     return f"focus_window: unknown OS '{os_name}'"
+
 
 def _close_app(app_name: str, confirmed_index: int | None = None) -> str:
     """Close the application the user named — that one, and never this one.
@@ -494,12 +550,15 @@ def _close_app(app_name: str, confirmed_index: int | None = None) -> str:
         closed_win = False
         try:
             import win32gui, win32con
+
             def _find_explorer_windows():
                 hwnds = []
+
                 def _enum(h, _):
                     if win32gui.GetClassName(h) == "CabinetWClass" and win32gui.IsWindowVisible(h):
                         hwnds.append(h)
                     return True
+
                 win32gui.EnumWindows(_enum, None)
                 return hwnds
 
@@ -523,8 +582,7 @@ def _close_app(app_name: str, confirmed_index: int | None = None) -> str:
     if not appidentity._PSUTIL:
         return outcome.failed(
             "close_app",
-            "psutil is not installed, so running applications cannot be found "
-            "- run: pip install psutil",
+            "psutil is not installed, so running applications cannot be found - run: pip install psutil",
             app=app_name,
         )
 
@@ -552,8 +610,7 @@ def _close_app(app_name: str, confirmed_index: int | None = None) -> str:
             )
         return outcome.failed(
             "close_app",
-            "no running application matches that name - it may already be "
-            "closed, or be running under a different name",
+            "no running application matches that name - it may already be closed, or be running under a different name",
             app=app_name,
         )
 
@@ -565,7 +622,7 @@ def _close_app(app_name: str, confirmed_index: int | None = None) -> str:
     for match in matches:
         by_name.setdefault(match.label, []).append(match)
 
-    ranked = list(by_name.items())          # [(name, [matches...]), ...]
+    ranked = list(by_name.items())  # [(name, [matches...]), ...]
     target_name, group = ranked[0]
 
     # Two DIFFERENT applications that answer equally well is a question, not a
@@ -580,10 +637,10 @@ def _close_app(app_name: str, confirmed_index: int | None = None) -> str:
                 "close_app",
                 f"more than one application matches '{app_name}' equally well: "
                 f"{', '.join(tied[:4])} - which one should be closed?",
-                app=app_name, candidates=len(tied),
+                app=app_name,
+                candidates=len(tied),
             )
-        _cc_log(f"close_app: '{app_name}' -> {target_name} "
-              f"(also matched: {', '.join(n for n, _ in ranked[1:5])})")
+        _cc_log(f"close_app: '{app_name}' -> {target_name} (also matched: {', '.join(n for n, _ in ranked[1:5])})")
 
     # Safety check if target is a special Windows application that shouldn't be terminated by process
     lower_target = target_name.lower()
@@ -592,12 +649,15 @@ def _close_app(app_name: str, confirmed_index: int | None = None) -> str:
         closed_win = False
         try:
             import win32gui, win32con
+
             def _find_explorer_windows():
                 hwnds = []
+
                 def _enum(h, _):
                     if win32gui.GetClassName(h) == "CabinetWClass" and win32gui.IsWindowVisible(h):
                         hwnds.append(h)
                     return True
+
                 win32gui.EnumWindows(_enum, None)
                 return hwnds
 
@@ -634,14 +694,20 @@ def _close_app(app_name: str, confirmed_index: int | None = None) -> str:
             uia_res = windows_uia.close_window(app_name)
         if uia_res.get("status") == "success" or uia_res.get("verified"):
             return outcome.done(
-                "close_app", app=app_name, closed=target_name,
-                processes=1, verified=True,
+                "close_app",
+                app=app_name,
+                closed=target_name,
+                processes=1,
+                verified=True,
             )
 
     if closed and not still_open:
         return outcome.done(
-            "close_app", app=app_name, closed=target_name,
-            processes=closed, verified=True,
+            "close_app",
+            app=app_name,
+            closed=target_name,
+            processes=closed,
+            verified=True,
         )
 
     if closed and still_open:
@@ -650,14 +716,16 @@ def _close_app(app_name: str, confirmed_index: int | None = None) -> str:
         # `unverified` because that is exactly what it is.
         return outcome.unverified(
             "close_app",
-            f"{closed} of {closed + still_open} processes closed; the rest are "
-            f"still running - {reason}",
-            app=app_name, closed=target_name,
+            f"{closed} of {closed + still_open} processes closed; the rest are still running - {reason}",
+            app=app_name,
+            closed=target_name,
         )
 
     return outcome.failed(
-        "close_app", reason or "the application did not close",
-        app=app_name, matched=target_name,
+        "close_app",
+        reason or "the application did not close",
+        app=app_name,
+        matched=target_name,
     )
 
 
@@ -672,9 +740,9 @@ def _screen_find(description: str) -> tuple[int, int] | None:
         from google.genai import types as gtypes
 
         _require_pyautogui()
-        w, h  = pyautogui.size()
-        img   = pyautogui.screenshot()
-        buf   = io.BytesIO()
+        w, h = pyautogui.size()
+        img = pyautogui.screenshot()
+        buf = io.BytesIO()
         img.save(buf, format="PNG")
         image_bytes = buf.getvalue()
 
@@ -686,9 +754,11 @@ def _screen_find(description: str) -> tuple[int, int] | None:
         )
 
         from core import gemini
+
         response = gemini.call(
             [gtypes.Part.from_bytes(data=image_bytes, mime_type="image/png"), prompt],
-            tier=gemini.FAST, timeout_ms=20_000,
+            tier=gemini.FAST,
+            timeout_ms=20_000,
         )
         if response is None:
             return None
@@ -705,6 +775,7 @@ def _screen_find(description: str) -> tuple[int, int] | None:
         _cc_log(f"⚠️ screen_find failed: {e}")
 
     return None
+
 
 def computer_control(
     parameters: dict,
@@ -769,7 +840,6 @@ def computer_control(
     _cc_log(f"▶ {action}  {params}")
 
     try:
-
         if action in ("insert_code", "type_code"):
             code = params.get("code") or params.get("text", "")
             editor = params.get("editor") or params.get("editor_title") or params.get("app_name") or params.get("title")
@@ -809,12 +879,14 @@ def computer_control(
 
         if action == "drag":
             return _drag(
-                int(params.get("x1", 0)), int(params.get("y1", 0)),
-                int(params.get("x2", 0)), int(params.get("y2", 0)),
+                int(params.get("x1", 0)),
+                int(params.get("y1", 0)),
+                int(params.get("x2", 0)),
+                int(params.get("y2", 0)),
             )
 
         if action in ("hotkey", "key_combination", "shortcut"):
-            raw  = params.get("keys") or params.get("key", "")
+            raw = params.get("keys") or params.get("key", "")
             keys = [k.strip() for k in raw.split("+")] if isinstance(raw, str) else raw
             return _hotkey(*keys)
 
@@ -936,12 +1008,9 @@ def computer_control(
 
         if action in ("open_app", "open_application", "launch_app", "start_app"):
             from actions.open_app import open_app
+
             target_app = (
-                params.get("app_name")
-                or params.get("name")
-                or params.get("text")
-                or params.get("application")
-                or ""
+                params.get("app_name") or params.get("name") or params.get("text") or params.get("application") or ""
             )
             return open_app({"name": target_app}, player=player)
 
@@ -969,7 +1038,11 @@ def computer_control(
                 or ""
             )
             res = windows_uia.minimize_window(target_app)
-            return outcome.done("minimize_app", app=target_app, **res) if res.get("status") == "success" else outcome.failed("minimize_app", res.get("message", "Failed to minimize"))
+            return (
+                outcome.done("minimize_app", app=target_app, **res)
+                if res.get("status") == "success"
+                else outcome.failed("minimize_app", res.get("message", "Failed to minimize"))
+            )
 
         if action in ("maximize_app", "maximize_window", "maximize"):
             target_app = (
@@ -981,7 +1054,11 @@ def computer_control(
                 or ""
             )
             res = windows_uia.maximize_window(target_app)
-            return outcome.done("maximize_app", app=target_app, **res) if res.get("status") == "success" else outcome.failed("maximize_app", res.get("message", "Failed to maximize"))
+            return (
+                outcome.done("maximize_app", app=target_app, **res)
+                if res.get("status") == "success"
+                else outcome.failed("maximize_app", res.get("message", "Failed to maximize"))
+            )
 
         if action in ("switch_app", "switch_window", "focus_window", "activate_window"):
             target_app = (
@@ -993,7 +1070,11 @@ def computer_control(
                 or ""
             )
             res = windows_uia.switch_window(target_app)
-            return outcome.done("switch_app", app=target_app, **res) if res.get("status") == "success" else outcome.failed("switch_app", res.get("message", "Failed to switch window"))
+            return (
+                outcome.done("switch_app", app=target_app, **res)
+                if res.get("status") == "success"
+                else outcome.failed("switch_app", res.get("message", "Failed to switch window"))
+            )
 
         if action in ("list_running_apps", "list_applications", "running_apps", "open_apps"):
             wins = windows_uia.list_open_windows()
@@ -1005,15 +1086,15 @@ def computer_control(
             return outcome.done("get_active_window", **act)
 
         if action == "random_data":
-            dt     = params.get("type", "name")
+            dt = params.get("type", "name")
             result = _random_data(dt)
             _cc_log(f"🎲 random {dt} → {result}")
             return result
 
         if action == "user_data":
-            field   = params.get("field", "name")
+            field = params.get("field", "name")
             profile = _user_profile()
-            value   = profile.get(field, "")
+            value = profile.get(field, "")
             if not value:
                 value = _random_data(field)
                 _cc_log(f"⚠️ No '{field}' in memory, using random: {value}")
@@ -1054,15 +1135,15 @@ TOOL = {
             },
             "code": {
                 "type": "STRING",
-                "description": "Code snippet or multiline text to insert faithfully via clipboard into editor."
+                "description": "Code snippet or multiline text to insert faithfully via clipboard into editor.",
             },
             "language": {
                 "type": "STRING",
-                "description": "Programming language (python, c, cpp, java, javascript, html, css, sql)"
+                "description": "Programming language (python, c, cpp, java, javascript, html, css, sql)",
             },
             "editor": {
                 "type": "STRING",
-                "description": "Target editor window name (e.g. Notepad, IDLE, Visual Studio Code)"
+                "description": "Target editor window name (e.g. Notepad, IDLE, Visual Studio Code)",
             },
             "app_name": {
                 "type": "STRING",
@@ -1074,68 +1155,24 @@ TOOL = {
                     "For close_app: set true only after the tool asked which "
                     "application was meant AND the user answered. Pass their "
                     "answer in 'app_name'."
-                )
+                ),
             },
-            "text": {
-                "type": "STRING",
-                "description": "Text to type or paste"
-            },
-            "x": {
-                "type": "INTEGER",
-                "description": "X coordinate"
-            },
-            "y": {
-                "type": "INTEGER",
-                "description": "Y coordinate"
-            },
-            "keys": {
-                "type": "STRING",
-                "description": "Key combination e.g. 'ctrl+c'"
-            },
-            "key": {
-                "type": "STRING",
-                "description": "Single key e.g. 'enter'"
-            },
-            "direction": {
-                "type": "STRING",
-                "description": "up | down | left | right"
-            },
-            "amount": {
-                "type": "INTEGER",
-                "description": "Scroll amount (default: 3)"
-            },
-            "seconds": {
-                "type": "NUMBER",
-                "description": "Seconds to wait"
-            },
-            "title": {
-                "type": "STRING",
-                "description": "Window title for focus_window"
-            },
-            "description": {
-                "type": "STRING",
-                "description": "Element description for screen_find/screen_click"
-            },
-            "type": {
-                "type": "STRING",
-                "description": "Data type for random_data"
-            },
-            "field": {
-                "type": "STRING",
-                "description": "Field for user_data: name|email|city"
-            },
-            "clear_first": {
-                "type": "BOOLEAN",
-                "description": "Clear field before typing (default: true)"
-            },
-            "path": {
-                "type": "STRING",
-                "description": "Save path for screenshot"
-            }
+            "text": {"type": "STRING", "description": "Text to type or paste"},
+            "x": {"type": "INTEGER", "description": "X coordinate"},
+            "y": {"type": "INTEGER", "description": "Y coordinate"},
+            "keys": {"type": "STRING", "description": "Key combination e.g. 'ctrl+c'"},
+            "key": {"type": "STRING", "description": "Single key e.g. 'enter'"},
+            "direction": {"type": "STRING", "description": "up | down | left | right"},
+            "amount": {"type": "INTEGER", "description": "Scroll amount (default: 3)"},
+            "seconds": {"type": "NUMBER", "description": "Seconds to wait"},
+            "title": {"type": "STRING", "description": "Window title for focus_window"},
+            "description": {"type": "STRING", "description": "Element description for screen_find/screen_click"},
+            "type": {"type": "STRING", "description": "Data type for random_data"},
+            "field": {"type": "STRING", "description": "Field for user_data: name|email|city"},
+            "clear_first": {"type": "BOOLEAN", "description": "Clear field before typing (default: true)"},
+            "path": {"type": "STRING", "description": "Save path for screenshot"},
         },
-        "required": [
-            "action"
-        ]
+        "required": ["action"],
     },
     "handler": computer_control,
 }

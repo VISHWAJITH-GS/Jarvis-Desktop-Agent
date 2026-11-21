@@ -13,6 +13,7 @@ Capabilities:
 - Persistent across JARVIS restarts via local JSON database and Windows Task Scheduler
 - Verification of persistence and scheduling before reporting success
 """
+
 from __future__ import annotations
 
 import json
@@ -45,6 +46,7 @@ def _reminders_dir() -> Path:
     """Return per-user reminders directory outside repository, migrating existing repo data if present."""
     try:
         from memory.config_manager import get_user_data_dir
+
         target_dir = get_user_data_dir() / "reminders"
     except Exception:
         target_dir = Path.home() / ".jarvis" / "reminders"
@@ -112,21 +114,24 @@ def _init_sqlite_db() -> None:
                         if count == 0:
                             data = json.loads(json_p.read_text(encoding="utf-8"))
                             for item in data:
-                                cur.execute("""
+                                cur.execute(
+                                    """
                                     INSERT OR REPLACE INTO reminders 
                                     (id, task_name, message, due_time, status, recurrence, created_at, completed_at, error)
                                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                                """, (
-                                    item.get("id"),
-                                    item.get("task_name"),
-                                    item.get("message", ""),
-                                    item.get("due_time") or item.get("target_time", ""),
-                                    item.get("status", "pending"),
-                                    item.get("recurrence", "none"),
-                                    item.get("created_at", datetime.now().isoformat()),
-                                    item.get("completed_at"),
-                                    item.get("error")
-                                ))
+                                """,
+                                    (
+                                        item.get("id"),
+                                        item.get("task_name"),
+                                        item.get("message", ""),
+                                        item.get("due_time") or item.get("target_time", ""),
+                                        item.get("status", "pending"),
+                                        item.get("recurrence", "none"),
+                                        item.get("created_at", datetime.now().isoformat()),
+                                        item.get("completed_at"),
+                                        item.get("error"),
+                                    ),
+                                )
                             print(f"[Reminder] 🔒 Auto-migrated {len(data)} reminders from JSON to SQLite.")
                     except Exception as me:
                         print(f"[Reminder] ⚠️ JSON migration error: {me}")
@@ -135,19 +140,15 @@ def _init_sqlite_db() -> None:
 
 
 def _sanitise(text: str, max_len: int = 200) -> str:
-    return (
-        text.replace("\\", "")
-        .replace('"', "")
-        .replace("'", "")
-        .replace("\n", " ")
-        .replace("\r", "")
-        .strip()
-    )[:max_len]
+    return (text.replace("\\", "").replace('"', "").replace("'", "").replace("\n", " ").replace("\r", "").strip())[
+        :max_len
+    ]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  Local Persistence (SQLite Database with Atomic Transactions)
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def _load_db() -> List[dict]:
     _init_sqlite_db()
@@ -176,21 +177,24 @@ def _save_db(reminders: List[dict]) -> bool:
                 # Clear and insert all to preserve exact in-memory representation
                 cur.execute("DELETE FROM reminders")
                 for item in reminders:
-                    cur.execute("""
+                    cur.execute(
+                        """
                         INSERT OR REPLACE INTO reminders
                         (id, task_name, message, due_time, status, recurrence, created_at, completed_at, error)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (
-                        item.get("id"),
-                        item.get("task_name"),
-                        item.get("message", ""),
-                        item.get("due_time") or item.get("target_time", ""),
-                        item.get("status", "pending"),
-                        item.get("recurrence", "none"),
-                        item.get("created_at", item.get("created_at") or datetime.now().isoformat()),
-                        item.get("completed_at"),
-                        item.get("error")
-                    ))
+                    """,
+                        (
+                            item.get("id"),
+                            item.get("task_name"),
+                            item.get("message", ""),
+                            item.get("due_time") or item.get("target_time", ""),
+                            item.get("status", "pending"),
+                            item.get("recurrence", "none"),
+                            item.get("created_at", item.get("created_at") or datetime.now().isoformat()),
+                            item.get("completed_at"),
+                            item.get("error"),
+                        ),
+                    )
             # Sync mirror to legacy JSON for backward compatibility with external tools/tests
             try:
                 _json_db_path().write_text(json.dumps(reminders, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -207,6 +211,7 @@ def _save_db(reminders: List[dict]) -> bool:
 # ─────────────────────────────────────────────────────────────────────────────
 #  Date & Time Parsing (Local Timezone & Natural Language)
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def parse_datetime(
     date_str: Optional[str] = None,
@@ -315,12 +320,16 @@ def parse_datetime(
             target_dt += timedelta(days=1)
         return target_dt, None
 
-    return None, "I couldn't clearly understand the date and time. Could you please specify when you'd like the reminder (for example, 'tomorrow at 7 AM')?"
+    return (
+        None,
+        "I couldn't clearly understand the date and time. Could you please specify when you'd like the reminder (for example, 'tomorrow at 7 AM')?",
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  OS Scheduling (Windows Task Scheduler / cron / launchd)
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def _ensure_notifier_script() -> Path:
     """Ensure the single authoritative reminder notifier script exists."""
@@ -442,7 +451,9 @@ if __name__ == "__main__":
     return script_path
 
 
-def _schedule_task(task_name: str, reminder_id: str, target_dt: datetime, message: str, recurrence: str = "none") -> bool:
+def _schedule_task(
+    task_name: str, reminder_id: str, target_dt: datetime, message: str, recurrence: str = "none"
+) -> bool:
     """Schedule the reminder task using the OS scheduler invoking the single authoritative notifier."""
     if not _IS_WINDOWS:
         return True  # Managed purely via persistent DB on non-Windows
@@ -512,7 +523,11 @@ def _schedule_task(task_name: str, reminder_id: str, target_dt: datetime, messag
     xml_path.write_text(xml_content, encoding="utf-16")
     res = subprocess.run(
         ["schtasks", "/Create", "/TN", task_name, "/XML", str(xml_path), "/F"],
-        capture_output=True, text=True, encoding="utf-8", errors="replace", **_CNW,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        **_CNW,
     )
     xml_path.unlink(missing_ok=True)
     return res.returncode == 0
@@ -524,17 +539,21 @@ def _unschedule_task(task_name: str) -> bool:
     try:
         res = subprocess.run(
             ["schtasks", "/Delete", "/TN", task_name, "/F"],
-            capture_output=True, text=True, encoding="utf-8", errors="replace", **_CNW,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            **_CNW,
         )
         return res.returncode == 0
     except Exception:
         return False
 
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 #  Core Operations: Create, List, Edit, Delete, Complete
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def create_reminder(
     message: str,
@@ -642,7 +661,11 @@ def list_reminders(scope: str = "upcoming") -> outcome.ActionResult:
         summary_items.append(f"• {time_str}{rec}: {r.get('message')}")
 
     count = len(filtered)
-    msg = f"Found {count} {scope} reminder{'s' if count != 1 else ''}:\n" + "\n".join(summary_items) if count else f"You have no {scope} reminders."
+    msg = (
+        f"Found {count} {scope} reminder{'s' if count != 1 else ''}:\n" + "\n".join(summary_items)
+        if count
+        else f"You have no {scope} reminders."
+    )
 
     return outcome.ActionResult(
         status=outcome.STATUS_DONE,
@@ -687,7 +710,9 @@ def edit_reminder(
 
     # Reschedule
     due_dt = datetime.strptime(target["due_time"], "%Y-%m-%dT%H:%M:%S")
-    scheduled = _schedule_task(target["task_name"], target["id"], due_dt, target["message"], recurrence=target.get("recurrence", "none"))
+    scheduled = _schedule_task(
+        target["task_name"], target["id"], due_dt, target["message"], recurrence=target.get("recurrence", "none")
+    )
     target["scheduled"] = scheduled
     saved = _save_db(reminders)
 
@@ -765,6 +790,7 @@ def complete_reminder(identifier: str) -> outcome.ActionResult:
 # ─────────────────────────────────────────────────────────────────────────────
 #  Unified Tool Handler for action_loader
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def reminder(
     parameters: dict = None,
@@ -844,7 +870,12 @@ def reminder(
     if action in ("edit", "edit_reminder", "reschedule", "update"):
         target_id = p.get("id") or query
         dt, err = parse_datetime(date_str, time_str, natural_text=msg)
-        res = edit_reminder(target_id, new_message=msg if msg != target_id else None, new_due_time=dt, new_recurrence=recurrence if recurrence != "none" else None)
+        res = edit_reminder(
+            target_id,
+            new_message=msg if msg != target_id else None,
+            new_due_time=dt,
+            new_recurrence=recurrence if recurrence != "none" else None,
+        )
         if player and hasattr(player, "show_reminders"):
             player.show_reminders("upcoming")
         return res.to_speech_text()

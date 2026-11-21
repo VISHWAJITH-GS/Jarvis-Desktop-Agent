@@ -74,8 +74,9 @@ user's chosen provider:
 
 ```python
 from core import gemini
-text = gemini.text(prompt, tier=gemini.FAST)       # short answers
-data = gemini.as_json(prompt, tier=gemini.SMART)    # structured, may return None
+
+text = gemini.text(prompt, tier=gemini.FAST)  # short answers
+data = gemini.as_json(prompt, tier=gemini.SMART)  # structured, may return None
 ```
 
 Every call can fail or return `None`. Code must handle that — for example with

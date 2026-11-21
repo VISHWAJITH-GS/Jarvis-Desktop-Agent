@@ -8,6 +8,7 @@ Converts live browser web pages into a compact, token-efficient semantic map for
 4. Assigns sequential integer indices [1], [2], [3]... mapped to backendNodeId and bounding boxes.
 5. Injects non-destructive Set-of-Mark (SoM) overlays for visual grounding when requested.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -272,6 +273,7 @@ class DOMDistiller:
     """
     Distills live web pages into an indexed semantic representation using CDP + AXTree.
     """
+
     def __init__(self):
         self._last_distilled_map: Dict[int, DistilledElement] = {}
         self._last_serialized_prompt: str = ""
@@ -379,13 +381,15 @@ class DOMDistiller:
                 prompt_lines.append(elem.to_prompt_line())
 
                 if enable_som_overlay:
-                    som_payload.append({
-                        "index": i,
-                        "x": bbox.x,
-                        "y": bbox.y,
-                        "width": bbox.width,
-                        "height": bbox.height,
-                    })
+                    som_payload.append(
+                        {
+                            "index": i,
+                            "x": bbox.x,
+                            "y": bbox.y,
+                            "width": bbox.width,
+                            "height": bbox.height,
+                        }
+                    )
 
             # 4. Optional SoM overlay injection
             if enable_som_overlay and som_payload:
@@ -395,7 +399,9 @@ class DOMDistiller:
                     logger.debug(f"SoM overlay injection error: {som_err}")
 
             self._last_distilled_map = distilled_elements
-            serialized = "\n".join(prompt_lines) if prompt_lines else "(No interactive elements detected in current viewport)"
+            serialized = (
+                "\n".join(prompt_lines) if prompt_lines else "(No interactive elements detected in current viewport)"
+            )
             self._last_serialized_prompt = serialized
             return serialized, distilled_elements
 
@@ -416,4 +422,3 @@ def get_dom_distiller() -> DOMDistiller:
     if _global_distiller is None:
         _global_distiller = DOMDistiller()
     return _global_distiller
-

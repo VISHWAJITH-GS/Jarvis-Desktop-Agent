@@ -18,6 +18,7 @@ Combines Playwright browser automation with the Vimium C extension:
      - '?' (show shortcuts)
   7. Robust fallback to Playwright DOM selectors and vision when Vimium C is inactive.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -72,23 +73,29 @@ def get_vimium_extension_path() -> Optional[str]:
     if _OS == "Windows":
         local = os.environ.get("LOCALAPPDATA", "")
         if local:
-            candidates.extend([
-                Path(local) / "Microsoft" / "Edge" / "User Data" / "Default" / "Extensions" / ext_id,
-                Path(local) / "Google" / "Chrome" / "User Data" / "Default" / "Extensions" / ext_id,
-                Path(local) / "BraveSoftware" / "Brave-Browser" / "User Data" / "Default" / "Extensions" / ext_id,
-            ])
+            candidates.extend(
+                [
+                    Path(local) / "Microsoft" / "Edge" / "User Data" / "Default" / "Extensions" / ext_id,
+                    Path(local) / "Google" / "Chrome" / "User Data" / "Default" / "Extensions" / ext_id,
+                    Path(local) / "BraveSoftware" / "Brave-Browser" / "User Data" / "Default" / "Extensions" / ext_id,
+                ]
+            )
     elif _OS == "Darwin":
         home = Path.home()
-        candidates.extend([
-            home / "Library" / "Application Support" / "Microsoft Edge" / "Default" / "Extensions" / ext_id,
-            home / "Library" / "Application Support" / "Google" / "Chrome" / "Default" / "Extensions" / ext_id,
-        ])
+        candidates.extend(
+            [
+                home / "Library" / "Application Support" / "Microsoft Edge" / "Default" / "Extensions" / ext_id,
+                home / "Library" / "Application Support" / "Google" / "Chrome" / "Default" / "Extensions" / ext_id,
+            ]
+        )
     else:
         home = Path.home()
-        candidates.extend([
-            home / ".config" / "google-chrome" / "Default" / "Extensions" / ext_id,
-            home / ".config" / "microsoft-edge" / "Default" / "Extensions" / ext_id,
-        ])
+        candidates.extend(
+            [
+                home / ".config" / "google-chrome" / "Default" / "Extensions" / ext_id,
+                home / ".config" / "microsoft-edge" / "Default" / "Extensions" / ext_id,
+            ]
+        )
 
     for c in candidates:
         if c.exists():
@@ -312,10 +319,41 @@ class VimiumCController:
 
         # ── Pass 3: Distinctive keyword token matching ───────────────────────
         STOP_WORDS = {
-            "click", "the", "button", "link", "item", "folder", "in", "on", "sidebar",
-            "it", "is", "below", "above", "pinned", "please", "video", "song", "tab",
-            "to", "and", "or", "a", "an", "at", "by", "for", "from", "of", "with",
-            "can", "you", "see", "side", "put", "up"
+            "click",
+            "the",
+            "button",
+            "link",
+            "item",
+            "folder",
+            "in",
+            "on",
+            "sidebar",
+            "it",
+            "is",
+            "below",
+            "above",
+            "pinned",
+            "please",
+            "video",
+            "song",
+            "tab",
+            "to",
+            "and",
+            "or",
+            "a",
+            "an",
+            "at",
+            "by",
+            "for",
+            "from",
+            "of",
+            "with",
+            "can",
+            "you",
+            "see",
+            "side",
+            "put",
+            "up",
         }
         all_tokens = set(re.findall(r"\w+", q_lower))
         distinct_tokens = [tok for tok in all_tokens if tok not in STOP_WORDS and len(tok) >= 3]
@@ -332,7 +370,7 @@ class VimiumCController:
                 if tok in h_tokens:
                     score += len(tok) * 2  # exact token hit
                 elif any(tok in ht for ht in h_tokens if len(ht) >= 3):
-                    score += len(tok)      # partial token hit (e.g. 'putaapu' vs 'put')
+                    score += len(tok)  # partial token hit (e.g. 'putaapu' vs 'put')
             if score > best_score:
                 best_score = score
                 best_hint = h
@@ -393,10 +431,7 @@ class VimiumCController:
                 t = targets[0]
                 tx, ty = t.center_point()
                 # Find the hint closest to the grounded target center
-                closest = min(
-                    hints,
-                    key=lambda h: (h.x - tx) ** 2 + (h.y - ty) ** 2
-                )
+                closest = min(hints, key=lambda h: (h.x - tx) ** 2 + (h.y - ty) ** 2)
                 return closest
         except Exception as e:
             logger.debug(f"[VimiumC] Visual grounding fallback error: {e}")
@@ -505,6 +540,7 @@ class VimiumCController:
 
 
 _controller: Optional[VimiumCController] = None
+
 
 def get_vimium_controller() -> VimiumCController:
     global _controller

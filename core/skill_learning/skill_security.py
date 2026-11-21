@@ -7,6 +7,7 @@ Strictly protects user privacy during demonstration:
 - Classifies declarative skills by RiskLevel (READ_ONLY, NORMAL, SENSITIVE, DESTRUCTIVE).
 - Enforces mandatory user confirmation for sensitive or destructive actions (emailing, purchasing, deleting).
 """
+
 from __future__ import annotations
 
 import re
@@ -20,13 +21,32 @@ _SENSITIVE_KEYWORD_RE = re.compile(
 )
 
 _DESTRUCTIVE_ACTIONS = {
-    "delete", "remove", "drop", "destroy", "format", "shutdown", "restart",
-    "send_email", "publish", "purchase", "pay", "order", "transfer", "kill",
+    "delete",
+    "remove",
+    "drop",
+    "destroy",
+    "format",
+    "shutdown",
+    "restart",
+    "send_email",
+    "publish",
+    "purchase",
+    "pay",
+    "order",
+    "transfer",
+    "kill",
 }
 
 _SENSITIVE_ACTIONS = {
-    "upload", "download", "login", "authenticate", "connect", "install",
-    "modify_settings", "write_file", "dev_agent",
+    "upload",
+    "download",
+    "login",
+    "authenticate",
+    "connect",
+    "install",
+    "modify_settings",
+    "write_file",
+    "dev_agent",
 }
 
 SENSITIVE_INPUT_PLACEHOLDER = "[REDACTED_SENSITIVE_CREDENTIAL]"
@@ -60,6 +80,7 @@ def sanitize_text_and_credentials(text: str) -> str:
 
     try:
         from memory.config_manager import redact_secret
+
         result = redact_secret(result)
     except Exception:
         pass
@@ -97,6 +118,7 @@ def sanitize_input_value(control_info: dict, text_value: str) -> str:
     if is_sensitive_control(control_info):
         return "[REDACTED_SENSITIVE_CREDENTIAL]"
     from memory.config_manager import redact_secret
+
     return redact_secret(text_value)
 
 

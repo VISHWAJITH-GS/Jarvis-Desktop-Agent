@@ -1,4 +1,4 @@
-#computer_settings.py
+# computer_settings.py
 import json
 import re
 import sys
@@ -18,7 +18,7 @@ _PYPERCLIP = installed("pyperclip")
 
 def _configure_pyautogui(module) -> None:
     module.FAILSAFE = True
-    module.PAUSE    = 0.05
+    module.PAUSE = 0.05
 
 
 pyautogui = LazyModule("pyautogui", _configure_pyautogui)
@@ -40,9 +40,11 @@ def _get_base_dir() -> Path:
         return Path(sys.executable).parent
     return Path(__file__).resolve().parent.parent
 
+
 def _get_api_key() -> str:
     try:
         from memory.config_manager import get_gemini_key
+
         k = get_gemini_key()
         if k:
             return k
@@ -55,13 +57,19 @@ def _get_api_key() -> str:
     except Exception:
         return ""
 
+
 _active_player = None
+
 
 def _get_macos_wifi_interface() -> str:
     try:
         result = subprocess.run(
             ["networksetup", "-listallhardwareports"],
-            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=5,
         )
         lines = result.stdout.splitlines()
         for i, line in enumerate(lines):
@@ -71,39 +79,42 @@ def _get_macos_wifi_interface() -> str:
                         return lines[j].split(":", 1)[1].strip()
     except Exception:
         pass
-    return "en0" 
+    return "en0"
+
 
 def volume_up():
     if _OS == "Windows":
-        for _ in range(5): pyautogui.press("volumeup")
+        for _ in range(5):
+            pyautogui.press("volumeup")
     elif _OS == "Darwin":
-        subprocess.run(["osascript", "-e",
-            "set volume output volume (output volume of (get volume settings) + 10)"],
-            capture_output=True)
+        subprocess.run(
+            ["osascript", "-e", "set volume output volume (output volume of (get volume settings) + 10)"],
+            capture_output=True,
+        )
     else:
-        subprocess.run(["pactl", "set-sink-volume", "@DEFAULT_SINK@", "+10%"],
-            capture_output=True)
+        subprocess.run(["pactl", "set-sink-volume", "@DEFAULT_SINK@", "+10%"], capture_output=True)
+
 
 def volume_down():
     if _OS == "Windows":
-        for _ in range(5): pyautogui.press("volumedown")
+        for _ in range(5):
+            pyautogui.press("volumedown")
     elif _OS == "Darwin":
-        subprocess.run(["osascript", "-e",
-            "set volume output volume (output volume of (get volume settings) - 10)"],
-            capture_output=True)
+        subprocess.run(
+            ["osascript", "-e", "set volume output volume (output volume of (get volume settings) - 10)"],
+            capture_output=True,
+        )
     else:
-        subprocess.run(["pactl", "set-sink-volume", "@DEFAULT_SINK@", "-10%"],
-            capture_output=True)
+        subprocess.run(["pactl", "set-sink-volume", "@DEFAULT_SINK@", "-10%"], capture_output=True)
+
 
 def volume_mute():
     if _OS == "Windows":
         pyautogui.press("volumemute")
     elif _OS == "Darwin":
-        subprocess.run(["osascript", "-e", "set volume with output muted"],
-            capture_output=True)
+        subprocess.run(["osascript", "-e", "set volume with output muted"], capture_output=True)
     else:
-        subprocess.run(["pactl", "set-sink-mute", "@DEFAULT_SINK@", "toggle"],
-            capture_output=True)
+        subprocess.run(["pactl", "set-sink-mute", "@DEFAULT_SINK@", "toggle"], capture_output=True)
 
 
 def _win_endpoint_volume():
@@ -130,6 +141,7 @@ def _win_endpoint_volume():
     """
     try:
         import comtypes
+
         comtypes.CoInitialize()
     except Exception:
         pass
@@ -142,8 +154,7 @@ def _win_endpoint_volume():
     if endpoint is not None:
         return endpoint
     dev = getattr(speakers, "_dev", speakers)
-    return cast(dev.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None),
-                POINTER(IAudioEndpointVolume))
+    return cast(dev.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None), POINTER(IAudioEndpointVolume))
 
 
 def volume_get() -> int | None:
@@ -154,14 +165,25 @@ def volume_get() -> int | None:
     undoable — a wrong undo is worse than no undo."""
     try:
         if _OS == "Windows":
-            return max(0, min(100, round(
-                _win_endpoint_volume().GetMasterVolumeLevelScalar() * 100)))
+            return max(0, min(100, round(_win_endpoint_volume().GetMasterVolumeLevelScalar() * 100)))
         if _OS == "Darwin":
-            r = subprocess.run(["osascript", "-e", "output volume of (get volume settings)"],
-                               capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5)
+            r = subprocess.run(
+                ["osascript", "-e", "output volume of (get volume settings)"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=5,
+            )
             return max(0, min(100, int(r.stdout.strip())))
-        r = subprocess.run(["pactl", "get-sink-volume", "@DEFAULT_SINK@"],
-                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5)
+        r = subprocess.run(
+            ["pactl", "get-sink-volume", "@DEFAULT_SINK@"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=5,
+        )
         m = re.search(r"(\d+)%", r.stdout)
         return max(0, min(100, int(m.group(1)))) if m else None
     except Exception:
@@ -173,18 +195,40 @@ def brightness_get() -> int | None:
     try:
         if _OS == "Windows":
             r = subprocess.run(
-                ["powershell", "-Command",
-                 "(Get-WmiObject -Namespace root/wmi -Class WmiMonitorBrightness)"
-                 ".CurrentBrightness"],
-                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5, **_WIN_HIDE
+                [
+                    "powershell",
+                    "-Command",
+                    "(Get-WmiObject -Namespace root/wmi -Class WmiMonitorBrightness).CurrentBrightness",
+                ],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=5,
+                **_WIN_HIDE,
             )
             return max(0, min(100, int(r.stdout.strip())))
-        if _OS == "Linux" and subprocess.run(
-                ["which", "brightnessctl"], capture_output=True).returncode == 0:
-            cur = int(subprocess.run(["brightnessctl", "get"],
-                                     capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5).stdout.strip())
-            mx  = int(subprocess.run(["brightnessctl", "max"],
-                                     capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5).stdout.strip())
+        if _OS == "Linux" and subprocess.run(["which", "brightnessctl"], capture_output=True).returncode == 0:
+            cur = int(
+                subprocess.run(
+                    ["brightnessctl", "get"],
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=5,
+                ).stdout.strip()
+            )
+            mx = int(
+                subprocess.run(
+                    ["brightnessctl", "max"],
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=5,
+                ).stdout.strip()
+            )
             return max(0, min(100, round(cur * 100 / mx))) if mx else None
     except Exception:
         pass
@@ -197,10 +241,14 @@ def brightness_set(value: int) -> None:
     value = max(0, min(100, int(value)))
     if _OS == "Windows":
         subprocess.run(
-            ["powershell", "-Command",
-             "(Get-WmiObject -Namespace root/wmi -Class WmiMonitorBrightnessMethods)"
-             f".WmiSetBrightness(1, {value})"],
-            capture_output=True, timeout=5, **_WIN_HIDE
+            [
+                "powershell",
+                "-Command",
+                f"(Get-WmiObject -Namespace root/wmi -Class WmiMonitorBrightnessMethods).WmiSetBrightness(1, {value})",
+            ],
+            capture_output=True,
+            timeout=5,
+            **_WIN_HIDE,
         )
     elif _OS == "Linux":
         subprocess.run(["brightnessctl", "set", f"{value}%"], capture_output=True)
@@ -220,13 +268,12 @@ def volume_set(value: int):
             pyautogui.press("volumemute")
             pyautogui.press("volumemute")
     elif _OS == "Darwin":
-        subprocess.run(["osascript", "-e", f"set volume output volume {value}"],
-            capture_output=True)
+        subprocess.run(["osascript", "-e", f"set volume output volume {value}"], capture_output=True)
         return
     else:
-        subprocess.run(["pactl", "set-sink-volume", "@DEFAULT_SINK@", f"{value}%"],
-            capture_output=True)
+        subprocess.run(["pactl", "set-sink-volume", "@DEFAULT_SINK@", f"{value}%"], capture_output=True)
         return
+
 
 def _adjust_xrandr_brightness(delta: float) -> None:
     """Safely adjust display brightness via xrandr with shell=False."""
@@ -247,55 +294,64 @@ def _adjust_xrandr_brightness(delta: float) -> None:
                 break
         if output_name and re.match(r"^[A-Za-z0-9_-]+$", output_name):
             new_b = max(0.1, min(1.0, current_b + delta))
-            subprocess.run(["xrandr", "--output", output_name, "--brightness", f"{new_b:.2f}"], capture_output=True, timeout=5)
+            subprocess.run(
+                ["xrandr", "--output", output_name, "--brightness", f"{new_b:.2f}"], capture_output=True, timeout=5
+            )
     except Exception as e:
         print(f"[Settings] xrandr adjustment error: {e}")
 
+
 def brightness_up():
     if _OS == "Darwin":
-        subprocess.run(["osascript", "-e",
-            'tell application "System Events" to key code 144'],
-            capture_output=True)
+        subprocess.run(["osascript", "-e", 'tell application "System Events" to key code 144'], capture_output=True)
     elif _OS == "Linux":
-        if subprocess.run(["which", "brightnessctl"],
-                capture_output=True).returncode == 0:
+        if subprocess.run(["which", "brightnessctl"], capture_output=True).returncode == 0:
             subprocess.run(["brightnessctl", "set", "+10%"], capture_output=True)
         else:
             _adjust_xrandr_brightness(0.1)
     else:
         try:
             subprocess.run(
-                ["powershell", "-Command",
-                 "(Get-WmiObject -Namespace root/wmi -Class WmiMonitorBrightnessMethods)"
-                 ".WmiSetBrightness(1, [math]::Min(100, "
-                 "(Get-WmiObject -Namespace root/wmi -Class WmiMonitorBrightness).CurrentBrightness + 10))"],
-                capture_output=True, timeout=5, **_WIN_HIDE
+                [
+                    "powershell",
+                    "-Command",
+                    "(Get-WmiObject -Namespace root/wmi -Class WmiMonitorBrightnessMethods)"
+                    ".WmiSetBrightness(1, [math]::Min(100, "
+                    "(Get-WmiObject -Namespace root/wmi -Class WmiMonitorBrightness).CurrentBrightness + 10))",
+                ],
+                capture_output=True,
+                timeout=5,
+                **_WIN_HIDE,
             )
         except Exception as e:
             print(f"[Settings] Brightness up failed on Windows: {e}")
 
+
 def brightness_down():
     if _OS == "Darwin":
-        subprocess.run(["osascript", "-e",
-            'tell application "System Events" to key code 145'],
-            capture_output=True)
+        subprocess.run(["osascript", "-e", 'tell application "System Events" to key code 145'], capture_output=True)
     elif _OS == "Linux":
-        if subprocess.run(["which", "brightnessctl"],
-                capture_output=True).returncode == 0:
+        if subprocess.run(["which", "brightnessctl"], capture_output=True).returncode == 0:
             subprocess.run(["brightnessctl", "set", "10%-"], capture_output=True)
         else:
             _adjust_xrandr_brightness(-0.1)
     else:
         try:
             subprocess.run(
-                ["powershell", "-Command",
-                 "(Get-WmiObject -Namespace root/wmi -Class WmiMonitorBrightnessMethods)"
-                 ".WmiSetBrightness(1, [math]::Max(0, "
-                 "(Get-WmiObject -Namespace root/wmi -Class WmiMonitorBrightness).CurrentBrightness - 10))"],
-                capture_output=True, timeout=5, **_WIN_HIDE
+                [
+                    "powershell",
+                    "-Command",
+                    "(Get-WmiObject -Namespace root/wmi -Class WmiMonitorBrightnessMethods)"
+                    ".WmiSetBrightness(1, [math]::Max(0, "
+                    "(Get-WmiObject -Namespace root/wmi -Class WmiMonitorBrightness).CurrentBrightness - 10))",
+                ],
+                capture_output=True,
+                timeout=5,
+                **_WIN_HIDE,
             )
         except Exception as e:
             print(f"[Settings] Brightness down failed on Windows: {e}")
+
 
 def close_app():
     """Removed. Closing an application now lives in computer_control.
@@ -328,32 +384,42 @@ def close_app():
         "name in 'app_name'",
     )
 
+
 def close_window():
-    if _OS == "Darwin": pyautogui.hotkey("command", "w")
-    else:               pyautogui.hotkey("ctrl", "w")
+    if _OS == "Darwin":
+        pyautogui.hotkey("command", "w")
+    else:
+        pyautogui.hotkey("ctrl", "w")
+
 
 def full_screen():
-    if _OS == "Darwin": pyautogui.hotkey("ctrl", "command", "f")
-    else:               pyautogui.press("f11")
+    if _OS == "Darwin":
+        pyautogui.hotkey("ctrl", "command", "f")
+    else:
+        pyautogui.press("f11")
+
 
 def minimize_window():
-    if _OS == "Darwin": pyautogui.hotkey("command", "m")
-    else:               pyautogui.hotkey("win", "down")
+    if _OS == "Darwin":
+        pyautogui.hotkey("command", "m")
+    else:
+        pyautogui.hotkey("win", "down")
+
 
 def maximize_window():
     if _OS == "Darwin":
-        subprocess.run(["osascript", "-e",
-            'tell application "System Events" to keystroke "f" '
-            'using {control down, command down}'],
-            capture_output=True)
+        subprocess.run(
+            ["osascript", "-e", 'tell application "System Events" to keystroke "f" using {control down, command down}'],
+            capture_output=True,
+        )
     elif _OS == "Windows":
         pyautogui.hotkey("win", "up")
     else:
         try:
-            subprocess.run(["wmctrl", "-r", ":ACTIVE:", "-b", "add,maximized_vert,maximized_horz"],
-                capture_output=True)
+            subprocess.run(["wmctrl", "-r", ":ACTIVE:", "-b", "add,maximized_vert,maximized_horz"], capture_output=True)
         except Exception:
             pyautogui.hotkey("super", "up")
+
 
 def snap_left():
     if _OS == "Windows":
@@ -367,10 +433,10 @@ def snap_left():
         pyautogui.hotkey("ctrl", "option", "left")
     else:  # Linux
         try:
-            subprocess.run(["wmctrl", "-r", ":ACTIVE:", "-e", "0,0,0,960,1080"],
-                capture_output=True)
+            subprocess.run(["wmctrl", "-r", ":ACTIVE:", "-e", "0,0,0,960,1080"], capture_output=True)
         except Exception:
             pass
+
 
 def snap_right():
     if _OS == "Windows":
@@ -383,19 +449,26 @@ def snap_right():
         pyautogui.hotkey("ctrl", "option", "right")
     else:  # Linux
         try:
-            subprocess.run(["wmctrl", "-r", ":ACTIVE:", "-e", "0,960,0,960,1080"],
-                capture_output=True)
+            subprocess.run(["wmctrl", "-r", ":ACTIVE:", "-e", "0,960,0,960,1080"], capture_output=True)
         except Exception:
             pass
 
+
 def switch_window():
-    if _OS == "Darwin": pyautogui.hotkey("command", "tab")
-    else:               pyautogui.hotkey("alt", "tab")
+    if _OS == "Darwin":
+        pyautogui.hotkey("command", "tab")
+    else:
+        pyautogui.hotkey("alt", "tab")
+
 
 def show_desktop():
-    if _OS == "Darwin":   pyautogui.hotkey("fn", "f11")
-    elif _OS == "Windows": pyautogui.hotkey("win", "d")
-    else:                  pyautogui.hotkey("super", "d")
+    if _OS == "Darwin":
+        pyautogui.hotkey("fn", "f11")
+    elif _OS == "Windows":
+        pyautogui.hotkey("win", "d")
+    else:
+        pyautogui.hotkey("super", "d")
+
 
 def open_task_manager():
     if _OS == "Windows":
@@ -410,54 +483,92 @@ def open_task_manager():
 
 
 def focus_search():
-    if _OS == "Darwin": pyautogui.hotkey("command", "l")
-    else:               pyautogui.hotkey("ctrl", "l")
+    if _OS == "Darwin":
+        pyautogui.hotkey("command", "l")
+    else:
+        pyautogui.hotkey("ctrl", "l")
 
-def pause_video():      pyautogui.press("space")
+
+def pause_video():
+    pyautogui.press("space")
+
 
 def refresh_page():
-    if _OS == "Darwin": pyautogui.hotkey("command", "r")
-    else:               pyautogui.press("f5")
+    if _OS == "Darwin":
+        pyautogui.hotkey("command", "r")
+    else:
+        pyautogui.press("f5")
+
 
 def close_tab():
-    if _OS == "Darwin": pyautogui.hotkey("command", "w")
-    else:               pyautogui.hotkey("ctrl", "w")
+    if _OS == "Darwin":
+        pyautogui.hotkey("command", "w")
+    else:
+        pyautogui.hotkey("ctrl", "w")
+
 
 def new_tab():
-    if _OS == "Darwin": pyautogui.hotkey("command", "t")
-    else:               pyautogui.hotkey("ctrl", "t")
+    if _OS == "Darwin":
+        pyautogui.hotkey("command", "t")
+    else:
+        pyautogui.hotkey("ctrl", "t")
+
 
 def next_tab():
-    if _OS == "Darwin": pyautogui.hotkey("command", "shift", "bracketright")
-    else:               pyautogui.hotkey("ctrl", "tab")
+    if _OS == "Darwin":
+        pyautogui.hotkey("command", "shift", "bracketright")
+    else:
+        pyautogui.hotkey("ctrl", "tab")
+
 
 def prev_tab():
-    if _OS == "Darwin": pyautogui.hotkey("command", "shift", "bracketleft")
-    else:               pyautogui.hotkey("ctrl", "shift", "tab")
+    if _OS == "Darwin":
+        pyautogui.hotkey("command", "shift", "bracketleft")
+    else:
+        pyautogui.hotkey("ctrl", "shift", "tab")
+
 
 def go_back():
-    if _OS == "Darwin": pyautogui.hotkey("command", "left")
-    else:               pyautogui.hotkey("alt", "left")
+    if _OS == "Darwin":
+        pyautogui.hotkey("command", "left")
+    else:
+        pyautogui.hotkey("alt", "left")
+
 
 def go_forward():
-    if _OS == "Darwin": pyautogui.hotkey("command", "right")
-    else:               pyautogui.hotkey("alt", "right")
+    if _OS == "Darwin":
+        pyautogui.hotkey("command", "right")
+    else:
+        pyautogui.hotkey("alt", "right")
+
 
 def zoom_in():
-    if _OS == "Darwin": pyautogui.hotkey("command", "equal")
-    else:               pyautogui.hotkey("ctrl", "equal")
+    if _OS == "Darwin":
+        pyautogui.hotkey("command", "equal")
+    else:
+        pyautogui.hotkey("ctrl", "equal")
+
 
 def zoom_out():
-    if _OS == "Darwin": pyautogui.hotkey("command", "minus")
-    else:               pyautogui.hotkey("ctrl", "minus")
+    if _OS == "Darwin":
+        pyautogui.hotkey("command", "minus")
+    else:
+        pyautogui.hotkey("ctrl", "minus")
+
 
 def zoom_reset():
-    if _OS == "Darwin": pyautogui.hotkey("command", "0")
-    else:               pyautogui.hotkey("ctrl", "0")
+    if _OS == "Darwin":
+        pyautogui.hotkey("command", "0")
+    else:
+        pyautogui.hotkey("ctrl", "0")
+
 
 def find_on_page():
-    if _OS == "Darwin": pyautogui.hotkey("command", "f")
-    else:               pyautogui.hotkey("ctrl", "f")
+    if _OS == "Darwin":
+        pyautogui.hotkey("command", "f")
+    else:
+        pyautogui.hotkey("ctrl", "f")
+
 
 def reload_page_n(n: int):
     for _ in range(max(1, n)):
@@ -465,52 +576,96 @@ def reload_page_n(n: int):
         time.sleep(0.8)
 
 
-def scroll_up(amount: int = 500):    pyautogui.scroll(amount)
-def scroll_down(amount: int = 500):  pyautogui.scroll(-amount)
+def scroll_up(amount: int = 500):
+    pyautogui.scroll(amount)
+
+
+def scroll_down(amount: int = 500):
+    pyautogui.scroll(-amount)
+
 
 def scroll_top():
-    if _OS == "Darwin": pyautogui.hotkey("command", "up")
-    else:               pyautogui.hotkey("ctrl", "home")
+    if _OS == "Darwin":
+        pyautogui.hotkey("command", "up")
+    else:
+        pyautogui.hotkey("ctrl", "home")
+
 
 def scroll_bottom():
-    if _OS == "Darwin": pyautogui.hotkey("command", "down")
-    else:               pyautogui.hotkey("ctrl", "end")
+    if _OS == "Darwin":
+        pyautogui.hotkey("command", "down")
+    else:
+        pyautogui.hotkey("ctrl", "end")
 
-def page_up():   pyautogui.press("pageup")
-def page_down(): pyautogui.press("pagedown")
+
+def page_up():
+    pyautogui.press("pageup")
+
+
+def page_down():
+    pyautogui.press("pagedown")
 
 
 def copy():
-    if _OS == "Darwin": pyautogui.hotkey("command", "c")
-    else:               pyautogui.hotkey("ctrl", "c")
+    if _OS == "Darwin":
+        pyautogui.hotkey("command", "c")
+    else:
+        pyautogui.hotkey("ctrl", "c")
+
 
 def paste():
-    if _OS == "Darwin": pyautogui.hotkey("command", "v")
-    else:               pyautogui.hotkey("ctrl", "v")
+    if _OS == "Darwin":
+        pyautogui.hotkey("command", "v")
+    else:
+        pyautogui.hotkey("ctrl", "v")
+
 
 def cut():
-    if _OS == "Darwin": pyautogui.hotkey("command", "x")
-    else:               pyautogui.hotkey("ctrl", "x")
+    if _OS == "Darwin":
+        pyautogui.hotkey("command", "x")
+    else:
+        pyautogui.hotkey("ctrl", "x")
+
 
 def undo():
-    if _OS == "Darwin": pyautogui.hotkey("command", "z")
-    else:               pyautogui.hotkey("ctrl", "z")
+    if _OS == "Darwin":
+        pyautogui.hotkey("command", "z")
+    else:
+        pyautogui.hotkey("ctrl", "z")
+
 
 def redo():
-    if _OS == "Darwin": pyautogui.hotkey("command", "shift", "z")
-    else:               pyautogui.hotkey("ctrl", "y")
+    if _OS == "Darwin":
+        pyautogui.hotkey("command", "shift", "z")
+    else:
+        pyautogui.hotkey("ctrl", "y")
+
 
 def select_all():
-    if _OS == "Darwin": pyautogui.hotkey("command", "a")
-    else:               pyautogui.hotkey("ctrl", "a")
+    if _OS == "Darwin":
+        pyautogui.hotkey("command", "a")
+    else:
+        pyautogui.hotkey("ctrl", "a")
+
 
 def save_file():
-    if _OS == "Darwin": pyautogui.hotkey("command", "s")
-    else:               pyautogui.hotkey("ctrl", "s")
+    if _OS == "Darwin":
+        pyautogui.hotkey("command", "s")
+    else:
+        pyautogui.hotkey("ctrl", "s")
 
-def press_enter():   pyautogui.press("enter")
-def press_escape():  pyautogui.press("escape")
-def press_key(key: str): pyautogui.press(key)
+
+def press_enter():
+    pyautogui.press("enter")
+
+
+def press_escape():
+    pyautogui.press("escape")
+
+
+def press_key(key: str):
+    pyautogui.press(key)
+
 
 def type_text(text: str, press_enter_after: bool = False, use_clipboard: bool = False):
     if not text:
@@ -527,6 +682,7 @@ def type_text(text: str, press_enter_after: bool = False, use_clipboard: bool = 
         time.sleep(0.1)
         pyautogui.press("enter")
 
+
 def take_screenshot():
     if _OS == "Windows":
         pyautogui.hotkey("win", "shift", "s")
@@ -538,6 +694,7 @@ def take_screenshot():
                 subprocess.Popen(cmd)
                 return
         pyautogui.hotkey("ctrl", "print_screen")
+
 
 def lock_screen():
     if _OS == "Windows":
@@ -554,6 +711,7 @@ def lock_screen():
                 subprocess.run(cmd, capture_output=True)
                 return
 
+
 def open_system_settings():
     if _OS == "Windows":
         pyautogui.hotkey("win", "i")
@@ -564,6 +722,7 @@ def open_system_settings():
             if subprocess.run(["which", cmd[0]], capture_output=True).returncode == 0:
                 subprocess.Popen(cmd)
                 return
+
 
 def open_file_explorer():
     if _OS == "Windows":
@@ -577,10 +736,12 @@ def open_file_explorer():
                 return
         subprocess.Popen(["xdg-open", str(Path.home())])
 
+
 def sleep_display():
     if _OS == "Windows":
         try:
             import ctypes
+
             ctypes.windll.user32.SendMessageW(0xFFFF, 0x0112, 0xF170, 2)
         except Exception as e:
             print(f"[Settings] sleep_display failed: {e}")
@@ -589,19 +750,26 @@ def sleep_display():
     else:
         subprocess.run(["xset", "dpms", "force", "off"], capture_output=True)
 
+
 def open_run():
     if _OS == "Windows":
         pyautogui.hotkey("win", "r")
 
+
 def dark_mode():
     if _OS == "Darwin":
-        subprocess.run(["osascript", "-e",
-            'tell app "System Events" to tell appearance preferences '
-            'to set dark mode to not dark mode'],
-            capture_output=True)
+        subprocess.run(
+            [
+                "osascript",
+                "-e",
+                'tell app "System Events" to tell appearance preferences to set dark mode to not dark mode',
+            ],
+            capture_output=True,
+        )
     elif _OS == "Windows":
         try:
             import winreg
+
             key_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Themes\Personalize"
             key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_ALL_ACCESS)
             current, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
@@ -614,22 +782,26 @@ def dark_mode():
         try:
             result = subprocess.run(
                 ["gsettings", "get", "org.gnome.desktop.interface", "color-scheme"],
-                capture_output=True, text=True, encoding="utf-8", errors="replace"
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
             )
             current = result.stdout.strip()
             new_scheme = "'default'" if "dark" in current else "'prefer-dark'"
             subprocess.run(
-                ["gsettings", "set", "org.gnome.desktop.interface", "color-scheme", new_scheme],
-                capture_output=True
+                ["gsettings", "set", "org.gnome.desktop.interface", "color-scheme", new_scheme], capture_output=True
             )
         except Exception as e:
             print(f"[Settings] dark_mode Linux failed: {e}")
+
 
 def get_wifi_status() -> dict:
     """Query Wi-Fi adapter state, connection state, SSID, and IP address."""
     if _OS == "Windows":
         try:
             from actions import windows_control
+
             st = windows_control.get_wifi_status()
             state_str = "turned on" if st.get("enabled") else "turned off"
             return {
@@ -650,7 +822,11 @@ def get_wifi_status() -> dict:
             iface = _get_macos_wifi_interface()
             res = subprocess.run(
                 ["networksetup", "-getairportpower", iface],
-                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=5,
             )
             is_on = "On" in res.stdout
             return {"found": True, "is_on": is_on, "state_str": "turned on" if is_on else "turned off"}
@@ -658,7 +834,14 @@ def get_wifi_status() -> dict:
             return {"found": False, "error": str(e), "state_str": "unknown"}
     else:
         try:
-            res = subprocess.run(["nmcli", "radio", "wifi"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5)
+            res = subprocess.run(
+                ["nmcli", "radio", "wifi"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=5,
+            )
             is_on = "enabled" in res.stdout
             return {"found": True, "is_on": is_on, "state_str": "turned on" if is_on else "turned off"}
         except Exception as e:
@@ -671,52 +854,61 @@ def toggle_wifi():
         iface = _get_macos_wifi_interface()
         result = subprocess.run(
             ["networksetup", "-getairportpower", iface],
-            capture_output=True, text=True, encoding="utf-8", errors="replace"
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
         )
         state = "off" if "On" in result.stdout else "on"
-        subprocess.run(["networksetup", "-setairportpower", iface, state],
-            capture_output=True)
+        subprocess.run(["networksetup", "-setairportpower", iface, state], capture_output=True)
     elif _OS == "Windows":
         try:
             subprocess.run(
-                ["powershell", "-Command",
-                 "$adapter = Get-NetAdapter | Where-Object {$_.PhysicalMediaType -eq 'Native 802.11'};"
-                 "if ($adapter.Status -eq 'Up') { Disable-NetAdapter -Name $adapter.Name -Confirm:$false }"
-                 "else { Enable-NetAdapter -Name $adapter.Name -Confirm:$false }"],
-                capture_output=True, timeout=10, **_WIN_HIDE
+                [
+                    "powershell",
+                    "-Command",
+                    "$adapter = Get-NetAdapter | Where-Object {$_.PhysicalMediaType -eq 'Native 802.11'};"
+                    "if ($adapter.Status -eq 'Up') { Disable-NetAdapter -Name $adapter.Name -Confirm:$false }"
+                    "else { Enable-NetAdapter -Name $adapter.Name -Confirm:$false }",
+                ],
+                capture_output=True,
+                timeout=10,
+                **_WIN_HIDE,
             )
         except Exception as e:
             print(f"[Settings] toggle_wifi Windows failed: {e}")
     else:
         try:
-            result = subprocess.run(["nmcli", "radio", "wifi"], capture_output=True, text=True, encoding="utf-8", errors="replace")
-            state  = "off" if "enabled" in result.stdout else "on"
+            result = subprocess.run(
+                ["nmcli", "radio", "wifi"], capture_output=True, text=True, encoding="utf-8", errors="replace"
+            )
+            state = "off" if "enabled" in result.stdout else "on"
             subprocess.run(["nmcli", "radio", "wifi", state], capture_output=True)
         except Exception as e:
             print(f"[Settings] toggle_wifi Linux failed: {e}")
+
 
 def restart_computer():
     if _OS == "Windows":
         subprocess.run(["shutdown", "/r", "/t", "10"], capture_output=True, **_WIN_HIDE)
     elif _OS == "Darwin":
-        subprocess.run(["osascript", "-e",
-            'tell application "System Events" to restart'],
-            capture_output=True)
+        subprocess.run(["osascript", "-e", 'tell application "System Events" to restart'], capture_output=True)
     else:
         subprocess.run(["systemctl", "reboot"], capture_output=True)
+
 
 def shutdown_computer():
     if _OS == "Windows":
         subprocess.run(["shutdown", "/s", "/t", "10"], capture_output=True)
     elif _OS == "Darwin":
-        subprocess.run(["osascript", "-e",
-            'tell application "System Events" to shut down'],
-            capture_output=True)
+        subprocess.run(["osascript", "-e", 'tell application "System Events" to shut down'], capture_output=True)
     else:
         subprocess.run(["systemctl", "poweroff"], capture_output=True)
 
+
 def toggle_ducking(action_name: str = "toggle_ducking"):
     from memory.config_manager import get_ducking_enabled, save_ducking_enabled
+
     if "enable" in action_name or "on" in action_name:
         new_val = True
     elif "disable" in action_name or "off" in action_name:
@@ -730,6 +922,7 @@ def toggle_ducking(action_name: str = "toggle_ducking"):
 
 def toggle_wake_word(action_name: str = "toggle_wake_word"):
     from memory.config_manager import get_wake_word_enabled, save_wake_word_enabled
+
     if "enable" in action_name or "on" in action_name:
         new_val = True
     elif "disable" in action_name or "off" in action_name:
@@ -748,6 +941,7 @@ def toggle_wake_word(action_name: str = "toggle_wake_word"):
 
 def toggle_auto_sleep(action_name: str = "toggle_auto_sleep"):
     from memory.config_manager import get_auto_sleep_enabled, save_auto_sleep_enabled
+
     if "enable" in action_name or "on" in action_name:
         new_val = True
     elif "disable" in action_name or "off" in action_name:
@@ -760,76 +954,76 @@ def toggle_auto_sleep(action_name: str = "toggle_auto_sleep"):
 
 
 ACTION_MAP: dict[str, callable] = {
-    "toggle_ducking":      toggle_ducking,
-    "enable_ducking":      lambda: toggle_ducking("enable_ducking"),
-    "disable_ducking":     lambda: toggle_ducking("disable_ducking"),
-    "toggle_wake_word":    toggle_wake_word,
-    "enable_wake_word":    lambda: toggle_wake_word("enable_wake_word"),
-    "disable_wake_word":   lambda: toggle_wake_word("disable_wake_word"),
-    "toggle_auto_sleep":   toggle_auto_sleep,
-    "enable_auto_sleep":   lambda: toggle_auto_sleep("enable_auto_sleep"),
-    "disable_auto_sleep":  lambda: toggle_auto_sleep("disable_auto_sleep"),
-    "volume_up":           volume_up,
-    "volume_down":         volume_down,
-    "mute":                volume_mute,
-    "unmute":              volume_mute,
-    "toggle_mute":         volume_mute,
-    "brightness_up":       brightness_up,
-    "brightness_down":     brightness_down,
-    "sleep_display":       sleep_display,
-    "screen_off":          sleep_display,
-    "pause_video":         pause_video,
-    "play_pause":          pause_video,
-    "close_app":           close_app,
-    "close_window":        close_window,
-    "full_screen":         full_screen,
-    "fullscreen":          full_screen,
-    "minimize":            minimize_window,
-    "maximize":            maximize_window,
-    "snap_left":           snap_left,
-    "snap_right":          snap_right,
-    "switch_window":       switch_window,
-    "show_desktop":        show_desktop,
-    "task_manager":        open_task_manager,
-    "focus_search":        focus_search,
-    "refresh_page":        refresh_page,
-    "reload":              refresh_page,
-    "close_tab":           close_tab,
-    "new_tab":             new_tab,
-    "next_tab":            next_tab,
-    "prev_tab":            prev_tab,
-    "go_back":             go_back,
-    "go_forward":          go_forward,
-    "zoom_in":             zoom_in,
-    "zoom_out":            zoom_out,
-    "zoom_reset":          zoom_reset,
-    "find_on_page":        find_on_page,
-    "scroll_up":           scroll_up,
-    "scroll_down":         scroll_down,
-    "scroll_top":          scroll_top,
-    "scroll_bottom":       scroll_bottom,
-    "page_up":             page_up,
-    "page_down":           page_down,
-    "copy":                copy,
-    "paste":               paste,
-    "cut":                 cut,
-    "undo":                undo,
-    "redo":                redo,
-    "select_all":          select_all,
-    "save":                save_file,
-    "enter":               press_enter,
-    "escape":              press_escape,
-    "screenshot":          take_screenshot,
-    "lock_screen":         lock_screen,
-    "open_settings":       open_system_settings,
-    "file_explorer":       open_file_explorer,
-    "open_run":            open_run,
-    "dark_mode":           dark_mode,
-    "toggle_wifi":         toggle_wifi,
-    "wifi_status":         get_wifi_status,
-    "check_wifi":          get_wifi_status,
-    "restart":             restart_computer,
-    "shutdown":            shutdown_computer,
+    "toggle_ducking": toggle_ducking,
+    "enable_ducking": lambda: toggle_ducking("enable_ducking"),
+    "disable_ducking": lambda: toggle_ducking("disable_ducking"),
+    "toggle_wake_word": toggle_wake_word,
+    "enable_wake_word": lambda: toggle_wake_word("enable_wake_word"),
+    "disable_wake_word": lambda: toggle_wake_word("disable_wake_word"),
+    "toggle_auto_sleep": toggle_auto_sleep,
+    "enable_auto_sleep": lambda: toggle_auto_sleep("enable_auto_sleep"),
+    "disable_auto_sleep": lambda: toggle_auto_sleep("disable_auto_sleep"),
+    "volume_up": volume_up,
+    "volume_down": volume_down,
+    "mute": volume_mute,
+    "unmute": volume_mute,
+    "toggle_mute": volume_mute,
+    "brightness_up": brightness_up,
+    "brightness_down": brightness_down,
+    "sleep_display": sleep_display,
+    "screen_off": sleep_display,
+    "pause_video": pause_video,
+    "play_pause": pause_video,
+    "close_app": close_app,
+    "close_window": close_window,
+    "full_screen": full_screen,
+    "fullscreen": full_screen,
+    "minimize": minimize_window,
+    "maximize": maximize_window,
+    "snap_left": snap_left,
+    "snap_right": snap_right,
+    "switch_window": switch_window,
+    "show_desktop": show_desktop,
+    "task_manager": open_task_manager,
+    "focus_search": focus_search,
+    "refresh_page": refresh_page,
+    "reload": refresh_page,
+    "close_tab": close_tab,
+    "new_tab": new_tab,
+    "next_tab": next_tab,
+    "prev_tab": prev_tab,
+    "go_back": go_back,
+    "go_forward": go_forward,
+    "zoom_in": zoom_in,
+    "zoom_out": zoom_out,
+    "zoom_reset": zoom_reset,
+    "find_on_page": find_on_page,
+    "scroll_up": scroll_up,
+    "scroll_down": scroll_down,
+    "scroll_top": scroll_top,
+    "scroll_bottom": scroll_bottom,
+    "page_up": page_up,
+    "page_down": page_down,
+    "copy": copy,
+    "paste": paste,
+    "cut": cut,
+    "undo": undo,
+    "redo": redo,
+    "select_all": select_all,
+    "save": save_file,
+    "enter": press_enter,
+    "escape": press_escape,
+    "screenshot": take_screenshot,
+    "lock_screen": lock_screen,
+    "open_settings": open_system_settings,
+    "file_explorer": open_file_explorer,
+    "open_run": open_run,
+    "dark_mode": dark_mode,
+    "toggle_wifi": toggle_wifi,
+    "wifi_status": get_wifi_status,
+    "check_wifi": get_wifi_status,
+    "restart": restart_computer,
+    "shutdown": shutdown_computer,
 }
 
 # ── What needs a human, and what just needs an undo ──────────────────────────
@@ -848,10 +1042,8 @@ ACTION_MAP: dict[str, callable] = {
 # Asking before every action is what makes an assistant unusable, and every
 # question costs a round trip. Undo is both faster and safer than a prompt.
 _IRREVERSIBLE = {
-    "restart":     ("Restart this computer",
-                    "Anything unsaved will be lost. The computer restarts in 10 seconds."),
-    "shutdown":    ("Shut this computer down",
-                    "Anything unsaved will be lost. The computer powers off in 10 seconds."),
+    "restart": ("Restart this computer", "Anything unsaved will be lost. The computer restarts in 10 seconds."),
+    "shutdown": ("Shut this computer down", "Anything unsaved will be lost. The computer powers off in 10 seconds."),
 }
 
 # Kept so anything still importing the old name keeps working.
@@ -872,38 +1064,82 @@ _DANGEROUS_ACTIONS = set(_IRREVERSIBLE)
 # out in full. What is left is spelling tolerance, and difflib does that in
 # microseconds instead of ~600 ms and a quota unit.
 _ALIASES = {
-    "volume_up":       ("louder", "raise volume", "turn it up", "increase volume"),
-    "volume_down":     ("quieter", "lower volume", "turn it down", "decrease volume"),
-    "mute":            ("silence", "sound off", "no sound"),
-    "brightness_up":   ("brighter", "raise brightness", "increase brightness"),
+    "volume_up": ("louder", "raise volume", "turn it up", "increase volume"),
+    "volume_down": ("quieter", "lower volume", "turn it down", "decrease volume"),
+    "mute": ("silence", "sound off", "no sound"),
+    "brightness_up": ("brighter", "raise brightness", "increase brightness"),
     "brightness_down": ("dimmer", "dim", "lower brightness", "decrease brightness"),
-    "close_window":    ("close this", "close it"),
-    "full_screen":     ("fullscreen", "maximise screen"),
-    "show_desktop":    ("minimise everything", "go to desktop"),
-    "lock_screen":     ("lock", "lock the pc", "lock computer"),
-    "sleep_display":   ("screen off", "turn off the screen", "display off"),
-    "dark_mode":       ("night mode", "light mode", "toggle theme"),
-    "wifi_status":     ("check wifi", "wifi status", "is wifi on", "is wifi turned on", "is wi-fi on", "is wifi off", "wifi turned on or off", "check my wifi", "check the wifi", "check if wifi", "turned on or turned off", "is it turned on or off", "is it on or off"),
-    "toggle_wifi":     ("toggle wifi", "switch wifi", "turn on wifi", "turn off wifi", "disable wifi", "enable wifi", "disconnect wifi", "connect wifi", "internet off", "internet on"),
-    "toggle_ducking":  ("toggle ducking", "ducking", "duck audio", "toggle audio ducking"),
-    "enable_ducking":  ("enable ducking", "turn on ducking", "audio ducking on"),
+    "close_window": ("close this", "close it"),
+    "full_screen": ("fullscreen", "maximise screen"),
+    "show_desktop": ("minimise everything", "go to desktop"),
+    "lock_screen": ("lock", "lock the pc", "lock computer"),
+    "sleep_display": ("screen off", "turn off the screen", "display off"),
+    "dark_mode": ("night mode", "light mode", "toggle theme"),
+    "wifi_status": (
+        "check wifi",
+        "wifi status",
+        "is wifi on",
+        "is wifi turned on",
+        "is wi-fi on",
+        "is wifi off",
+        "wifi turned on or off",
+        "check my wifi",
+        "check the wifi",
+        "check if wifi",
+        "turned on or turned off",
+        "is it turned on or off",
+        "is it on or off",
+    ),
+    "toggle_wifi": (
+        "toggle wifi",
+        "switch wifi",
+        "turn on wifi",
+        "turn off wifi",
+        "disable wifi",
+        "enable wifi",
+        "disconnect wifi",
+        "connect wifi",
+        "internet off",
+        "internet on",
+    ),
+    "toggle_ducking": ("toggle ducking", "ducking", "duck audio", "toggle audio ducking"),
+    "enable_ducking": ("enable ducking", "turn on ducking", "audio ducking on"),
     "disable_ducking": ("disable ducking", "turn off ducking", "audio ducking off"),
-    "toggle_wake_word":  ("toggle wake word", "switch wake word", "wake word toggle"),
-    "enable_wake_word":  ("enable wake word", "turn on wake word", "turn on wakeup word", "enable wakeup word", "wake word on"),
-    "disable_wake_word": ("disable wake word", "turn off wake word", "turn off wakeup word", "disable wakeup word", "wake word off"),
+    "toggle_wake_word": ("toggle wake word", "switch wake word", "wake word toggle"),
+    "enable_wake_word": (
+        "enable wake word",
+        "turn on wake word",
+        "turn on wakeup word",
+        "enable wakeup word",
+        "wake word on",
+    ),
+    "disable_wake_word": (
+        "disable wake word",
+        "turn off wake word",
+        "turn off wakeup word",
+        "disable wakeup word",
+        "wake word off",
+    ),
     "toggle_auto_sleep": ("toggle auto sleep", "toggle sleep", "switch auto sleep"),
     "enable_auto_sleep": ("enable auto sleep", "turn on auto sleep", "enable sleep", "turn on sleep", "auto sleep on"),
-    "disable_auto_sleep": ("disable auto sleep", "turn off auto sleep", "disable sleep", "turn off sleep", "never sleep", "auto sleep off", "don't sleep"),
-    "task_manager":    ("processes", "task list"),
-    "screenshot":      ("capture screen", "take a screenshot", "snip"),
-    "refresh_page":    ("refresh", "reload page"),
-    "new_tab":         ("open a tab", "open new tab"),
-    "shutdown":        ("power off", "turn off the computer", "switch off the pc"),
-    "restart":         ("reboot", "restart the pc"),
+    "disable_auto_sleep": (
+        "disable auto sleep",
+        "turn off auto sleep",
+        "disable sleep",
+        "turn off sleep",
+        "never sleep",
+        "auto sleep off",
+        "don't sleep",
+    ),
+    "task_manager": ("processes", "task list"),
+    "screenshot": ("capture screen", "take a screenshot", "snip"),
+    "refresh_page": ("refresh", "reload page"),
+    "new_tab": ("open a tab", "open new tab"),
+    "shutdown": ("power off", "turn off the computer", "switch off the pc"),
+    "restart": ("reboot", "restart the pc"),
 }
 
-_VALUE_ACTIONS = {"volume_set", "type_text", "press_key", "reload_n",
-                  "scroll_up", "scroll_down"}
+_VALUE_ACTIONS = {"volume_set", "type_text", "press_key", "reload_n", "scroll_up", "scroll_down"}
 
 
 def _normalise(text: str) -> str:
@@ -916,7 +1152,7 @@ def _detect_action(description: str) -> dict:
     Returns {"action": name, "value": ...}; `action` is "" when nothing matched,
     which the caller turns into a message naming real candidates — one round
     trip, and only in the case that used to cost one anyway."""
-    raw  = (description or "").strip()
+    raw = (description or "").strip()
     norm = _normalise(raw)
     if not norm:
         return {"action": "", "value": None}
@@ -933,9 +1169,15 @@ def _detect_action(description: str) -> dict:
 
     # Wi-Fi status check intent vs toggle intent
     if "wifi" in low_canon:
-        if any(w in low_canon for w in ("check", "status", "is it", "turned on or off", "turned on or turned off", "on or off", "state")):
+        if any(
+            w in low_canon
+            for w in ("check", "status", "is it", "turned on or off", "turned on or turned off", "on or off", "state")
+        ):
             return {"action": "wifi_status", "value": None}
-        if any(w in low_canon for w in ("toggle", "switch", "turn on", "turn off", "enable", "disable", "connect", "disconnect")):
+        if any(
+            w in low_canon
+            for w in ("toggle", "switch", "turn on", "turn off", "enable", "disable", "connect", "disconnect")
+        ):
             return {"action": "toggle_wifi", "value": None}
 
     # 2. "set volume to 30", "sesi 30 yap" — a number next to a volume word.
@@ -944,27 +1186,53 @@ def _detect_action(description: str) -> dict:
         return {"action": "volume_set", "value": max(0, min(100, int(num.group(1))))}
 
     # JARVIS self-control: Mute/Unmute & Window management
-    if any(k in low for k in ("unmute yourself", "unmute jarvis", "start listening", "unmute mic", "unmute microphone")):
+    if any(
+        k in low for k in ("unmute yourself", "unmute jarvis", "start listening", "unmute mic", "unmute microphone")
+    ):
         return {"action": "unmute_jarvis", "value": None}
-    if any(k in low for k in ("mute yourself", "mute jarvis", "silence yourself", "be quiet", "mute mic", "mute microphone")):
+    if any(
+        k in low
+        for k in ("mute yourself", "mute jarvis", "silence yourself", "be quiet", "mute mic", "mute microphone")
+    ):
         return {"action": "mute_jarvis", "value": None}
     if any(k in low for k in ("minimize yourself", "minimize jarvis", "hide yourself", "shrink yourself")):
         return {"action": "minimize_jarvis", "value": None}
-    if any(k in low for k in ("maximize yourself", "maximize jarvis", "restore yourself", "restore jarvis", "show yourself")):
+    if any(
+        k in low
+        for k in ("maximize yourself", "maximize jarvis", "restore yourself", "restore jarvis", "show yourself")
+    ):
         return {"action": "maximize_jarvis", "value": None}
     if any(k in low for k in ("manage memory", "open memory", "show memory", "memory platform", "memory manager")):
         return {"action": "manage_memory", "value": None}
-    if any(k in low for k in ("manage actions", "open actions", "show actions", "action platform", "action registry", "action permissions")):
+    if any(
+        k in low
+        for k in (
+            "manage actions",
+            "open actions",
+            "show actions",
+            "action platform",
+            "action registry",
+            "action permissions",
+        )
+    ):
         return {"action": "manage_actions", "value": None}
 
     # JARVIS self-control: Mute/Unmute & Window management
-    if any(k in low for k in ("unmute yourself", "unmute jarvis", "start listening", "unmute mic", "unmute microphone")):
+    if any(
+        k in low for k in ("unmute yourself", "unmute jarvis", "start listening", "unmute mic", "unmute microphone")
+    ):
         return {"action": "unmute_jarvis", "value": None}
-    if any(k in low for k in ("mute yourself", "mute jarvis", "silence yourself", "be quiet", "mute mic", "mute microphone")):
+    if any(
+        k in low
+        for k in ("mute yourself", "mute jarvis", "silence yourself", "be quiet", "mute mic", "mute microphone")
+    ):
         return {"action": "mute_jarvis", "value": None}
     if any(k in low for k in ("minimize yourself", "minimize jarvis", "hide yourself", "shrink yourself")):
         return {"action": "minimize_jarvis", "value": None}
-    if any(k in low for k in ("maximize yourself", "maximize jarvis", "restore yourself", "restore jarvis", "show yourself")):
+    if any(
+        k in low
+        for k in ("maximize yourself", "maximize jarvis", "restore yourself", "restore jarvis", "show yourself")
+    ):
         return {"action": "maximize_jarvis", "value": None}
 
     # 3. Alias phrases.
@@ -974,6 +1242,7 @@ def _detect_action(description: str) -> dict:
 
     # 4. Fuzzy match on the action names — catches "fullscren", "volumeup".
     import difflib
+
     close = difflib.get_close_matches(norm, sorted(known), n=1, cutoff=0.72)
     if close:
         return {"action": close[0], "value": None}
@@ -990,14 +1259,15 @@ def _suggest(description: str) -> str:
     """What to tell the model when nothing matched. Names real actions so its
     retry lands, instead of the old 'Unknown action' dead end."""
     import difflib
-    near = difflib.get_close_matches(_normalise(description),
-                                     sorted(ACTION_MAP), n=5, cutoff=0.3)
+
+    near = difflib.get_close_matches(_normalise(description), sorted(ACTION_MAP), n=5, cutoff=0.3)
     hint = ", ".join(near) if near else ", ".join(sorted(ACTION_MAP)[:12])
     return outcome.ask(
         "computer_settings",
-        f"'{description}' does not match any computer action - the closest "
-        f"are: {hint}. Which was meant?",
-        said=description)
+        f"'{description}' does not match any computer action - the closest are: {hint}. Which was meant?",
+        said=description,
+    )
+
 
 def computer_settings(
     parameters: dict = None,
@@ -1009,17 +1279,17 @@ def computer_settings(
     if not _PYAUTOGUI:
         return outcome.failed(
             "computer_settings",
-            "pyautogui is not installed, so the keyboard cannot be driven - "
-            "run: pip install pyautogui")
+            "pyautogui is not installed, so the keyboard cannot be driven - run: pip install pyautogui",
+        )
 
-    params      = dict(parameters or {})
+    params = dict(parameters or {})
     params.update(kwargs)
-    raw_action  = params.get("action", "").strip()
+    raw_action = params.get("action", "").strip()
     description = params.get("description", "").strip()
-    value       = params.get("value", None)
+    value = params.get("value", None)
 
     if not raw_action and description:
-        detected   = _detect_action(description)
+        detected = _detect_action(description)
         raw_action = detected.get("action", "")
         if value is None:
             value = detected.get("value")
@@ -1034,7 +1304,7 @@ def computer_settings(
     if player:
         global _active_player
         _active_player = player
-        print(f"[{ts}] [Settings] {action}")            # terminal, not the HUD
+        print(f"[{ts}] [Settings] {action}")  # terminal, not the HUD
 
     # ── JARVIS self-control: Mute/Unmute & Window management ──────────────────
     target_str = (str(params.get("target") or "") + " " + str(description or "") + " " + str(raw_action or "")).lower()
@@ -1054,27 +1324,44 @@ def computer_settings(
                 player.write_log("SYS: JARVIS unmuted on instruction.")
             return outcome.done("computer_settings", wanted=action, message="I have unmuted myself.", verified=True)
 
-    if action in ("minimize_jarvis", "jarvis_minimize") or (action in ("minimize", "minimize_window") and is_jarvis_target):
+    if action in ("minimize_jarvis", "jarvis_minimize") or (
+        action in ("minimize", "minimize_window") and is_jarvis_target
+    ):
         if player and hasattr(player, "minimize_jarvis"):
             player.minimize_jarvis()
             if hasattr(player, "write_log"):
                 player.write_log("SYS: JARVIS minimized.")
             return outcome.done("computer_settings", wanted=action, message="I have minimized myself.", verified=True)
 
-    if action in ("maximize_jarvis", "jarvis_maximize", "restore_jarvis") or (action in ("maximize", "maximize_window", "restore") and is_jarvis_target):
+    if action in ("maximize_jarvis", "jarvis_maximize", "restore_jarvis") or (
+        action in ("maximize", "maximize_window", "restore") and is_jarvis_target
+    ):
         if player and hasattr(player, "maximize_jarvis"):
             player.maximize_jarvis()
             if hasattr(player, "write_log"):
                 player.write_log("SYS: JARVIS restored.")
-            return outcome.done("computer_settings", wanted=action, message="I have restored and maximized myself.", verified=True)
+            return outcome.done(
+                "computer_settings", wanted=action, message="I have restored and maximized myself.", verified=True
+            )
 
-    if action in ("show_memory", "manage_memory", "memory_platform", "memory_manager", "show_actions", "manage_actions", "action_registry", "action_platform"):
+    if action in (
+        "show_memory",
+        "manage_memory",
+        "memory_platform",
+        "memory_manager",
+        "show_actions",
+        "manage_actions",
+        "action_registry",
+        "action_platform",
+    ):
         tab = "actions" if "action" in action else "memory"
         if player and hasattr(player, "show_memory_actions_display"):
             player.show_memory_actions_display(tab=tab)
             if hasattr(player, "write_log"):
                 player.write_log(f"SYS: Opening JARVIS Memory & Actions Platform ({tab}).")
-            return outcome.done("computer_settings", wanted=action, message=f"Opening JARVIS {tab} management matrix.", verified=True)
+            return outcome.done(
+                "computer_settings", wanted=action, message=f"Opening JARVIS {tab} management matrix.", verified=True
+            )
 
     # ── JARVIS self-control: Mute/Unmute & Window management ──────────────────
     target_str = (str(params.get("target") or "") + " " + str(description or "") + " " + str(raw_action or "")).lower()
@@ -1094,27 +1381,44 @@ def computer_settings(
                 player.write_log("SYS: JARVIS unmuted on instruction.")
             return outcome.done("computer_settings", wanted=action, message="I have unmuted myself.", verified=True)
 
-    if action in ("minimize_jarvis", "jarvis_minimize") or (action in ("minimize", "minimize_window") and is_jarvis_target):
+    if action in ("minimize_jarvis", "jarvis_minimize") or (
+        action in ("minimize", "minimize_window") and is_jarvis_target
+    ):
         if player and hasattr(player, "minimize_jarvis"):
             player.minimize_jarvis()
             if hasattr(player, "write_log"):
                 player.write_log("SYS: JARVIS minimized.")
             return outcome.done("computer_settings", wanted=action, message="I have minimized myself.", verified=True)
 
-    if action in ("maximize_jarvis", "jarvis_maximize", "restore_jarvis") or (action in ("maximize", "maximize_window", "restore") and is_jarvis_target):
+    if action in ("maximize_jarvis", "jarvis_maximize", "restore_jarvis") or (
+        action in ("maximize", "maximize_window", "restore") and is_jarvis_target
+    ):
         if player and hasattr(player, "maximize_jarvis"):
             player.maximize_jarvis()
             if hasattr(player, "write_log"):
                 player.write_log("SYS: JARVIS restored.")
-            return outcome.done("computer_settings", wanted=action, message="I have restored and maximized myself.", verified=True)
+            return outcome.done(
+                "computer_settings", wanted=action, message="I have restored and maximized myself.", verified=True
+            )
 
-    if action in ("show_memory", "manage_memory", "memory_platform", "memory_manager", "show_actions", "manage_actions", "action_registry", "action_platform"):
+    if action in (
+        "show_memory",
+        "manage_memory",
+        "memory_platform",
+        "memory_manager",
+        "show_actions",
+        "manage_actions",
+        "action_registry",
+        "action_platform",
+    ):
         tab = "actions" if "action" in action else "memory"
         if player and hasattr(player, "show_memory_actions_display"):
             player.show_memory_actions_display(tab=tab)
             if hasattr(player, "write_log"):
                 player.write_log(f"SYS: Opening JARVIS Memory & Actions Platform ({tab}).")
-            return outcome.done("computer_settings", wanted=action, message=f"Opening JARVIS {tab} management matrix.", verified=True)
+            return outcome.done(
+                "computer_settings", wanted=action, message=f"Opening JARVIS {tab} management matrix.", verified=True
+            )
 
     # ── The gate ─────────────────────────────────────────────────────────────
     # A human presses a button, or this does not happen. The model can no longer
@@ -1125,20 +1429,20 @@ def computer_settings(
         title, detail = _IRREVERSIBLE[action]
         func = ACTION_MAP.get(action)
         if func is None:
-            return outcome.failed("computer_settings",
-                                  "that is not an action this tool has",
-                                  wanted=raw_action)
+            return outcome.failed("computer_settings", "that is not an action this tool has", wanted=raw_action)
         if params.get("_execution_authorized"):
             func()
             return outcome.done("computer_settings", action=action, message=f"{action} done.", verified=True)
         if confirm.pending_title():
             return outcome.ask(
                 "computer_settings",
-                "there is already a confirmation waiting on screen - the user "
-                "has to answer that one first",
-                wanted=action)
+                "there is already a confirmation waiting on screen - the user has to answer that one first",
+                wanted=action,
+            )
         return confirm.request(
-            key=action, title=title, detail=detail,
+            key=action,
+            title=title,
+            detail=detail,
             run=lambda f=func, a=action: (f(), f"{a} done.")[1],
         )
 
@@ -1162,46 +1466,40 @@ def computer_settings(
             before = volume_get()
             volume_set(target)
             if before is not None:
-                push_undo(f"volume {before}% → {target}%",
-                          lambda b=before: (volume_set(b), f"Back to {b}%.")[1])
+                push_undo(f"volume {before}% → {target}%", lambda b=before: (volume_set(b), f"Back to {b}%.")[1])
             now = volume_get()
             if now is None:
                 return outcome.unverified(
                     "computer_settings",
-                    "this system does not report its volume, so the new "
-                    "level could not be read back", wanted=action, asked=target)
-            return outcome.done("computer_settings", wanted=action,
-                                volume=now, verified=True)
+                    "this system does not report its volume, so the new level could not be read back",
+                    wanted=action,
+                    asked=target,
+                )
+            return outcome.done("computer_settings", wanted=action, volume=now, verified=True)
         except Exception as e:
-            return outcome.failed("computer_settings",
-                                  f"the volume could not be set: {e}", wanted=action)
+            return outcome.failed("computer_settings", f"the volume could not be set: {e}", wanted=action)
 
     if action in ("type_text", "write_on_screen", "type", "write"):
         text = str(value or params.get("text", "")).strip()
         if not text:
-            return outcome.failed("computer_settings",
-                                  "no text was given to type", wanted=action)
+            return outcome.failed("computer_settings", "no text was given to type", wanted=action)
         enter_after = str(params.get("press_enter", "false")).lower() in ("true", "1", "yes")
         type_text(text, press_enter_after=enter_after)
-        return outcome.done("computer_settings", wanted=action,
-                            typed=text[:60])
+        return outcome.done("computer_settings", wanted=action, typed=text[:60])
 
     if action == "press_key":
         key = str(value or params.get("key", "")).strip()
         if not key:
-            return outcome.failed("computer_settings",
-                                  "no key was given to press", wanted=action)
+            return outcome.failed("computer_settings", "no key was given to press", wanted=action)
         press_key(key)
         return outcome.done("computer_settings", wanted=action, key=key)
 
     if action in ("reload_n", "refresh_n", "reload_page_n"):
         try:
             reload_page_n(int(value or 1))
-            return outcome.done("computer_settings", wanted=action,
-                                times=value or 1)
+            return outcome.done("computer_settings", wanted=action, times=value or 1)
         except Exception as e:
-            return outcome.failed("computer_settings",
-                                  f"the reload failed: {e}", wanted=action)
+            return outcome.failed("computer_settings", f"the reload failed: {e}", wanted=action)
 
     if action == "scroll_up":
         scroll_up(int(value or 500))
@@ -1230,22 +1528,18 @@ def computer_settings(
         func()
     except Exception as e:
         print(f"[Settings] Action failed ({action}): {e}")
-        return outcome.failed("computer_settings", f"it failed: {e}",
-                              wanted=action)
+        return outcome.failed("computer_settings", f"it failed: {e}", wanted=action)
 
     if _before:
         kind, old = _before
         if old is not None:
             if kind == "volume":
-                push_undo(f"volume ({action})",
-                          lambda b=old: (volume_set(b), f"Volume back to {b}%.")[1])
+                push_undo(f"volume ({action})", lambda b=old: (volume_set(b), f"Volume back to {b}%.")[1])
             elif kind == "brightness":
-                push_undo(f"brightness ({action})",
-                          lambda b=old: (brightness_set(b), f"Brightness back to {b}%.")[1])
+                push_undo(f"brightness ({action})", lambda b=old: (brightness_set(b), f"Brightness back to {b}%.")[1])
     elif action == "dark_mode":
         # A pure toggle: calling it again is the undo.
-        push_undo("dark mode toggled",
-                  lambda: (dark_mode(), "Theme switched back.")[1])
+        push_undo("dark mode toggled", lambda: (dark_mode(), "Theme switched back.")[1])
 
     # ── Say what is known, and only that ─────────────────────────────────────
     #
@@ -1275,17 +1569,18 @@ def computer_settings(
         if old_value is None or now is None:
             return outcome.unverified(
                 "computer_settings",
-                f"this system does not report its {kind}, so the change could "
-                f"not be read back",
-                wanted=action)
+                f"this system does not report its {kind}, so the change could not be read back",
+                wanted=action,
+            )
         if now == old_value:
             return outcome.unverified(
                 "computer_settings",
                 f"the {kind} still reads {now}% - it may already have been at "
                 f"the limit, or this system may not have accepted the change",
-                wanted=action, value=now)
-        return outcome.done("computer_settings", wanted=action,
-                            **{kind: now}, verified=True)
+                wanted=action,
+                value=now,
+            )
+        return outcome.done("computer_settings", wanted=action, **{kind: now}, verified=True)
 
     return outcome.done("computer_settings", wanted=action)
 
@@ -1323,29 +1618,28 @@ TOOL = {
                     "type_text | screenshot | lock_screen | open_settings | "
                     "file_explorer | open_run | dark_mode | "
                     "restart | shutdown"
-                )
+                ),
             },
             "description": {
                 "type": "STRING",
                 "description": (
-                    "Fallback only, when no action name above fits. "
-                    "Resolved locally — no extra model call."
-                )
+                    "Fallback only, when no action name above fits. Resolved locally — no extra model call."
+                ),
             },
             "value": {
                 "type": "STRING",
-                "description": "Optional value: volume level 0-100, text to type, key name, etc."
-            }
+                "description": "Optional value: volume level 0-100, text to type, key name, etc.",
+            },
         },
-        "required": []
+        "required": [],
     },
     "handler": computer_settings,
 }
 
 try:
     from core import platform_hooks
+
     platform_hooks.register_hook("volume_get", volume_get)
     platform_hooks.register_hook("volume_set", volume_set)
 except Exception:
     pass
-

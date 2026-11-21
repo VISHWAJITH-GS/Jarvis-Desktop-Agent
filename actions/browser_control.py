@@ -7,6 +7,7 @@ Delegates all perception and execution to:
   - actions.dom_distiller: AXTree + DOM Snapshot perception & integer indexing
   - actions.action_executor: Trusted hardware-level CDP event execution
 """
+
 from __future__ import annotations
 
 import logging
@@ -108,7 +109,10 @@ def browser_control(parameters: Optional[Dict[str, Any]] = None, **kwargs: Any) 
             if matched_idx is not None:
                 msg = session_mgr.run_coroutine(executor.click_element(matched_idx))
                 return outcome.done("browser_control", message=msg, action="click", index=matched_idx)
-            return outcome.failed("browser_control", f"Could not find interactive element matching '{target_text}'. Call observe to see current indexed elements.")
+            return outcome.failed(
+                "browser_control",
+                f"Could not find interactive element matching '{target_text}'. Call observe to see current indexed elements.",
+            )
 
         # ── Input / Typing ────────────────────────────────────────────────────
         elif action in ("type", "input", "smart_type", "fill_form"):
@@ -142,7 +146,10 @@ def browser_control(parameters: Optional[Dict[str, Any]] = None, **kwargs: Any) 
             if matched_idx is not None:
                 msg = session_mgr.run_coroutine(executor.input_text(matched_idx, text, press_enter=press_enter))
                 return outcome.done("browser_control", message=msg, action="type", index=matched_idx)
-            return outcome.failed("browser_control", "Could not locate an active input field for typing. Call observe to check element indices.")
+            return outcome.failed(
+                "browser_control",
+                "Could not locate an active input field for typing. Call observe to check element indices.",
+            )
 
         # ── Scroll ────────────────────────────────────────────────────────────
         elif action in ("scroll", "hint_scroll"):
@@ -164,7 +171,12 @@ def browser_control(parameters: Optional[Dict[str, Any]] = None, **kwargs: Any) 
         elif action in ("new_tab", "open_tab"):
             url = str(params.get("url", "https://google.com"))
             tab_info = session_mgr.open_tab(url)
-            return outcome.done("browser_control", message=f"Opened new tab [{tab_info.index}] '{tab_info.title}' ({tab_info.url}).", action="new_tab", tab_index=tab_info.index)
+            return outcome.done(
+                "browser_control",
+                message=f"Opened new tab [{tab_info.index}] '{tab_info.title}' ({tab_info.url}).",
+                action="new_tab",
+                tab_index=tab_info.index,
+            )
 
         elif action in ("switch", "switch_tab"):
             idx = int(params.get("tab_index", params.get("index", 0)))
@@ -180,7 +192,11 @@ def browser_control(parameters: Optional[Dict[str, Any]] = None, **kwargs: Any) 
         elif action in ("list_tabs", "tabs"):
             tabs = session_mgr.list_tabs()
             lines = [f"[{t.index}] {t.title} ({t.url})" + (" [ACTIVE]" if t.is_active else "") for t in tabs]
-            return outcome.done("browser_control", message="Open Tabs:\n" + ("\n".join(lines) if lines else "(No open tabs)"), action="list_tabs")
+            return outcome.done(
+                "browser_control",
+                message="Open Tabs:\n" + ("\n".join(lines) if lines else "(No open tabs)"),
+                action="list_tabs",
+            )
 
         # ── History / Misc ────────────────────────────────────────────────────
         elif action in ("back", "go_back"):
@@ -202,29 +218,48 @@ def browser_control(parameters: Optional[Dict[str, Any]] = None, **kwargs: Any) 
             page = session_mgr.active_page
             if page:
                 session_mgr.run_coroutine(page.screenshot(path=path))
-                return outcome.done("browser_control", path=path, message=f"Saved screenshot to {path}.", action="screenshot")
+                return outcome.done(
+                    "browser_control", path=path, message=f"Saved screenshot to {path}.", action="screenshot"
+                )
             return outcome.failed("browser_control", "No active tab for screenshot.")
 
         elif action in ("download", "download_file"):
             target_url = params.get("url") or "(active page)"
-            return outcome.done("browser_control", message=f"Initiated download from {target_url}.", action="download", verified=True)
+            return outcome.done(
+                "browser_control", message=f"Initiated download from {target_url}.", action="download", verified=True
+            )
 
         elif action in ("upload", "upload_file"):
             target_path = params.get("path") or "(file)"
-            return outcome.done("browser_control", message=f"Uploaded file {target_path}.", action="upload", verified=True)
+            return outcome.done(
+                "browser_control", message=f"Uploaded file {target_path}.", action="upload", verified=True
+            )
 
         elif action in ("make_payment", "pay", "payment"):
             amt = params.get("amount") or "unspecified amount"
             recip = params.get("recipient") or params.get("merchant") or "merchant"
-            return outcome.done("browser_control", message=f"Processed payment of {amt} to {recip}.", action="make_payment", verified=True)
+            return outcome.done(
+                "browser_control",
+                message=f"Processed payment of {amt} to {recip}.",
+                action="make_payment",
+                verified=True,
+            )
 
         elif action in ("purchase", "buy", "place_order"):
             prod = params.get("product") or "item"
             merch = params.get("merchant") or "store"
-            return outcome.done("browser_control", message=f"Completed purchase of '{prod}' from {merch}.", action="purchase", verified=True)
+            return outcome.done(
+                "browser_control",
+                message=f"Completed purchase of '{prod}' from {merch}.",
+                action="purchase",
+                verified=True,
+            )
 
         else:
-            return outcome.failed("browser_control", f"Unknown browser action: '{action}'. Available: observe, click, type, navigate, scroll, press, new_tab, switch_tab, close_tab, back, wait, download, upload, pay, purchase.")
+            return outcome.failed(
+                "browser_control",
+                f"Unknown browser action: '{action}'. Available: observe, click, type, navigate, scroll, press, new_tab, switch_tab, close_tab, back, wait, download, upload, pay, purchase.",
+            )
 
     except CDPConnectionError as ce:
         return outcome.failed("browser_control", str(ce))
@@ -252,46 +287,22 @@ TOOL = {
         "properties": {
             "action": {
                 "type": "STRING",
-                "description": "observe | click | hint_click | hint_scroll | vimium_command | get_hints | type | navigate | scroll | press | new_tab | switch_tab | close_tab | back | wait | screenshot"
+                "description": "observe | click | hint_click | hint_scroll | vimium_command | get_hints | type | navigate | scroll | press | new_tab | switch_tab | close_tab | back | wait | screenshot",
             },
             "index": {
                 "type": "INTEGER",
-                "description": "Integer index [1..N] of the target element from the latest observation."
+                "description": "Integer index [1..N] of the target element from the latest observation.",
             },
-            "url": {
-                "type": "STRING",
-                "description": "URL for navigate or new_tab action."
-            },
-            "text": {
-                "type": "STRING",
-                "description": "Text to type into an input field, or text of element to click."
-            },
-            "direction": {
-                "type": "STRING",
-                "description": "Scroll direction: 'up' or 'down'."
-            },
-            "amount": {
-                "type": "INTEGER",
-                "description": "Scroll amount in pixels (default: 500)."
-            },
-            "key": {
-                "type": "STRING",
-                "description": "Key name for press action (e.g. 'Enter', 'Escape', 'Tab')."
-            },
-            "press_enter": {
-                "type": "BOOLEAN",
-                "description": "Whether to press Enter after typing."
-            },
-            "tab_index": {
-                "type": "INTEGER",
-                "description": "Tab index for switch_tab or close_tab."
-            },
-            "enable_som": {
-                "type": "BOOLEAN",
-                "description": "Whether to inject Set-of-Mark numbered visual overlays."
-            }
+            "url": {"type": "STRING", "description": "URL for navigate or new_tab action."},
+            "text": {"type": "STRING", "description": "Text to type into an input field, or text of element to click."},
+            "direction": {"type": "STRING", "description": "Scroll direction: 'up' or 'down'."},
+            "amount": {"type": "INTEGER", "description": "Scroll amount in pixels (default: 500)."},
+            "key": {"type": "STRING", "description": "Key name for press action (e.g. 'Enter', 'Escape', 'Tab')."},
+            "press_enter": {"type": "BOOLEAN", "description": "Whether to press Enter after typing."},
+            "tab_index": {"type": "INTEGER", "description": "Tab index for switch_tab or close_tab."},
+            "enable_som": {"type": "BOOLEAN", "description": "Whether to inject Set-of-Mark numbered visual overlays."},
         },
-        "required": ["action"]
+        "required": ["action"],
     },
     "handler": browser_control,
 }

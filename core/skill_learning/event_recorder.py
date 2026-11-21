@@ -7,6 +7,7 @@ Records user interactions during a demonstration session:
 - Window activations & application switches
 - Browser navigations and dialog events
 """
+
 from __future__ import annotations
 
 import platform
@@ -156,6 +157,7 @@ class EventRecorder:
         """Inject or record custom structured event (e.g. browser navigation, file dialog)."""
         now = time.time()
         from memory.config_manager import redact_secret
+
         clean_val = redact_secret(input_value)
 
         event = UIEvent(
@@ -231,23 +233,25 @@ class EventRecorder:
                     last_window_check = now
                     try:
                         from core import platform_hooks
+
                         win = platform_hooks.call_hook("get_active_window", default=None)
                         if win and win.get("status") == "success":
-                                title = win.get("title", "")
-                                pname = win.get("process_name", "")
-                                if (title and title != self._last_window_title) or (pname and pname != self._last_process_name):
-                                    self._last_window_title = title
-                                    self._last_process_name = pname
-                                    evt = UIEvent(
-                                        timestamp=now,
-                                        event_type="window_activate",
-                                        app_name=pname.replace(".exe", "").capitalize(),
-                                        window_title=title,
-                                        action="activate_window",
-                                    )
-                                    self._emit_event(evt)
+                            title = win.get("title", "")
+                            pname = win.get("process_name", "")
+                            if (title and title != self._last_window_title) or (
+                                pname and pname != self._last_process_name
+                            ):
+                                self._last_window_title = title
+                                self._last_process_name = pname
+                                evt = UIEvent(
+                                    timestamp=now,
+                                    event_type="window_activate",
+                                    app_name=pname.replace(".exe", "").capitalize(),
+                                    window_title=title,
+                                    action="activate_window",
+                                )
+                                self._emit_event(evt)
                     except Exception:
                         pass
 
             time.sleep(0.03)
-

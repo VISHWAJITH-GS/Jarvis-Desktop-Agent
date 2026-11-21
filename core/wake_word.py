@@ -20,6 +20,7 @@ Design goals:
          model (such as standalone "Jarvis"). During room silence the spotter
          sleeps with ~0% CPU.
 """
+
 from __future__ import annotations
 
 import inspect
@@ -60,10 +61,10 @@ _BUILTIN_OWW_MODELS: dict[str, str] = {
 _DETECT_COOLDOWN_S = 1.5
 
 # Cheap RMS energy VAD parameters for the secondary keyword spotter (int16 PCM).
-_VAD_SPEECH_RMS = 260.0        # RMS above this counts as speech energy
-_VAD_MIN_SPEECH_S = 0.18       # minimum voiced duration to evaluate
-_VAD_SILENCE_END_S = 0.35      # trailing silence that ends a short utterance
-_VAD_MAX_UTTERANCE_S = 1.8     # flush and check after this much continuous speech
+_VAD_SPEECH_RMS = 260.0  # RMS above this counts as speech energy
+_VAD_MIN_SPEECH_S = 0.18  # minimum voiced duration to evaluate
+_VAD_SILENCE_END_S = 0.35  # trailing silence that ends a short utterance
+_VAD_MAX_UTTERANCE_S = 1.8  # flush and check after this much continuous speech
 
 
 def normalize_wake_words(wake_words: Optional[Iterable[str]]) -> list[str]:
@@ -123,6 +124,7 @@ def _find_custom_model_file(word: str) -> Optional[str]:
         pass
     try:
         import openwakeword
+
         search_dirs.append(Path(openwakeword.__file__).resolve().parent / "resources" / "models")
     except Exception:
         pass
@@ -175,6 +177,7 @@ def is_installed() -> bool:
     """True if the openwakeword package is importable (no model check)."""
     try:
         import importlib.util
+
         return importlib.util.find_spec("openwakeword") is not None
     except Exception:
         return False
@@ -192,22 +195,21 @@ def is_ready() -> bool:
         return False
     try:
         import openwakeword
+
         models_dir = Path(openwakeword.__file__).resolve().parent / "resources" / "models"
         if not models_dir.is_dir():
             return False
-        has_wake = (any(models_dir.glob(f"{WAKE_MODEL}*.onnx"))
-                    or any(models_dir.glob(f"{WAKE_MODEL}*.tflite")))
-        has_mel = (any(models_dir.glob("melspectrogram*.onnx"))
-                   or any(models_dir.glob("melspectrogram*.tflite")))
-        has_emb = (any(models_dir.glob("embedding_model*.onnx"))
-                   or any(models_dir.glob("embedding_model*.tflite")))
+        has_wake = any(models_dir.glob(f"{WAKE_MODEL}*.onnx")) or any(models_dir.glob(f"{WAKE_MODEL}*.tflite"))
+        has_mel = any(models_dir.glob("melspectrogram*.onnx")) or any(models_dir.glob("melspectrogram*.tflite"))
+        has_emb = any(models_dir.glob("embedding_model*.onnx")) or any(models_dir.glob("embedding_model*.tflite"))
         return bool(has_wake and has_mel and has_emb)
     except Exception:
         return False
 
 
-def install_and_download(logger: Callable[[str], None] = print,
-                         notify: Callable[[str], None] | None = None) -> tuple[bool, str]:
+def install_and_download(
+    logger: Callable[[str], None] = print, notify: Callable[[str], None] | None = None
+) -> tuple[bool, str]:
     """
     One-click setup for the UI button: pip-install openwakeword if missing, then
     download the wake model. Returns (ok, message). Never raises — every failure
@@ -220,7 +222,10 @@ def install_and_download(logger: Callable[[str], None] = print,
             _tell("Wake word: installing openwakeword (one-time)…")
             r = subprocess.run(
                 [sys.executable, "-m", "pip", "install", "openwakeword"],
-                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
             )
             if r.returncode != 0:
                 tail = (r.stderr or r.stdout or "").strip().splitlines()[-1:] or [""]
@@ -230,10 +235,11 @@ def install_and_download(logger: Callable[[str], None] = print,
         _tell("Wake word: downloading models…")
         try:
             import openwakeword.utils as _u
+
             try:
                 _u.download_models([WAKE_MODEL])
             except TypeError:
-                _u.download_models()   # older signature downloads the default set
+                _u.download_models()  # older signature downloads the default set
         except Exception as e:
             return False, f"model download failed: {e}"
 
@@ -301,16 +307,15 @@ class WakeWordDetector:
         try:
             sig = inspect.signature(cb)
             params = [
-                p for p in sig.parameters.values()
-                if p.kind in (
+                p
+                for p in sig.parameters.values()
+                if p.kind
+                in (
                     inspect.Parameter.POSITIONAL_ONLY,
                     inspect.Parameter.POSITIONAL_OR_KEYWORD,
                 )
             ]
-            has_varargs = any(
-                p.kind == inspect.Parameter.VAR_POSITIONAL
-                for p in sig.parameters.values()
-            )
+            has_varargs = any(p.kind == inspect.Parameter.VAR_POSITIONAL for p in sig.parameters.values())
             return has_varargs or len(params) >= 1
         except Exception:
             return False
@@ -343,6 +348,7 @@ class WakeWordDetector:
         if self._oww_models:
             try:
                 from openwakeword.model import Model
+
                 self._model = Model(
                     wakeword_models=self._oww_models,
                     inference_framework="onnx",
@@ -382,6 +388,7 @@ class WakeWordDetector:
     def _can_import_whisper() -> bool:
         try:
             import importlib.util
+
             return importlib.util.find_spec("faster_whisper") is not None
         except Exception:
             return False
@@ -566,6 +573,7 @@ class WakeWordDetector:
             return None
         try:
             from faster_whisper import WhisperModel
+
             for model_name in ("tiny", "base", "tiny.en", "base.en"):
                 try:
                     self._whisper_model = WhisperModel(
@@ -614,10 +622,7 @@ class WakeWordDetector:
                     continue
 
                 # Confidence estimate from segment no_speech_prob (1.0 - min no_speech_prob)
-                confidences = [
-                    max(0.0, 1.0 - float(getattr(s, "no_speech_prob", 0.0)))
-                    for s in seg_list
-                ]
+                confidences = [max(0.0, 1.0 - float(getattr(s, "no_speech_prob", 0.0))) for s in seg_list]
                 confidence = max(confidences) if confidences else 1.0
 
                 matched = match_wake_word(transcript, self._spotter_words)

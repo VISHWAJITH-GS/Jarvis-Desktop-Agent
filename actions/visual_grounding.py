@@ -6,6 +6,7 @@ Analyzes desktop screenshots with Google Gemini vision to ground interactive UI 
   - Returns structured target descriptors (not arbitrary executable code).
   - Handles coordinate scaling and normalization from preview images to physical desktop coordinates.
 """
+
 from __future__ import annotations
 
 import json
@@ -70,7 +71,7 @@ class VisualGroundingSubsystem:
 Analyze this desktop screenshot and identify interactive UI elements matching the query.
 
 QUERY: "{query}"
-{f'ADDITIONAL CONTEXT: "{context_hint}"' if context_hint else ''}
+{f'ADDITIONAL CONTEXT: "{context_hint}"' if context_hint else ""}
 
 SCREENSHOT DIMENSIONS: {preview.width} x {preview.height} pixels.
 
@@ -181,4 +182,3 @@ def get_visual_grounding() -> VisualGroundingSubsystem:
     if _DEFAULT_VISUAL_GROUNDING is None:
         _DEFAULT_VISUAL_GROUNDING = VisualGroundingSubsystem()
     return _DEFAULT_VISUAL_GROUNDING
-

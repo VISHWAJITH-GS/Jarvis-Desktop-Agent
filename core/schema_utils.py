@@ -4,6 +4,7 @@ core/schema_utils.py — Shared Schema Validation and Tool Metadata Utilities
 Consolidates schema helpers, metadata stripping, and rigorous parameter type/enum
 validation shared between core.action_loader and core.plugin_loader.
 """
+
 from __future__ import annotations
 
 import re
@@ -37,7 +38,7 @@ def _opt_upper(value: Any, allowed: tuple[str, ...]) -> Optional[str]:
 
 
 def _opt_tier(value: Any) -> Optional[str]:
-    """"core" or "extra" from a declaration, or None when it did not say.
+    """ "core" or "extra" from a declaration, or None when it did not say.
     Typos fall back to None rather than crashing.
     """
     text = str(value or "").strip().lower()
@@ -123,6 +124,9 @@ def validate_parameters(schema: dict, parameters: dict) -> Tuple[bool, str]:
                     val_match = True
                     break
             if not val_match:
-                return False, f"Value '{param_val}' for parameter '{param_name}' is not in allowed choices: {list(allowed_enums)}."
+                return (
+                    False,
+                    f"Value '{param_val}' for parameter '{param_name}' is not in allowed choices: {list(allowed_enums)}.",
+                )
 
     return True, ""

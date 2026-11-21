@@ -24,7 +24,6 @@ from tests.test_audio_manager_comprehensive import _FakeAudioEnvironment
 
 
 class TestHybridBluetoothArchitecture(unittest.TestCase):
-
     def setUp(self):
         self._orig_routing = config_manager.get_audio_routing_mode()
         self._orig_builtin = config_manager.get_builtin_microphone()
@@ -108,6 +107,7 @@ class TestHybridBluetoothArchitecture(unittest.TestCase):
     def test_wake_word_pause_and_buffer_reset(self):
         """WakeWordDetector paused state drops frames and buffer reset drains queues."""
         import queue
+
         detector = WakeWordDetector.__new__(WakeWordDetector)
         detector._paused = False
         detector._running = True
@@ -146,13 +146,19 @@ class TestHybridBluetoothArchitecture(unittest.TestCase):
         config_manager.save_bluetooth_microphone("Headset (OPPO Enco Buds2)")
 
         env = _FakeAudioEnvironment(bt_connected=True)
-        with self._patched_env(env), \
-             patch("sounddevice.query_devices", side_effect=lambda idx=None: env.devices_table()[idx] if idx is not None else env.devices_table()), \
-             patch("sounddevice.InputStream", side_effect=env.make_input_stream), \
-             patch("sounddevice.RawOutputStream", side_effect=env.make_output_stream):
-
+        with (
+            self._patched_env(env),
+            patch(
+                "sounddevice.query_devices",
+                side_effect=lambda idx=None: env.devices_table()[idx] if idx is not None else env.devices_table(),
+            ),
+            patch("sounddevice.InputStream", side_effect=env.make_input_stream),
+            patch("sounddevice.RawOutputStream", side_effect=env.make_output_stream),
+        ):
             mgr = AudioManager(bt_settle_s=0.0)
-            st = mgr.initialize(preferred_input=None, preferred_output="Headphones (OPPO Enco Buds2)", start_monitor=False)
+            st = mgr.initialize(
+                preferred_input=None, preferred_output="Headphones (OPPO Enco Buds2)", start_monitor=False
+            )
 
             self.assertEqual(st["routing_mode"], "auto_hybrid")
             self.assertEqual(st["active_input_role"], "builtin")
@@ -172,13 +178,17 @@ class TestHybridBluetoothArchitecture(unittest.TestCase):
         config_manager.save_audio_routing_mode("auto_hybrid")
         env = _FakeAudioEnvironment(bt_connected=True)
 
-        with self._patched_env(env), \
-             patch("sounddevice.query_devices", side_effect=lambda idx=None: env.devices_table()[idx] if idx is not None else env.devices_table()), \
-             patch("sounddevice.InputStream", side_effect=env.make_input_stream), \
-             patch("sounddevice.RawOutputStream", side_effect=env.make_output_stream), \
-             patch("core.audio_devices.find_bluetooth_microphone", return_value="Headset (OPPO Enco Buds2)"), \
-             patch("core.audio_devices.find_builtin_microphone", return_value="Microphone Array (Realtek(R) Audio)"):
-
+        with (
+            self._patched_env(env),
+            patch(
+                "sounddevice.query_devices",
+                side_effect=lambda idx=None: env.devices_table()[idx] if idx is not None else env.devices_table(),
+            ),
+            patch("sounddevice.InputStream", side_effect=env.make_input_stream),
+            patch("sounddevice.RawOutputStream", side_effect=env.make_output_stream),
+            patch("core.audio_devices.find_bluetooth_microphone", return_value="Headset (OPPO Enco Buds2)"),
+            patch("core.audio_devices.find_builtin_microphone", return_value="Microphone Array (Realtek(R) Audio)"),
+        ):
             mgr = AudioManager(bt_settle_s=0.0)
             mgr.initialize(preferred_input=None, preferred_output="Headphones (OPPO Enco Buds2)", start_monitor=False)
 
@@ -221,6 +231,7 @@ class TestHybridBluetoothArchitecture(unittest.TestCase):
         mgr._transition_state = "switching_to_conversation"
 
         frames_delivered = []
+
         def user_callback(indata, frames, time_info, status):
             if mgr.transition_state != "idle":
                 return

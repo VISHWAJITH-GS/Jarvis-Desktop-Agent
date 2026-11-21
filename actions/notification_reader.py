@@ -10,6 +10,7 @@ Capabilities:
 - Handle permission restrictions and unavailable content gracefully
 - Track read notification IDs to prevent repetitive reading
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -146,7 +147,7 @@ $results | ConvertTo-Json -Depth 2
             end_idx = max(end_arr, end_obj)
 
             if start_idx != -1 and end_idx != -1 and end_idx >= start_idx:
-                json_str = stdout[start_idx:end_idx + 1]
+                json_str = stdout[start_idx : end_idx + 1]
             else:
                 json_str = stdout
 
@@ -196,6 +197,7 @@ $results | ConvertTo-Json -Depth 2
         notifs: List[DesktopNotification] = []
         try:
             from actions import windows_uia
+
             if not windows_uia.is_available():
                 return notifs
 
@@ -208,7 +210,11 @@ $results | ConvertTo-Json -Depth 2
                 try:
                     w_title = win.window_text()
                     c_name = win.class_name()
-                    if "notification" in w_title.lower() or "action center" in w_title.lower() or "toast" in c_name.lower():
+                    if (
+                        "notification" in w_title.lower()
+                        or "action center" in w_title.lower()
+                        or "toast" in c_name.lower()
+                    ):
                         # Scrape text elements
                         elems = win.descendants(control_type="Text")
                         texts = [e.window_text().strip() for e in elems if e.window_text().strip()]
@@ -216,7 +222,11 @@ $results | ConvertTo-Json -Depth 2
                             app = texts[0]
                             body = " — ".join(texts[1:3])
                             nid = hashlib.md5(f"{app}{body}".encode()).hexdigest()[:8]
-                            notifs.append(DesktopNotification(id=nid, app_name=app, title=texts[1], body=texts[2] if len(texts) > 2 else ""))
+                            notifs.append(
+                                DesktopNotification(
+                                    id=nid, app_name=app, title=texts[1], body=texts[2] if len(texts) > 2 else ""
+                                )
+                            )
                 except Exception:
                     continue
         except Exception:
@@ -253,7 +263,11 @@ $results | ConvertTo-Json -Depth 2
         count = len(notifs)
         if count == 0:
             filter_note = f" from {app_filter}" if app_filter else ""
-            msg = f"No new notifications{filter_note}." if not reason else f"No accessible notifications{filter_note} ({reason})."
+            msg = (
+                f"No new notifications{filter_note}."
+                if not reason
+                else f"No accessible notifications{filter_note} ({reason})."
+            )
             return outcome.ActionResult(
                 status=outcome.STATUS_DONE if ok else outcome.STATUS_UNVERIFIED,
                 action="get_notifications",
@@ -265,7 +279,9 @@ $results | ConvertTo-Json -Depth 2
             )
 
         speech_lines = [n.format_speech() for n in notifs[:limit]]
-        summary_text = f"You have {count} notification{'s' if count != 1 else ''}:\n" + "\n".join([f"• {s}" for s in speech_lines])
+        summary_text = f"You have {count} notification{'s' if count != 1 else ''}:\n" + "\n".join(
+            [f"• {s}" for s in speech_lines]
+        )
 
         return outcome.ActionResult(
             status=outcome.STATUS_DONE,
@@ -344,6 +360,7 @@ def notification_center(parameters: dict = None, player=None, **kwargs) -> str:
             player.show_content("Notification Center", res.message)
 
     from core.permissions import set_untrusted_context
+
     set_untrusted_context(True)
     return outcome.untrusted("notifications", res.to_speech_text())
 
@@ -378,4 +395,3 @@ TOOL = {
     },
     "handler": notification_center,
 }
-

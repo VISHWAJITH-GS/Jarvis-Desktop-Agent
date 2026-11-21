@@ -8,7 +8,6 @@ from memory import config_manager
 
 
 class TestEnglishOnlyPolicy(unittest.TestCase):
-
     def test_system_prompt_contains_english_only_instruction(self):
         prompt_path = Path("core/prompt.txt")
         self.assertTrue(prompt_path.exists(), "core/prompt.txt must exist")
@@ -92,4 +91,3 @@ class TestEnglishOnlyPolicy(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

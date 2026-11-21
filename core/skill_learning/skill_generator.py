@@ -5,6 +5,7 @@ Coordinates the demonstration analyzer and workflow builder to generate
 authoritative, declarative, and validated SkillDefinitions from captured
 user demonstrations.
 """
+
 from __future__ import annotations
 
 import logging
@@ -56,6 +57,7 @@ class SkillGenerator:
     def generate_from_session(self, session: LearningSession) -> SkillDefinition:
         """Generate a SkillDefinition directly from a completed LearningSession."""
         from core.skill_learning.observation_engine import ObservationEngine
+
         engine = ObservationEngine()
         trace_summary = engine.get_trace_summary(session.events)
         skill = self.generate_from_events(
@@ -65,4 +67,3 @@ class SkillGenerator:
         )
         session.generated_skill = skill
         return skill
-

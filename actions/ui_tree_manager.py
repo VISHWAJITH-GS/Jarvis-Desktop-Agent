@@ -24,6 +24,7 @@ Features:
      5) Bounding rectangle proximity / visibility
      6) Nearby labels / context
 """
+
 from __future__ import annotations
 
 import logging
@@ -245,11 +246,25 @@ class UITreeManager:
                     target_root = desktop
 
         if target_root is None:
-            return {"status": "failed", "reason": "No accessible window or root found to inspect.", "elements": [], "total_found": 0}
+            return {
+                "status": "failed",
+                "reason": "No accessible window or root found to inspect.",
+                "elements": [],
+                "total_found": 0,
+            }
 
         actionable_types = {
-            "Button", "ListItem", "TreeItem", "MenuItem", "Hyperlink",
-            "CheckBox", "RadioButton", "ComboBox", "Edit", "TabItem", "SplitButton"
+            "Button",
+            "ListItem",
+            "TreeItem",
+            "MenuItem",
+            "Hyperlink",
+            "CheckBox",
+            "RadioButton",
+            "ComboBox",
+            "Edit",
+            "TabItem",
+            "SplitButton",
         }
 
         all_matches: List[UIElementNode] = []
@@ -429,7 +444,11 @@ class UITreeManager:
                 logger.debug("InvokePattern failed: %s", e)
 
         # 2. SelectionItemPattern
-        if "SelectionItemPattern" in patterns and hasattr(wrapper, "iface_selection_item") and wrapper.iface_selection_item:
+        if (
+            "SelectionItemPattern" in patterns
+            and hasattr(wrapper, "iface_selection_item")
+            and wrapper.iface_selection_item
+        ):
             try:
                 wrapper.iface_selection_item.Select()
                 return True, "Triggered via SelectionItemPattern"
@@ -445,7 +464,11 @@ class UITreeManager:
                 logger.debug("TogglePattern failed: %s", e)
 
         # 4. ExpandCollapsePattern
-        if "ExpandCollapsePattern" in patterns and hasattr(wrapper, "iface_expand_collapse") and wrapper.iface_expand_collapse:
+        if (
+            "ExpandCollapsePattern" in patterns
+            and hasattr(wrapper, "iface_expand_collapse")
+            and wrapper.iface_expand_collapse
+        ):
             try:
                 wrapper.iface_expand_collapse.Expand()
                 return True, "Triggered via ExpandCollapsePattern"
@@ -468,4 +491,3 @@ def get_ui_tree_manager() -> UITreeManager:
     if _DEFAULT_UI_TREE_MANAGER is None:
         _DEFAULT_UI_TREE_MANAGER = UITreeManager()
     return _DEFAULT_UI_TREE_MANAGER
-

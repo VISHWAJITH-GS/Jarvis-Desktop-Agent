@@ -5,6 +5,7 @@ Design reference: Mark LVII (CC BY-NC 4.0).
 The background task engine is completely decoupled from Qt and the voice session.
 The application caller (e.g., main.py or tests) injects how completed/paused tasks are announced.
 """
+
 from __future__ import annotations
 
 import logging

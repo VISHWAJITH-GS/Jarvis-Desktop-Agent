@@ -7,6 +7,7 @@ Capabilities:
 - Read latest message from a specified contact.
 - Summarize recent conversations with a contact.
 """
+
 from __future__ import annotations
 
 from typing import Optional
@@ -98,4 +99,3 @@ def run(parameters: dict, player=None, session_memory=None) -> str:
 
     lines = [f"{m['sender']}: {m['text']}" for m in msgs]
     return "Your latest WhatsApp messages:\n" + "\n".join(lines)
-

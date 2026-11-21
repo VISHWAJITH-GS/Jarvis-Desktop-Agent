@@ -36,6 +36,7 @@ WHY THIS EXISTS
               improve the assistant with the assistant; adding another means
               adding a class to _PROFILES.
 """
+
 from __future__ import annotations
 
 import ast
@@ -48,13 +49,35 @@ import subprocess
 import sys
 from pathlib import Path
 
-_GUIDE_FILES = ("AGENTS.md", "CLAUDE.md", "CONTRIBUTING.md", ".github/CONTRIBUTING.md",
-                ".cursorrules", ".github/copilot-instructions.md")
+_GUIDE_FILES = (
+    "AGENTS.md",
+    "CLAUDE.md",
+    "CONTRIBUTING.md",
+    ".github/CONTRIBUTING.md",
+    ".cursorrules",
+    ".github/copilot-instructions.md",
+)
 _GUIDE_CHARS = 40_000
 _HARNESS = Path(__file__).with_name("_smoke_harness.py")
-_SKIP_DIRS = {".git", ".hg", ".svn", "node_modules", "venv", ".venv", "env",
-              "__pycache__", ".mypy_cache", ".pytest_cache", "dist", "build",
-              ".idea", ".vscode", ".next", "target", ".jarvis_backup"}
+_SKIP_DIRS = {
+    ".git",
+    ".hg",
+    ".svn",
+    "node_modules",
+    "venv",
+    ".venv",
+    "env",
+    "__pycache__",
+    ".mypy_cache",
+    ".pytest_cache",
+    "dist",
+    "build",
+    ".idea",
+    ".vscode",
+    ".next",
+    "target",
+    ".jarvis_backup",
+}
 _TEST_TIMEOUT = 180
 
 
@@ -77,7 +100,8 @@ _SECRET_RE = re.compile(
     r"(^|/)(\.env(\..*)?|id_(rsa|dsa|ecdsa|ed25519)(\.pub)?|.*\.(pem|key|p12|pfx|keystore|jks)|"
     r".*(secret|credential|password|passwd|token|api[_-]?keys?).*"
     r"\.(json|ya?ml|toml|ini|cfg|conf|txt|env|properties|xml))$",
-    re.IGNORECASE)
+    re.IGNORECASE,
+)
 
 
 def _ignore_patterns(folder: Path) -> list[str]:
@@ -89,8 +113,8 @@ def _ignore_patterns(folder: Path) -> list[str]:
     for line in lines:
         line = line.strip()
         if not line or line.startswith("#") or line.startswith("!"):
-            continue                      # negations ignored: protects more, never less
-        line = re.split(r"\s+#", line, maxsplit=1)[0].strip()   # "path   # note"
+            continue  # negations ignored: protects more, never less
+        line = re.split(r"\s+#", line, maxsplit=1)[0].strip()  # "path   # note"
         if line:
             out.append(line)
     return out
@@ -98,6 +122,7 @@ def _ignore_patterns(folder: Path) -> list[str]:
 
 def _ignored(rel: str, patterns: list[str]) -> bool:
     from fnmatch import fnmatch
+
     parts = rel.split("/")
     for pat in patterns:
         is_dir = pat.endswith("/")
@@ -148,9 +173,11 @@ def dropped_data(rel: str, old: str, new: str) -> str:
             data = json.loads(text)
         elif ext == ".toml":
             import tomllib
+
             data = tomllib.loads(text)
         elif ext in (".yml", ".yaml"):
             import yaml
+
             data = yaml.safe_load(text)
         else:
             return None
@@ -162,6 +189,7 @@ def dropped_data(rel: str, old: str, new: str) -> str:
             if isinstance(v, dict):
                 out.update(f"{k}.{kk}" for kk in v)
         return out
+
     try:
         before, after = keys(old), keys(new)
     except Exception:
@@ -198,8 +226,7 @@ def _project_python(folder: Path) -> str:
 
 def _has_module(python: str, module: str) -> bool:
     try:
-        r = subprocess.run([python, "-c", f"import {module}"], capture_output=True,
-                           timeout=30)
+        r = subprocess.run([python, "-c", f"import {module}"], capture_output=True, timeout=30)
         return r.returncode == 0
     except Exception:
         return False
@@ -214,20 +241,46 @@ def detect_stack(folder: Path) -> dict:
         name = p.name.lower()
         if p.suffix == ".py" and (name.startswith("test_") or name.endswith("_test.py")):
             tests_py = True
-    langs = {".py": "Python", ".js": "JavaScript", ".mjs": "JavaScript", ".ts": "TypeScript",
-             ".tsx": "TypeScript", ".jsx": "JavaScript", ".java": "Java", ".kt": "Kotlin",
-             ".cs": "C#", ".go": "Go", ".rs": "Rust", ".rb": "Ruby", ".php": "PHP",
-             ".cpp": "C++", ".c": "C", ".swift": "Swift", ".dart": "Dart", ".lua": "Lua",
-             ".html": "HTML", ".css": "CSS", ".gd": "GDScript"}
+    langs = {
+        ".py": "Python",
+        ".js": "JavaScript",
+        ".mjs": "JavaScript",
+        ".ts": "TypeScript",
+        ".tsx": "TypeScript",
+        ".jsx": "JavaScript",
+        ".java": "Java",
+        ".kt": "Kotlin",
+        ".cs": "C#",
+        ".go": "Go",
+        ".rs": "Rust",
+        ".rb": "Ruby",
+        ".php": "PHP",
+        ".cpp": "C++",
+        ".c": "C",
+        ".swift": "Swift",
+        ".dart": "Dart",
+        ".lua": "Lua",
+        ".html": "HTML",
+        ".css": "CSS",
+        ".gd": "GDScript",
+    }
     counts: dict[str, int] = {}
     for e, n in exts.items():
         if e in langs:
             counts[langs[e]] = counts.get(langs[e], 0) + n
     languages = [l for l, _ in sorted(counts.items(), key=lambda kv: -kv[1])]
 
-    stack: dict = {"languages": languages, "frameworks": [], "entry_points": [],
-                   "python": None, "test_cmd": None, "test_name": "", "node": False,
-                   "notes": [], "profiles": []}
+    stack: dict = {
+        "languages": languages,
+        "frameworks": [],
+        "entry_points": [],
+        "python": None,
+        "test_cmd": None,
+        "test_name": "",
+        "node": False,
+        "notes": [],
+        "profiles": [],
+    }
 
     # Dependencies name the frameworks better than any guess could.
     deps: list[str] = []
@@ -239,8 +292,7 @@ def detect_stack(folder: Path) -> dict:
                 deps.append(m.group(1))
     pyproject = folder / "pyproject.toml"
     if pyproject.is_file():
-        deps += re.findall(r'^\s*"([A-Za-z0-9_.\-]+)', pyproject.read_text(
-            encoding="utf-8", errors="replace"), re.M)
+        deps += re.findall(r'^\s*"([A-Za-z0-9_.\-]+)', pyproject.read_text(encoding="utf-8", errors="replace"), re.M)
     pkg = folder / "package.json"
     pkg_data: dict = {}
     if pkg.is_file():
@@ -252,9 +304,24 @@ def detect_stack(folder: Path) -> dict:
         deps += list((pkg_data.get("devDependencies") or {}).keys())
     stack["frameworks"] = sorted(set(deps))[:40]
 
-    for name in ("main.py", "app.py", "manage.py", "__main__.py", "run.py", "server.py",
-                 "index.js", "server.js", "app.js", "main.js", "src/main.ts", "src/index.ts",
-                 "src/main.py", "main.go", "src/main.rs", "Program.cs"):
+    for name in (
+        "main.py",
+        "app.py",
+        "manage.py",
+        "__main__.py",
+        "run.py",
+        "server.py",
+        "index.js",
+        "server.js",
+        "app.js",
+        "main.js",
+        "src/main.ts",
+        "src/index.ts",
+        "src/main.py",
+        "main.go",
+        "src/main.rs",
+        "Program.cs",
+    ):
         if (folder / name).is_file():
             stack["entry_points"].append(name)
     if pkg_data.get("main"):
@@ -280,13 +347,19 @@ def detect_stack(folder: Path) -> dict:
         stack["node"] = bool(shutil.which("node"))
         script = str((pkg_data.get("scripts") or {}).get("test", ""))
         npm = shutil.which("npm")
-        if (npm and script and "no test specified" not in script
-                and (folder / "node_modules").is_dir() and not stack["test_cmd"]):
+        if (
+            npm
+            and script
+            and "no test specified" not in script
+            and (folder / "node_modules").is_dir()
+            and not stack["test_cmd"]
+        ):
             stack["test_cmd"] = [npm, "test", "--silent"]
             stack["test_name"] = "npm test"
         elif script and not (folder / "node_modules").is_dir():
-            stack["notes"].append("Has an npm test script, but dependencies are not "
-                                  "installed (no node_modules), so it cannot be run.")
+            stack["notes"].append(
+                "Has an npm test script, but dependencies are not installed (no node_modules), so it cannot be run."
+            )
 
     for prof in _PROFILES:
         if prof.detect(folder):
@@ -305,16 +378,22 @@ def describe_stack(stack: dict) -> str:
 
 
 def _facts(stack: dict) -> str:
-    lines = ["## What this project is (detected from its files)",
-             f"- Languages: {', '.join(stack['languages']) or 'unknown'}"]
+    lines = [
+        "## What this project is (detected from its files)",
+        f"- Languages: {', '.join(stack['languages']) or 'unknown'}",
+    ]
     if stack["frameworks"]:
-        lines.append(f"- Dependencies: {', '.join(stack['frameworks'])} — use these; "
-                     f"do not add new libraries unless the request needs one.")
+        lines.append(
+            f"- Dependencies: {', '.join(stack['frameworks'])} — use these; "
+            f"do not add new libraries unless the request needs one."
+        )
     if stack["entry_points"]:
         lines.append(f"- Entry points: {', '.join(stack['entry_points'])}")
     if stack["test_cmd"]:
-        lines.append(f"- Tests run with {stack['test_name']}; the change must keep them "
-                     f"passing, and new behaviour should get a test in the same style.")
+        lines.append(
+            f"- Tests run with {stack['test_name']}; the change must keep them "
+            f"passing, and new behaviour should get a test in the same style."
+        )
     for n in stack["notes"]:
         lines.append(f"- {n}")
     return "\n".join(lines)
@@ -337,8 +416,7 @@ def project_guide(folder: Path, stack: dict | None = None) -> str:
     rf = rules_file(folder)
     if rf is not None:
         try:
-            parts.append(f"## The project's own rules ({rf.name})\n\n"
-                         + rf.read_text(encoding="utf-8")[:_GUIDE_CHARS])
+            parts.append(f"## The project's own rules ({rf.name})\n\n" + rf.read_text(encoding="utf-8")[:_GUIDE_CHARS])
         except OSError:
             pass
     parts.append(_facts(stack))
@@ -378,6 +456,7 @@ def syntax_problems(folder: Path, written: dict[str, str]) -> dict[str, str]:
                 json.loads(text)
             elif ext == ".toml":
                 import tomllib
+
                 tomllib.loads(text)
             elif ext in (".yml", ".yaml"):
                 try:
@@ -386,20 +465,34 @@ def syntax_problems(folder: Path, written: dict[str, str]) -> dict[str, str]:
                     continue
                 list(yaml.safe_load_all(text))
             elif ext in (".js", ".mjs", ".cjs") and node:
-                r = subprocess.run([node, "--check", str(folder / rel)],
-                                   capture_output=True, text=True, timeout=30,
-                                   encoding="utf-8", errors="replace")
+                r = subprocess.run(
+                    [node, "--check", str(folder / rel)],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    encoding="utf-8",
+                    errors="replace",
+                )
                 if r.returncode != 0:
                     out[rel] = "JavaScript syntax error: " + (r.stderr or r.stdout).strip()[-600:]
         except SyntaxError as e:
             out[rel] = f"{type(e).__name__}: {e.msg} (line {e.lineno})"
-        except Exception as e:                      # JSON, TOML and YAML errors
+        except Exception as e:  # JSON, TOML and YAML errors
             out[rel] = f"{type(e).__name__}: {str(e)[:300]}"
     return out
 
 
-_SAFE_TOP = (ast.Import, ast.ImportFrom, ast.FunctionDef, ast.AsyncFunctionDef,
-             ast.ClassDef, ast.Assign, ast.AnnAssign, ast.AugAssign, ast.Pass)
+_SAFE_TOP = (
+    ast.Import,
+    ast.ImportFrom,
+    ast.FunctionDef,
+    ast.AsyncFunctionDef,
+    ast.ClassDef,
+    ast.Assign,
+    ast.AnnAssign,
+    ast.AugAssign,
+    ast.Pass,
+)
 
 
 def _import_is_harmless(text: str) -> bool:
@@ -419,20 +512,20 @@ def _import_is_harmless(text: str) -> bool:
             if isinstance(n, _SAFE_TOP):
                 continue
             if isinstance(n, ast.Expr) and isinstance(n.value, ast.Constant):
-                continue                                     # docstring
+                continue  # docstring
             if isinstance(n, ast.If):
                 if "__name__" in ast.unparse(n.test):
-                    continue                                 # the main guard
+                    continue  # the main guard
                 if ok(n.body) and ok(n.orelse):
                     continue
                 return False
             if isinstance(n, ast.Try):
-                if ok(n.body) and all(ok(h.body) for h in n.handlers) and ok(n.orelse) \
-                        and ok(n.finalbody):
+                if ok(n.body) and all(ok(h.body) for h in n.handlers) and ok(n.orelse) and ok(n.finalbody):
                     continue
                 return False
             return False
         return True
+
     return ok(tree.body)
 
 
@@ -445,8 +538,9 @@ def _missing_module(err: str) -> str:
     return m.group(1).split(".")[0] if m else ""
 
 
-def runtime_problems(folder: Path, written: dict[str, str], originals: dict[str, str],
-                     stack: dict, log=None, timeout: float = 90.0) -> dict[str, str]:
+def runtime_problems(
+    folder: Path, written: dict[str, str], originals: dict[str, str], stack: dict, log=None, timeout: float = 90.0
+) -> dict[str, str]:
     """{path: problem} from importing the changed Python modules that are safe
     to import, and from any profile's runtime checks — all in a separate
     process, under the project's own interpreter."""
@@ -466,21 +560,43 @@ def runtime_problems(folder: Path, written: dict[str, str], originals: dict[str,
         else:
             skipped.append(rel)
     if skipped and log:
-        log("Not importing " + ", ".join(skipped[:5]) + " — it runs code when "
-            "loaded, so it was checked by reading only.")
+        log(
+            "Not importing " + ", ".join(skipped[:5]) + " — it runs code when "
+            "loaded, so it was checked by reading only."
+        )
     if not imports and not plugin_runs:
         return {}
 
-    env = dict(os.environ, QT_QPA_PLATFORM="offscreen", PYTHONIOENCODING="utf-8",
-               OPENBLAS_NUM_THREADS="1", PYTHONDONTWRITEBYTECODE="1")
+    env = dict(
+        os.environ,
+        QT_QPA_PLATFORM="offscreen",
+        PYTHONIOENCODING="utf-8",
+        OPENBLAS_NUM_THREADS="1",
+        PYTHONDONTWRITEBYTECODE="1",
+    )
     limit = min(timeout, 30 + 10 * len(plugin_runs))
     try:
         r = subprocess.run(
-            [stack["python"], str(_HARNESS), str(folder),
-             json.dumps({"imports": imports, "plugins": plugin_runs,
-                         "profile": "jarvis" if "jarvis" in stack["profiles"] else ""})],
-            cwd=str(folder), env=env, capture_output=True, text=True,
-            encoding="utf-8", errors="replace", timeout=limit)
+            [
+                stack["python"],
+                str(_HARNESS),
+                str(folder),
+                json.dumps(
+                    {
+                        "imports": imports,
+                        "plugins": plugin_runs,
+                        "profile": "jarvis" if "jarvis" in stack["profiles"] else "",
+                    }
+                ),
+            ],
+            cwd=str(folder),
+            env=env,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=limit,
+        )
     except subprocess.TimeoutExpired as e:
         return _froze(e, plugin_runs or py[:1], limit)
     raw = r.stdout.rpartition("@@REPORT@@")[2].strip()
@@ -504,9 +620,11 @@ def runtime_problems(folder: Path, written: dict[str, str], originals: dict[str,
             before = originals.get(rel, "")
             if re.search(rf"^\s*(import|from)\s+{re.escape(missing)}\b", before, re.M):
                 continue
-            out[rel] = (f"It imports '{missing}', which is not installed for this "
-                        f"project. Use a library the project already depends on, "
-                        f"or the standard library.")
+            out[rel] = (
+                f"It imports '{missing}', which is not installed for this "
+                f"project. Use a library the project already depends on, "
+                f"or the standard library."
+            )
         else:
             out[rel] = f"Importing it fails:\n{err}"
     for prof in _PROFILES:
@@ -529,24 +647,32 @@ def _froze(exc: subprocess.TimeoutExpired, candidates: list[str], limit: float) 
         elif line.startswith("@@QT@@ "):
             qt.append(line[7:].strip())
     if running:
-        msg = (f"Calling run() FROZE the whole process (killed after {limit:.0f}s), "
-               f"called from a worker thread as the app calls it.")
+        msg = (
+            f"Calling run() FROZE the whole process (killed after {limit:.0f}s), "
+            f"called from a worker thread as the app calls it."
+        )
         if qt:
             msg += " Qt reported: " + " | ".join(qt[:3]) + "."
         if any("thread" in q.lower() or "parent" in q.lower() for q in qt) or not qt:
-            msg += (" This is what building Qt widgets off the Qt thread does. Remove "
-                    "every PyQt6 widget from this file and use the thread-safe player "
-                    "methods (AGENTS.md).")
+            msg += (
+                " This is what building Qt widgets off the Qt thread does. Remove "
+                "every PyQt6 widget from this file and use the thread-safe player "
+                "methods (AGENTS.md)."
+            )
         return {running: msg}
-    return {rel: f"Loading it hung for {limit:.0f}s — something runs at import time "
-                 f"and never returns." for rel in candidates}
+    return {
+        rel: f"Loading it hung for {limit:.0f}s — something runs at import time and never returns."
+        for rel in candidates
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  The project's own tests
 # ─────────────────────────────────────────────────────────────────────────────
-_FAIL_RE = (re.compile(r"^(?:FAILED|ERROR) (\S+)", re.M),               # pytest -q
-            re.compile(r"^(?:FAIL|ERROR): (\S+ \([^)]+\))", re.M))       # unittest
+_FAIL_RE = (
+    re.compile(r"^(?:FAILED|ERROR) (\S+)", re.M),  # pytest -q
+    re.compile(r"^(?:FAIL|ERROR): (\S+ \([^)]+\))", re.M),
+)  # unittest
 
 
 def run_tests(folder: Path, stack: dict) -> dict | None:
@@ -555,17 +681,28 @@ def run_tests(folder: Path, stack: dict) -> dict | None:
     cmd = stack.get("test_cmd")
     if not cmd:
         return None
-    env = dict(os.environ, CI="1", PYTHONDONTWRITEBYTECODE="1", QT_QPA_PLATFORM="offscreen",
-               PYTHONIOENCODING="utf-8")
+    env = dict(os.environ, CI="1", PYTHONDONTWRITEBYTECODE="1", QT_QPA_PLATFORM="offscreen", PYTHONIOENCODING="utf-8")
     try:
-        r = subprocess.run(cmd, cwd=str(folder), env=env, capture_output=True, text=True,
-                           encoding="utf-8", errors="replace", timeout=_TEST_TIMEOUT)
+        r = subprocess.run(
+            cmd,
+            cwd=str(folder),
+            env=env,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=_TEST_TIMEOUT,
+        )
     except subprocess.TimeoutExpired:
-        return {"ok": False, "failed": ["(the test run timed out)"],
-                "output": f"Tests did not finish within {_TEST_TIMEOUT}s."}
+        return {
+            "ok": False,
+            "failed": ["(the test run timed out)"],
+            "output": f"Tests did not finish within {_TEST_TIMEOUT}s.",
+        }
     except OSError as e:
-        return None if "not found" in str(e).lower() else \
-            {"ok": False, "failed": ["(could not start)"], "output": str(e)}
+        return (
+            None if "not found" in str(e).lower() else {"ok": False, "failed": ["(could not start)"], "output": str(e)}
+        )
     output = (r.stdout or "") + "\n" + (r.stderr or "")
     failed = sorted({m for rx in _FAIL_RE for m in rx.findall(output)})
     # "no tests ran" (pytest 5, unittest "Ran 0 tests") is not a failure.
@@ -581,9 +718,13 @@ def test_regressions(before: dict | None, after: dict | None) -> str:
     if before is not None and not before["ok"]:
         new = sorted(set(after["failed"]) - set(before["failed"]))
         if not new:
-            return ""                     # it was failing the same way already
-        return ("These tests passed before the change and fail now: "
-                + ", ".join(new[:10]) + "\n\n" + after["output"][-2000:])
+            return ""  # it was failing the same way already
+        return (
+            "These tests passed before the change and fail now: "
+            + ", ".join(new[:10])
+            + "\n\n"
+            + after["output"][-2000:]
+        )
     return "The project's tests fail after the change:\n" + after["output"][-2000:]
 
 
@@ -605,15 +746,15 @@ class _JarvisProfile:
         r"subprocess|os\.system|os\.remove|os\.unlink|os\.rmdir|shutil\.(rmtree|move)|"
         r"\.unlink\(|send_message|smtplib|requests\.(post|put|delete)|"
         r"httpx\.(post|put|delete)|webbrowser|pyautogui|keyboard\.|mouse\.|win32api|"
-        r"ctypes\.windll|\.write_text\(|open\([^)]*['\"][wa]")
+        r"ctypes\.windll|\.write_text\(|open\([^)]*['\"][wa]"
+    )
 
     def detect(self, folder: Path) -> bool:
         return (folder / "core" / "plugin_loader.py").is_file() and (folder / "ui.py").is_file()
 
     def guide(self, folder: Path) -> str:
         api = self._player_api(folder / "ui.py")
-        return ("## Thread-safe `player` methods (generated from ui.py)\n\n```\n"
-                + api + "\n```") if api else ""
+        return ("## Thread-safe `player` methods (generated from ui.py)\n\n```\n" + api + "\n```") if api else ""
 
     @staticmethod
     def _player_api(ui_file: Path) -> str:
@@ -653,27 +794,42 @@ class _JarvisProfile:
             is_tool = rel.startswith(self._TOOL_DIRS)
             for node in ast.walk(tree):
                 if is_tool and isinstance(node, (ast.Import, ast.ImportFrom)):
-                    mod = (node.module or "") if isinstance(node, ast.ImportFrom) else \
-                        ",".join(a.name for a in node.names)
+                    mod = (
+                        (node.module or "")
+                        if isinstance(node, ast.ImportFrom)
+                        else ",".join(a.name for a in node.names)
+                    )
                     if any(w in mod for w in self._WIDGETS):
-                        add(rel, "It imports PyQt6 widgets, but files in plugins/ and "
-                                 "actions/ run on worker threads, where creating a widget "
-                                 "fails with 'Cannot set parent, new parent is in a "
-                                 "different thread' and nothing appears. Remove every "
-                                 "PyQt6 import and show things through the thread-safe "
-                                 "player methods instead (for a quiz: player.show_quiz). "
-                                 "See AGENTS.md.")
+                        add(
+                            rel,
+                            "It imports PyQt6 widgets, but files in plugins/ and "
+                            "actions/ run on worker threads, where creating a widget "
+                            "fails with 'Cannot set parent, new parent is in a "
+                            "different thread' and nothing appears. Remove every "
+                            "PyQt6 import and show things through the thread-safe "
+                            "player methods instead (for a quiz: player.show_quiz). "
+                            "See AGENTS.md.",
+                        )
                         break
-                if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-                        and node.func.id == "QApplication" and rel != "ui.py"):
-                    add(rel, "It creates a QApplication; the app already has exactly one "
-                             "(in ui.py) and a second breaks the window. Remove it.")
+                if (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Name)
+                    and node.func.id == "QApplication"
+                    and rel != "ui.py"
+                ):
+                    add(
+                        rel,
+                        "It creates a QApplication; the app already has exactly one "
+                        "(in ui.py) and a second breaks the window. Remove it.",
+                    )
             if rel.startswith("plugins/") and not Path(rel).name.startswith("_"):
-                if not re.search(r"^PLUGIN\s*=", text, re.M) or \
-                        not re.search(r"^def run\(", text, re.M):
-                    add(rel, "A plugin needs a module-level PLUGIN dict and a module-level "
-                             "def run(parameters, player=None, session_memory=None) -> str. "
-                             "See plugins/_template.py.")
+                if not re.search(r"^PLUGIN\s*=", text, re.M) or not re.search(r"^def run\(", text, re.M):
+                    add(
+                        rel,
+                        "A plugin needs a module-level PLUGIN dict and a module-level "
+                        "def run(parameters, player=None, session_memory=None) -> str. "
+                        "See plugins/_template.py.",
+                    )
         return out
 
     def runnable(self, written: dict[str, str], log=None) -> list[str]:
@@ -681,12 +837,13 @@ class _JarvisProfile:
         run: list[str] = []
         skipped: list[str] = []
         for rel, text in written.items():
-            if rel.startswith("plugins/") and rel.endswith(".py") \
-                    and not Path(rel).name.startswith("_"):
+            if rel.startswith("plugins/") and rel.endswith(".py") and not Path(rel).name.startswith("_"):
                 (skipped if self._SIDE_EFFECTS.search(text) else run).append(rel)
         if skipped and log:
-            log("Not running " + ", ".join(skipped) + " — it can act on your computer, "
-                "so it was only loaded and checked, not called.")
+            log(
+                "Not running " + ", ".join(skipped) + " — it can act on your computer, "
+                "so it was only loaded and checked, not called."
+            )
         return run
 
     @staticmethod
@@ -696,23 +853,29 @@ class _JarvisProfile:
             problems = []
             if res.get("error"):
                 problems.append(res["error"])
-            threaded = [w for w in res.get("warnings") or []
-                        if "thread" in w.lower() or "parent" in w.lower()]
+            threaded = [w for w in res.get("warnings") or [] if "thread" in w.lower() or "parent" in w.lower()]
             if threaded:
                 problems.append(
                     "Called from a worker thread, as the app calls it, Qt reported: "
-                    + " | ".join(threaded[:3]) + " — it builds widgets off the Qt thread, "
-                    "so nothing appears. Use the thread-safe player methods (AGENTS.md).")
+                    + " | ".join(threaded[:3])
+                    + " — it builds widgets off the Qt thread, "
+                    "so nothing appears. Use the thread-safe player methods (AGENTS.md)."
+                )
             if "show_quiz:BAD_QUESTIONS" in (res.get("calls") or []):
-                problems.append("player.show_quiz was given questions in the wrong shape; "
-                                "it needs a non-empty list of {'question','options','answer'} dicts.")
+                problems.append(
+                    "player.show_quiz was given questions in the wrong shape; "
+                    "it needs a non-empty list of {'question','options','answer'} dicts."
+                )
             if not res.get("error") and not isinstance(res.get("returned"), str):
-                problems.append(f"run() returned {type(res.get('returned')).__name__}, "
-                                f"not the short string the assistant speaks.")
+                problems.append(
+                    f"run() returned {type(res.get('returned')).__name__}, not the short string the assistant speaks."
+                )
             if problems:
                 params = json.dumps(res.get("params") or {})
-                out[rel] = (f"Test: run({params}) on a worker thread with every model call "
-                            f"returning nothing. " + " ".join(problems))
+                out[rel] = (
+                    f"Test: run({params}) on a worker thread with every model call "
+                    f"returning nothing. " + " ".join(problems)
+                )
         return out
 
 

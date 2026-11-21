@@ -10,6 +10,7 @@ Safely executes approved declarative SkillDefinitions:
 - Emits real-time progress via JarvisUI player if present.
 - Returns normalized ActionResults (core.outcome.ActionResult).
 """
+
 from __future__ import annotations
 
 import logging
@@ -52,7 +53,7 @@ class SkillExecutor:
         allow_unapproved: bool = False,
     ) -> ActionResult:
         """Run a skill workflow end-to-end and verify results.
-        
+
         Args:
             skill: The SkillDefinition to execute.
             parameters: Runtime parameter values for template substitution.
@@ -87,6 +88,7 @@ class SkillExecutor:
         if requires_explicit_confirmation(skill.steps, skill.permissions):
             if not user_confirmed:
                 from core import confirm
+
                 risk_level_str = "high_impact" if skill.permissions == "destructive" else "confirmation"
                 prompt_msg = confirm.request_action(
                     action=f"skill:{skill.id}",
@@ -137,6 +139,7 @@ class SkillExecutor:
         step_results = []
         for step in skill.steps:
             from core.skill_learning.skill_security import sanitize_text_and_credentials
+
             step_desc = sanitize_text_and_credentials(step.thought)
             logger.info("Running step %d/%d: %s (%s)", step.step_id, len(skill.steps), step_desc, step.tool)
             print(f"[SKILL] Step {step.step_id}/{len(skill.steps)}: {step_desc} ({step.tool})")
@@ -154,13 +157,15 @@ class SkillExecutor:
                 session_memory=session_memory,
             )
 
-            step_results.append({
-                "step_id": step.step_id,
-                "tool": step.tool,
-                "status": step_res.status,
-                "message": step_res.message,
-                "verified": step_res.verified,
-            })
+            step_results.append(
+                {
+                    "step_id": step.step_id,
+                    "tool": step.tool,
+                    "status": step_res.status,
+                    "message": step_res.message,
+                    "verified": step_res.verified,
+                }
+            )
 
             if not step_res.is_success():
                 err_msg = f"Skill '{skill.name}' failed at step {step.step_id} ({step.thought}): {step_res.message}"
@@ -225,8 +230,13 @@ class SkillExecutor:
                     coords = {"x": step.selector["x"], "y": step.selector["y"]}
 
                 if coords and "x" in coords and "y" in coords:
-                    logger.info("Step %d %s failed; attempting coordinate fallback (%s, %s)",
-                                step.step_id, step.tool, coords["x"], coords["y"])
+                    logger.info(
+                        "Step %d %s failed; attempting coordinate fallback (%s, %s)",
+                        step.step_id,
+                        step.tool,
+                        coords["x"],
+                        coords["y"],
+                    )
                     res = self.registry.execute(
                         name="computer_control",
                         parameters={"action": "click", "x": coords["x"], "y": coords["y"]},
@@ -265,6 +275,7 @@ class SkillExecutor:
         try:
             if cond_type == "window_title_contains":
                 from core import platform_hooks
+
                 curr_title = (platform_hooks.get_active_window_title() or "").lower()
                 target_str = (target or expected).lower()
                 if target_str in curr_title:
@@ -278,6 +289,7 @@ class SkillExecutor:
 
             elif cond_type == "element_visible":
                 from core import platform_hooks
+
                 el = platform_hooks.call_hook("find_element_by_name", target or expected, default=None)
                 if el:
                     return True, f"Element '{target}' is visible."
@@ -285,6 +297,7 @@ class SkillExecutor:
 
             elif cond_type == "process_running":
                 import psutil
+
                 proc_name = (target or expected).lower()
                 for p in psutil.process_iter(["name"]):
                     if proc_name in (p.info.get("name") or "").lower():
@@ -310,8 +323,7 @@ class SkillExecutor:
                 substituted[k] = self._substitute_parameters(v, values)
             elif isinstance(v, list):
                 substituted[k] = [
-                    v_item.replace(f"{{{p_name}}}", str(p_val))
-                    if isinstance(v_item, str) else v_item
+                    v_item.replace(f"{{{p_name}}}", str(p_val)) if isinstance(v_item, str) else v_item
                     for v_item in v
                     for p_name, p_val in values.items()
                 ]

@@ -5,6 +5,7 @@ crash simulation, recovery from atomic checkpoint, and task completion.
 Usage:
     python scripts/demo_background_task.py
 """
+
 from __future__ import annotations
 
 import os

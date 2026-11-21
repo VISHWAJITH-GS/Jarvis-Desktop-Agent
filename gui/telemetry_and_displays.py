@@ -14,11 +14,41 @@ import threading
 import time
 from pathlib import Path
 from gui.base import *
-from gui.base import _WIN_HIDE, _base_dir, BASE_DIR, CONFIG_DIR, API_FILE, _read_full_config, _DEFAULT_W, _DEFAULT_H, _MIN_W, _MIN_H, _LEFT_W, _RIGHT_W, _OS, _ResizeEdge, _detect_resize_edge, _cursor_for_edge, _FramelessWindowResizeMixin, _SysMetrics, _metrics, _nvml_gpu_windows, _load_app_fonts, keena_font, HAVE_VIDEO, HoloAvatar, get_uicon, QGraphicsVideoItem, QAudioOutput, QMediaPlayer
+from gui.base import (
+    _WIN_HIDE,
+    _base_dir,
+    BASE_DIR,
+    CONFIG_DIR,
+    API_FILE,
+    _read_full_config,
+    _DEFAULT_W,
+    _DEFAULT_H,
+    _MIN_W,
+    _MIN_H,
+    _LEFT_W,
+    _RIGHT_W,
+    _OS,
+    _ResizeEdge,
+    _detect_resize_edge,
+    _cursor_for_edge,
+    _FramelessWindowResizeMixin,
+    _SysMetrics,
+    _metrics,
+    _nvml_gpu_windows,
+    _load_app_fonts,
+    keena_font,
+    HAVE_VIDEO,
+    HoloAvatar,
+    get_uicon,
+    QGraphicsVideoItem,
+    QAudioOutput,
+    QMediaPlayer,
+)
 from gui.theme import *
 from gui.theme import _RESIZE_MARGIN, _NO_SCROLLBAR_STYLE, _HUE_LINKED, _PALETTE_DEFAULTS, _lerp_color
 
 from gui.widgets import *
+
 
 class ArmouryCrateTelemetryWidget(QWidget):
     """
@@ -439,9 +469,22 @@ class JarvisDisplayWindow(_FramelessWindowResizeMixin, QWidget):
             self.title_text = (title or f"TASK: {source.get('folder') or 'PROGRESS'}").replace("//", "-").strip()
         else:
             self.source = str(source or "")
-            self.title_text = (title or (Path(self.source).name if (self.source and os.path.exists(self.source)) else (self.source[:36] if self.source else "MEDIA"))).replace("//", "-").strip()
+            self.title_text = (
+                (
+                    title
+                    or (
+                        Path(self.source).name
+                        if (self.source and os.path.exists(self.source))
+                        else (self.source[:36] if self.source else "MEDIA")
+                    )
+                )
+                .replace("//", "-")
+                .strip()
+            )
 
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.SubWindow)
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.SubWindow
+        )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.resize(680, 500)
         self.setMinimumSize(320, 240)
@@ -764,6 +807,7 @@ class JarvisDisplayWindow(_FramelessWindowResizeMixin, QWidget):
 
     def _on_action_open_folder(self):
         import subprocess
+
         path = getattr(self, "_task_path", "")
         if not path and hasattr(self, "_task_data") and isinstance(self._task_data, dict):
             path = self._task_data.get("path") or self._task_data.get("folder") or ""
@@ -786,6 +830,7 @@ class JarvisDisplayWindow(_FramelessWindowResizeMixin, QWidget):
 
         def _worker():
             import subprocess, sys
+
             entry = os.path.join(path, "main.py")
             cmd = [sys.executable, entry] if os.path.exists(entry) else [sys.executable, "-m", "unittest"]
             self._task_log_edit.append(f"\n▶ Running: {' '.join(cmd)}\n")
@@ -840,7 +885,9 @@ class JarvisDisplayWindow(_FramelessWindowResizeMixin, QWidget):
         started = data.get("started", time.time())
         took = (finished or time.time()) - started
         st_color = "#00ffaa" if status == "done" else ("#ff1744" if status != "failed" else "#ff3366")
-        self._lbl_goal_meta.setText(f"Kind: {kind}  │  Model: {model}  │  Status: <font color='{st_color}'>{status.upper()}</font>  │  Elapsed: {took:.1f}s")
+        self._lbl_goal_meta.setText(
+            f"Kind: {kind}  │  Model: {model}  │  Status: <font color='{st_color}'>{status.upper()}</font>  │  Elapsed: {took:.1f}s"
+        )
 
         # Phase pills & progress bar
         phases = list(data.get("phases") or ["planning", "writing", "installing", "testing"])
@@ -982,6 +1029,7 @@ class JarvisDisplayWindow(_FramelessWindowResizeMixin, QWidget):
     def _download_image_bytes(self, url: str, headers: dict, timeout: int = 5) -> bytes | None:
         try:
             import urllib.request
+
             req = urllib.request.Request(url, headers=headers)
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 if resp.status == 200:
@@ -993,6 +1041,7 @@ class JarvisDisplayWindow(_FramelessWindowResizeMixin, QWidget):
     def _search_image_fallback(self, query: str, headers: dict) -> bytes | None:
         try:
             from actions.web_search import _get_ddgs
+
             DDGS = _get_ddgs()
             with DDGS() as ddgs:
                 for r in ddgs.images(query, max_results=3):
@@ -1045,7 +1094,9 @@ class JarvisDisplayWindow(_FramelessWindowResizeMixin, QWidget):
         if hasattr(self, "_original_pixmap") and not self._original_pixmap.isNull():
             w = max(100, self._content_cont.width() - 10)
             h = max(100, self._content_cont.height() - 10)
-            scaled = self._original_pixmap.scaled(w, h, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            scaled = self._original_pixmap.scaled(
+                w, h, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
+            )
             self._img_lbl.setPixmap(scaled)
 
     def _setup_video(self, lay: QVBoxLayout):
@@ -1073,14 +1124,18 @@ class JarvisDisplayWindow(_FramelessWindowResizeMixin, QWidget):
             self._play_btn = QPushButton("PAUSE")
             self._play_btn.setFont(keena_font(7, bold=True))
             self._play_btn.setFixedSize(48, 20)
-            self._play_btn.setStyleSheet(f"background: rgba(24, 4, 8, 220); color: #fff; border: 1px solid {C.PRI}; border-radius: 3px;")
+            self._play_btn.setStyleSheet(
+                f"background: rgba(24, 4, 8, 220); color: #fff; border: 1px solid {C.PRI}; border-radius: 3px;"
+            )
             self._play_btn.clicked.connect(self._toggle_playback)
             c_bar.addWidget(self._play_btn)
 
             self._mute_btn = QPushButton("SOUND OFF")
             self._mute_btn.setFont(keena_font(7, bold=True))
             self._mute_btn.setFixedSize(68, 20)
-            self._mute_btn.setStyleSheet(f"background: rgba(24, 4, 8, 220); color: #fff; border: 1px solid {C.PRI}; border-radius: 3px;")
+            self._mute_btn.setStyleSheet(
+                f"background: rgba(24, 4, 8, 220); color: #fff; border: 1px solid {C.PRI}; border-radius: 3px;"
+            )
             self._mute_btn.clicked.connect(self._toggle_sound)
             c_bar.addWidget(self._mute_btn)
             c_bar.addStretch()
@@ -1207,5 +1262,3 @@ class JarvisDisplayWindow(_FramelessWindowResizeMixin, QWidget):
                 pass
         self.closed.emit(self.display_id)
         super().closeEvent(e)
-
-

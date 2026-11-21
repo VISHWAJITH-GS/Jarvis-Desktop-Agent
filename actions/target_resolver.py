@@ -9,6 +9,7 @@ Combines Semantic Windows UI Automation with Gemini Visual Grounding:
   4. Cursor-centric resolution ("Click here") via point-in-element and localized crop analysis.
   5. Multi-monitor physical coordinate validation and bounds checking.
 """
+
 from __future__ import annotations
 
 import logging
@@ -244,4 +245,3 @@ def get_target_resolver() -> TargetResolver:
     if _DEFAULT_TARGET_RESOLVER is None:
         _DEFAULT_TARGET_RESOLVER = TargetResolver()
     return _DEFAULT_TARGET_RESOLVER
-

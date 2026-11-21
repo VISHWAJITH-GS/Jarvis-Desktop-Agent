@@ -5,6 +5,7 @@ Provides `_capture_screen()` and its helpers (compression, screen-edge glow
 notification). main.py grabs a display frame on demand and injects it into the
 main Gemini Live session. All webcam/camera access has been removed.
 """
+
 from __future__ import annotations
 
 import io
@@ -15,12 +16,14 @@ from pathlib import Path
 try:
     import mss
     import mss.tools
+
     _MSS = True
 except ImportError:
     _MSS = False
 
 try:
     import PIL.Image
+
     _PIL = True
 except ImportError:
     _PIL = False
@@ -32,7 +35,7 @@ def _base_dir() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
-_BASE        = _base_dir()
+_BASE = _base_dir()
 _CONFIG_PATH = _BASE / "config" / "api_keys.json"
 
 
@@ -45,7 +48,7 @@ def _load_config() -> dict:
 
 _IMG_MAX_W = 1280
 _IMG_MAX_H = 720
-_JPEG_Q    = 82
+_JPEG_Q = 82
 
 
 def _compress(img_bytes: bytes, source_format: str = "PNG") -> tuple[bytes, str]:
@@ -90,9 +93,9 @@ def _capture_screen() -> tuple[bytes, str]:
     trigger_screen_glow(2500)
 
     with mss.mss() as sct:
-        monitors = sct.monitors          # [0] = all combined, [1..n] = real screens
-        target   = monitors[1] if len(monitors) > 1 else monitors[0]
-        shot     = sct.grab(target)
-        png      = mss.tools.to_png(shot.rgb, shot.size)
+        monitors = sct.monitors  # [0] = all combined, [1..n] = real screens
+        target = monitors[1] if len(monitors) > 1 else monitors[0]
+        shot = sct.grab(target)
+        png = mss.tools.to_png(shot.rgb, shot.size)
 
     return _compress(png, "PNG")

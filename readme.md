@@ -170,8 +170,10 @@ The evidence is real work, not a longer sentence. Opening an application watches
 The old close was two lines with no target:
 
 ```python
-if _OS == "Darwin": pyautogui.hotkey("command", "q")
-else:               pyautogui.hotkey("alt", "f4")
+if _OS == "Darwin":
+    pyautogui.hotkey("command", "q")
+else:
+    pyautogui.hotkey("alt", "f4")
 ```
 
 It sent the quit chord to **whatever window had focus** — and while somebody is talking to the assistant, the window with focus is very often the assistant. It also returned nothing at all, so the model announced a success it had no information about.
@@ -478,7 +480,7 @@ Three things it deliberately does *not* do:
 The old gate read like this:
 
 ```python
-if action in _DANGEROUS_ACTIONS:            # {"restart", "shutdown"}
+if action in _DANGEROUS_ACTIONS:  # {"restart", "shutdown"}
     confirmed = str(params.get("confirmed", "")).lower()
 ```
 

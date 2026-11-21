@@ -7,6 +7,7 @@ Orchestrates the recording lifecycle and cleans raw events:
 - Synthesizes semantic interaction traces ready for Gemini demonstration analysis
 - Redacts sensitive credentials
 """
+
 from __future__ import annotations
 
 import time
@@ -85,7 +86,11 @@ class ObservationEngine:
                     and (evt.timestamp - last.timestamp) < 3.0
                 ):
                     # Concatenate or replace typed input
-                    last.input_value = evt.input_value if evt.input_value.startswith(last.input_value) else f"{last.input_value} {evt.input_value}".strip()
+                    last.input_value = (
+                        evt.input_value
+                        if evt.input_value.startswith(last.input_value)
+                        else f"{last.input_value} {evt.input_value}".strip()
+                    )
                     last.timestamp = evt.timestamp
                     continue
 

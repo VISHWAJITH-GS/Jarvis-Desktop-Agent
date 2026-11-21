@@ -11,6 +11,7 @@ Tests:
 3. IDLE window distinction: when IDLE Shell is active, pressing Ctrl+N to obtain a clean Editor window.
 4. code_helper 'insert_code' action dispatch.
 """
+
 import unittest
 from unittest.mock import MagicMock, call, patch
 
@@ -19,11 +20,12 @@ from actions.computer_control import _insert_code, _is_code_or_multiline, _type,
 
 
 class TestCodeTypingAndEditors(unittest.TestCase):
-
     def test_code_detection_heuristic(self):
         """Must accurately detect code and multi-line structures to route away from keystroke mangling."""
-        c_code = "#include <stdio.h>\nint main() {\n    printf(\"Hello\\n\");\n    return 0;\n}"
-        py_code = "def calculate_factorial(n):\n    if n <= 1:\n        return 1\n    return n * calculate_factorial(n - 1)"
+        c_code = '#include <stdio.h>\nint main() {\n    printf("Hello\\n");\n    return 0;\n}'
+        py_code = (
+            "def calculate_factorial(n):\n    if n <= 1:\n        return 1\n    return n * calculate_factorial(n - 1)"
+        )
         single_line_plain = "regular text typing without any newlines"
 
         self.assertTrue(_is_code_or_multiline(c_code))
@@ -40,7 +42,7 @@ class TestCodeTypingAndEditors(unittest.TestCase):
             "int main() {\n"
             "    int a = 10;\n"
             "    if (a > 5) {\n"
-            "        printf(\"Greater\\n\");\n"
+            '        printf("Greater\\n");\n'
             "    }\n"
             "    return 0;\n"
             "}"
@@ -107,12 +109,14 @@ class TestCodeTypingAndEditors(unittest.TestCase):
         """code_helper tool with action='insert_code' must insert code into target editor."""
         html_code = "<!DOCTYPE html>\n<html>\n<head><title>Test</title></head>\n<body><h1>Hello</h1></body>\n</html>"
 
-        res = code_helper({
-            "action": "insert_code",
-            "code": html_code,
-            "language": "html",
-            "editor": "Notepad",
-        })
+        res = code_helper(
+            {
+                "action": "insert_code",
+                "code": html_code,
+                "language": "html",
+                "editor": "Notepad",
+            }
+        )
         self.assertIn("Successfully inserted", res)
         mock_clip.copy.assert_called_once_with(html_code)
         mock_gui.hotkey.assert_called_with("ctrl", "v")

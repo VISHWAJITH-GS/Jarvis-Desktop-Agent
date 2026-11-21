@@ -10,6 +10,7 @@ Full Lifecycle & Strict Verification:
 4. Never claims playback succeeded without verifying the active track matches the request.
 5. Returns clear, actionable error messages when selection or playback cannot be verified.
 """
+
 from __future__ import annotations
 
 import platform
@@ -29,22 +30,43 @@ _IS_WINDOWS = platform.system() == "Windows"
 _WIN_HIDE = {"creationflags": subprocess.CREATE_NO_WINDOW} if _IS_WINDOWS else {}
 
 # Window titles Spotify shows when NO track is actively playing.
-_IDLE_TITLES = frozenset({
-    "",
-    "spotify",
-    "spotify free",
-    "spotify premium",
-    "spotify desktop",
-    "spotify - web player",
-    "spotify web player",
-    "advertisement",
-})
+_IDLE_TITLES = frozenset(
+    {
+        "",
+        "spotify",
+        "spotify free",
+        "spotify premium",
+        "spotify desktop",
+        "spotify - web player",
+        "spotify web player",
+        "advertisement",
+    }
+)
 
-_STOP_WORDS = frozenset({
-    "the", "a", "an", "of", "by", "feat", "ft", "song", "track",
-    "official", "video", "audio", "lyrics", "remastered", "version",
-    "single", "edit", "mix", "radio", "spotify",
-})
+_STOP_WORDS = frozenset(
+    {
+        "the",
+        "a",
+        "an",
+        "of",
+        "by",
+        "feat",
+        "ft",
+        "song",
+        "track",
+        "official",
+        "video",
+        "audio",
+        "lyrics",
+        "remastered",
+        "version",
+        "single",
+        "edit",
+        "mix",
+        "radio",
+        "spotify",
+    }
+)
 
 
 def is_spotify_idle_title(title: str) -> bool:
@@ -60,6 +82,7 @@ def is_spotify_idle_title(title: str) -> bool:
 def _get_spotify_pids() -> set[int]:
     """Return PIDs belonging strictly to the Spotify desktop process."""
     import psutil
+
     pids: set[int] = set()
     for p in psutil.process_iter(["pid", "name"]):
         try:
@@ -119,6 +142,7 @@ def get_spotify_window_title() -> str:
         return ""
     try:
         import win32gui
+
         hwnd = _find_spotify_hwnd()
         if hwnd:
             return win32gui.GetWindowText(hwnd).strip()
@@ -187,6 +211,7 @@ def _focus_spotify_window() -> bool:
         try:
             import win32con
             import win32gui
+
             hwnd = _find_spotify_hwnd()
             if hwnd:
                 if win32gui.IsIconic(hwnd):
@@ -197,6 +222,7 @@ def _focus_spotify_window() -> bool:
             pass
     try:
         from actions import windows_uia
+
         win = windows_uia.find_window_by_name("Spotify")
         if win:
             win.set_focus()
@@ -230,15 +256,18 @@ def launch_spotify() -> bool:
 # TRACK SEARCH & SELECTION (Spotify Web API, Edge CDP & Discovery)
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 def _get_spotify_api_credentials() -> tuple[str, str]:
     """Retrieve Spotify client ID and client secret from config or environment."""
     import os
+
     cid = os.environ.get("SPOTIFY_CLIENT_ID", "").strip()
     secret = os.environ.get("SPOTIFY_CLIENT_SECRET", "").strip()
     if cid and secret:
         return cid, secret
     try:
         from memory import config_manager
+
         cfg = config_manager.load_config()
         cid = (cfg.get("spotify_client_id") or "").strip()
         secret = (cfg.get("spotify_client_secret") or "").strip()
@@ -311,6 +340,7 @@ def _search_spotify_edge_cdp(query: str, artist: str = "") -> Optional[dict]:
     """Search for track via active Edge CDP session on open.spotify.com if available."""
     try:
         from actions.browser_session import get_browser_session_manager
+
         bm = get_browser_session_manager()
         ok, _ = bm.check_connection(timeout=0.5)
         if not ok:
@@ -384,6 +414,7 @@ def search_spotify_track(query: str, artist: str = "") -> Optional[dict]:
 
     try:
         from actions.web_search import _ddg_search
+
         results = _ddg_search(search_term, max_results=6)
     except Exception as e:
         print(f"[Spotify] DDG track search error: {e}")
@@ -397,14 +428,16 @@ def search_spotify_track(query: str, artist: str = "") -> Optional[dict]:
         if m:
             track_id = m.group(1)
             t_clean = re.split(r"\s*[-|]\s*", title_raw)[0].replace("song and lyrics by", "").strip()
-            candidates.append({
-                "title": t_clean or query,
-                "track_id": track_id,
-                "url": url,
-                "uri": f"spotify:track:{track_id}",
-                "snippet": r.get("snippet", ""),
-                "raw_title": title_raw,
-            })
+            candidates.append(
+                {
+                    "title": t_clean or query,
+                    "track_id": track_id,
+                    "url": url,
+                    "uri": f"spotify:track:{track_id}",
+                    "snippet": r.get("snippet", ""),
+                    "raw_title": title_raw,
+                }
+            )
 
     if not candidates:
         return None
@@ -455,6 +488,7 @@ def _try_click_uia_play_button() -> bool:
         return False
     try:
         from actions import windows_uia
+
         win = windows_uia.find_window_by_name("Spotify")
         if not win:
             return False
@@ -550,9 +584,7 @@ def play_track(track_name: str, artist: str = "") -> dict:
         }
 
     # 4. Wait briefly to see if URI activation already started playback
-    is_verified, active_after = _poll_for_verified_playback(
-        track_query, matched_title, artist, timeout_s=1.8
-    )
+    is_verified, active_after = _poll_for_verified_playback(track_query, matched_title, artist, timeout_s=1.8)
 
     # 5. If not yet verified playing (common on Spotify Free), explicitly trigger playback via UIA Play button / keyboard
     if not is_verified:
@@ -562,18 +594,14 @@ def play_track(track_name: str, artist: str = "") -> dict:
         if not clicked_play:
             _send_media_key("enter")
 
-        is_verified, active_after = _poll_for_verified_playback(
-            track_query, matched_title, artist, timeout_s=1.8
-        )
+        is_verified, active_after = _poll_for_verified_playback(track_query, matched_title, artist, timeout_s=1.8)
 
     # 6. Secondary trigger attempt if Spotify stayed idle after URI navigation (Spotify Free idle title)
     if not is_verified and not active_after:
         _focus_spotify_window()
         time.sleep(0.2)
         _send_media_key("space")
-        is_verified, active_after = _poll_for_verified_playback(
-            track_query, matched_title, artist, timeout_s=1.5
-        )
+        is_verified, active_after = _poll_for_verified_playback(track_query, matched_title, artist, timeout_s=1.5)
 
     # 7. Strict verification outcome — never claim success when unverified!
     if is_verified:
@@ -605,9 +633,7 @@ def play_track(track_name: str, artist: str = "") -> dict:
             )
     else:
         idle_hint = (
-            " (Spotify Free accounts may restrict direct track selection)"
-            if "free" in raw_window_title.lower()
-            else ""
+            " (Spotify Free accounts may restrict direct track selection)" if "free" in raw_window_title.lower() else ""
         )
         reason = (
             f"Navigated to '{matched_title or track_query}' in Spotify, but playback did not start "
@@ -643,6 +669,7 @@ def _send_media_key(key_name: str) -> None:
         if vk is not None:
             try:
                 import ctypes
+
                 user32 = ctypes.windll.user32
                 user32.keybd_event(vk, 0, 0, 0)
                 time.sleep(0.03)
@@ -736,6 +763,7 @@ def get_playback_state() -> dict:
 # UNIFIED TOOL HANDLER
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 def spotify_control(parameters: dict = None, player=None, **kwargs) -> str:
     """
     Unified auto-discovered tool handler for Spotify.
@@ -760,7 +788,14 @@ def spotify_control(parameters: dict = None, player=None, **kwargs) -> str:
             return outcome.failed("spotify_control", "No track name specified to search.")
         cand = search_spotify_track(query, artist=artist)
         if cand:
-            return outcome.done("spotify_control", action="search_track", track=cand["title"], artist=artist, uri=cand.get("uri", ""), verified=True)
+            return outcome.done(
+                "spotify_control",
+                action="search_track",
+                track=cand["title"],
+                artist=artist,
+                uri=cand.get("uri", ""),
+                verified=True,
+            )
         return outcome.failed("spotify_control", f"No Spotify tracks found matching '{query}'.")
 
     if action in ("play", "play_track", "search_and_play"):

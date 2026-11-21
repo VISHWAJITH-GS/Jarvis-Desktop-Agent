@@ -9,6 +9,7 @@ Orchestrates the entire learning-by-demonstration loop:
 - Enforcing user approval gates before autonomous activation
 - Managing skill execution and persistence
 """
+
 from __future__ import annotations
 
 import logging
@@ -183,7 +184,9 @@ class LearningManager:
             "status": self.current_session.status,
             "event_count": len(events),
             "trace_summary": trace,
-            "generated_skill": self.current_session.generated_skill.to_dict() if self.current_session.generated_skill else None,
+            "generated_skill": self.current_session.generated_skill.to_dict()
+            if self.current_session.generated_skill
+            else None,
         }
 
     def generate_skill(self, player=None) -> dict:
@@ -292,7 +295,9 @@ class LearningManager:
         success = self.registry.remove_skill(skill_id)
         if success:
             return result_done(action=f"delete_skill:{skill_id}", message=f"Skill '{skill_id}' deleted.")
-        return result_failed(action=f"delete_skill:{skill_id}", message=f"Skill '{skill_id}' could not be deleted or not found.")
+        return result_failed(
+            action=f"delete_skill:{skill_id}", message=f"Skill '{skill_id}' could not be deleted or not found."
+        )
 
     def execute_skill(
         self,

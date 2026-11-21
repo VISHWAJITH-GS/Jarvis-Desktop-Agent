@@ -17,6 +17,7 @@ This script executes real live desktop tests on Windows:
   7. Tests searching for missing folders ("Semester 99") and verifies safe failure.
   8. Cleans up test directories.
 """
+
 from __future__ import annotations
 
 import os
@@ -129,4 +130,3 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
-

@@ -6,6 +6,7 @@ from datetime import datetime
 
 try:
     import send2trash
+
     _SEND2TRASH = True
 except ImportError:
     _SEND2TRASH = False
@@ -22,12 +23,14 @@ _UNDO_CONTENT_LIMIT = 1_000_000
 
 def _undo_move(src: Path, dst: Path):
     """Reverse of a move: put it back where it came from."""
+
     def _fn():
         if not dst.exists():
             return f"'{dst.name}' is no longer there — nothing moved back."
         src.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(dst), str(src))
         return f"'{src.name}' is back in {src.parent.name}/."
+
     return _fn
 
 
@@ -36,23 +39,25 @@ def _undo_create(target: Path):
 
     Deliberately refuses to touch a directory that has since been filled: the
     undo for 'create a folder' is not 'delete whatever ended up in it'."""
+
     def _fn():
         if not target.exists():
             return f"'{target.name}' is already gone."
         if target.is_dir():
             if any(target.iterdir()):
-                return (f"'{target.name}' is not empty any more — "
-                        f"leaving it alone rather than deleting your files.")
+                return f"'{target.name}' is not empty any more — leaving it alone rather than deleting your files."
             target.rmdir()
         else:
             target.unlink()
         return f"Removed '{target.name}'."
+
     return _fn
 
 
 def _undo_write(target: Path, previous: str | None):
     """Reverse of a write: restore the old contents, or remove a file that did
     not exist before the write created it."""
+
     def _fn():
         if previous is None:
             if target.exists():
@@ -62,6 +67,7 @@ def _undo_write(target: Path, previous: str | None):
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(previous, encoding="utf-8")
         return f"Restored the previous contents of '{target.name}'."
+
     return _fn
 
 
@@ -76,18 +82,20 @@ def _restore_from_trash(original: Path) -> str:
     if _OS == "Windows":
         try:
             import win32com.client
+
             shell = win32com.client.Dispatch("Shell.Application")
-            bin_folder = shell.NameSpace(10)      # ssfBITBUCKET
+            bin_folder = shell.NameSpace(10)  # ssfBITBUCKET
             for item in bin_folder.Items():
-                if str(bin_folder.GetDetailsOf(item, 1)).strip().lower() == \
-                        str(original.parent).strip().lower():
+                if str(bin_folder.GetDetailsOf(item, 1)).strip().lower() == str(original.parent).strip().lower():
                     if str(item.Name).strip().lower() == original.name.strip().lower():
                         item.InvokeVerb("UNDELETE")
                         return f"'{original.name}' restored from the Recycle Bin."
         except Exception as e:
             print(f"[file] Recycle Bin restore failed: {e}")
-    return (f"'{original.name}' is in the Recycle Bin — I could not pull it back "
-            f"automatically, but it is there and can be restored by hand.")
+    return (
+        f"'{original.name}' is in the Recycle Bin — I could not pull it back "
+        f"automatically, but it is there and can be restored by hand."
+    )
 
 
 import string
@@ -106,12 +114,10 @@ def _is_safe_path(target: Path) -> bool:
     """Is the given path inside _SAFE_ROOTS? If not, reject the operation."""
     try:
         resolved = target.resolve()
-        return any(
-            resolved == root.resolve() or resolved.is_relative_to(root.resolve())
-            for root in _SAFE_ROOTS
-        )
+        return any(resolved == root.resolve() or resolved.is_relative_to(root.resolve()) for root in _SAFE_ROOTS)
     except Exception:
         return False
+
 
 def _get_desktop() -> Path:
     if _OS == "Linux":
@@ -120,12 +126,14 @@ def _get_desktop() -> Path:
             return Path(xdg)
     return Path.home() / "Desktop"
 
+
 def _get_downloads() -> Path:
     if _OS == "Linux":
         xdg = os.environ.get("XDG_DOWNLOAD_DIR", "")
         if xdg and Path(xdg).exists():
             return Path(xdg)
     return Path.home() / "Downloads"
+
 
 def _get_documents() -> Path:
     if _OS == "Linux":
@@ -134,6 +142,7 @@ def _get_documents() -> Path:
             return Path(xdg)
     return Path.home() / "Documents"
 
+
 def _get_pictures() -> Path:
     if _OS == "Linux":
         xdg = os.environ.get("XDG_PICTURES_DIR", "")
@@ -141,12 +150,14 @@ def _get_pictures() -> Path:
             return Path(xdg)
     return Path.home() / "Pictures"
 
+
 def _get_music() -> Path:
     if _OS == "Linux":
         xdg = os.environ.get("XDG_MUSIC_DIR", "")
         if xdg and Path(xdg).exists():
             return Path(xdg)
     return Path.home() / "Music"
+
 
 def _get_videos() -> Path:
     if _OS == "Linux":
@@ -158,15 +169,15 @@ def _get_videos() -> Path:
 
 def _resolve_path(raw: str) -> Path:
     shortcuts: dict[str, Path] = {
-        "desktop":   _get_desktop(),
+        "desktop": _get_desktop(),
         "downloads": _get_downloads(),
         "documents": _get_documents(),
-        "pictures":  _get_pictures(),
-        "music":     _get_music(),
-        "videos":    _get_videos(),
-        "home":      Path.home(),
+        "pictures": _get_pictures(),
+        "music": _get_music(),
+        "videos": _get_videos(),
+        "home": Path.home(),
     }
-    raw   = raw.strip().strip('"').strip("'")
+    raw = raw.strip().strip('"').strip("'")
     lower = raw.lower()
     if lower in shortcuts:
         return shortcuts[lower]
@@ -184,6 +195,7 @@ def _resolve_path(raw: str) -> Path:
 
     return Path(raw).expanduser()
 
+
 def _format_size(b: int) -> str:
     for unit in ["B", "KB", "MB", "GB", "TB"]:
         if b < 1024:
@@ -191,14 +203,11 @@ def _format_size(b: int) -> str:
         b /= 1024
     return f"{b:.1f} TB"
 
+
 def _safe_trash(target: Path) -> str:
 
     if not _SEND2TRASH:
-        return (
-            "send2trash is not installed. "
-            "Run: pip install send2trash — "
-            "Permanent deletion is disabled for safety."
-        )
+        return "send2trash is not installed. Run: pip install send2trash — Permanent deletion is disabled for safety."
     send2trash.send2trash(str(target))
     return f"Moved to Trash: {target.name}"
 
@@ -236,7 +245,7 @@ def list_files(path: str = "desktop", show_hidden: bool = False) -> str:
 
 def create_file(path: str, name: str = "", content: str = "") -> str:
     try:
-        base   = _resolve_path(path)
+        base = _resolve_path(path)
         target = (base / name) if name else base
         if not _is_safe_path(target):
             return f"Access denied: {target}"
@@ -249,8 +258,7 @@ def create_file(path: str, name: str = "", content: str = "") -> str:
             except Exception:
                 previous = None
         target.write_text(content, encoding="utf-8")
-        push_undo(f"created {target.name}",
-                  _undo_write(target, previous) if existed else _undo_create(target))
+        push_undo(f"created {target.name}", _undo_write(target, previous) if existed else _undo_create(target))
         return f"File created: {target.name}"
     except Exception as e:
         return f"Could not create file: {e}"
@@ -258,7 +266,7 @@ def create_file(path: str, name: str = "", content: str = "") -> str:
 
 def create_folder(path: str, name: str = "") -> str:
     try:
-        base   = _resolve_path(path)
+        base = _resolve_path(path)
         target = (base / name) if name else base
         if not _is_safe_path(target):
             return f"Access denied: {target}"
@@ -276,7 +284,7 @@ def create_folder(path: str, name: str = "") -> str:
 
 def delete_file(path: str, name: str = "") -> str:
     try:
-        base   = _resolve_path(path)
+        base = _resolve_path(path)
         target = (base / name) if name else base
         if not _is_safe_path(target):
             return f"Access denied: {target}"
@@ -285,17 +293,21 @@ def delete_file(path: str, name: str = "") -> str:
 
         # Safe-directory check — protect critical user folders
         protected = {
-            _get_desktop(), _get_downloads(), _get_documents(),
-            _get_pictures(), _get_music(), _get_videos(), Path.home()
+            _get_desktop(),
+            _get_downloads(),
+            _get_documents(),
+            _get_pictures(),
+            _get_music(),
+            _get_videos(),
+            Path.home(),
         }
         if target.resolve() in {p.resolve() for p in protected}:
             return f"Protected directory, cannot delete: {target.name}"
 
         original = target.resolve()
-        result   = _safe_trash(target)
+        result = _safe_trash(target)
         if result.startswith("Moved to Trash"):
-            push_undo(f"deleted {original.name}",
-                      lambda p=original: _restore_from_trash(p))
+            push_undo(f"deleted {original.name}", lambda p=original: _restore_from_trash(p))
         return result
 
     except PermissionError:
@@ -309,6 +321,7 @@ def empty_recycle_bin() -> str:
     if _OS == "Windows":
         try:
             import ctypes
+
             # SHERB_NOCONFIRMATION = 0x00000001
             # SHERB_NOPROGRESSUI   = 0x00000002
             # SHERB_NOSOUND        = 0x00000004
@@ -323,9 +336,9 @@ def empty_recycle_bin() -> str:
 
 def move_file(path: str, name: str = "", destination: str = "") -> str:
     try:
-        base   = _resolve_path(path)
-        src    = (base / name) if name else base
-        dst    = _resolve_path(destination) if destination else None
+        base = _resolve_path(path)
+        src = (base / name) if name else base
+        dst = _resolve_path(destination) if destination else None
 
         if not src.exists():
             return f"Source not found: {src.name}"
@@ -342,8 +355,7 @@ def move_file(path: str, name: str = "", destination: str = "") -> str:
         dst.parent.mkdir(parents=True, exist_ok=True)
         origin = src.resolve()
         shutil.move(str(src), str(dst))
-        push_undo(f"moved {origin.name} to {dst.parent.name}/",
-                  _undo_move(origin, dst.resolve()))
+        push_undo(f"moved {origin.name} to {dst.parent.name}/", _undo_move(origin, dst.resolve()))
         return f"Moved: {src.name} → {dst.parent.name}/"
 
     except Exception as e:
@@ -353,8 +365,8 @@ def move_file(path: str, name: str = "", destination: str = "") -> str:
 def copy_file(path: str, name: str = "", destination: str = "") -> str:
     try:
         base = _resolve_path(path)
-        src  = (base / name) if name else base
-        dst  = _resolve_path(destination) if destination else None
+        src = (base / name) if name else base
+        dst = _resolve_path(destination) if destination else None
 
         if not src.exists():
             return f"Source not found: {src.name}"
@@ -377,6 +389,7 @@ def copy_file(path: str, name: str = "", destination: str = "") -> str:
 
         # The undo for a copy is deleting the copy — never the original.
         _copy = dst.resolve()
+
         def _undo_copy():
             if not _copy.exists():
                 return f"The copy '{_copy.name}' is already gone."
@@ -385,6 +398,7 @@ def copy_file(path: str, name: str = "", destination: str = "") -> str:
             else:
                 _copy.unlink()
             return f"Removed the copy in {_copy.parent.name}/."
+
         push_undo(f"copied {src.name} to {dst.parent.name}/", _undo_copy)
 
         return f"Copied: {src.name} → {dst.parent.name}/"
@@ -395,8 +409,8 @@ def copy_file(path: str, name: str = "", destination: str = "") -> str:
 
 def rename_file(path: str, name: str = "", new_name: str = "") -> str:
     try:
-        base     = _resolve_path(path)
-        target   = (base / name) if name else base
+        base = _resolve_path(path)
+        target = (base / name) if name else base
         if not _is_safe_path(target):
             return f"Access denied: {target}"
         if not target.exists():
@@ -410,8 +424,7 @@ def rename_file(path: str, name: str = "", new_name: str = "") -> str:
 
         old_path = target.resolve()
         target.rename(new_path)
-        push_undo(f"renamed {old_path.name} to {new_name}",
-                  _undo_move(old_path, new_path.resolve()))
+        push_undo(f"renamed {old_path.name} to {new_name}", _undo_move(old_path, new_path.resolve()))
         return f"Renamed: {target.name} → {new_name}"
 
     except Exception as e:
@@ -420,7 +433,7 @@ def rename_file(path: str, name: str = "", new_name: str = "") -> str:
 
 def read_file(path: str, name: str = "", max_chars: int = 4000) -> str:
     try:
-        base   = _resolve_path(path)
+        base = _resolve_path(path)
         target = (base / name) if name else base
         if not _is_safe_path(target):
             return f"Access denied: {target}"
@@ -438,10 +451,9 @@ def read_file(path: str, name: str = "", max_chars: int = 4000) -> str:
         return f"Could not read file: {e}"
 
 
-def write_file(path: str, name: str = "", content: str = "",
-               append: bool = False) -> str:
+def write_file(path: str, name: str = "", content: str = "", append: bool = False) -> str:
     try:
-        base   = _resolve_path(path)
+        base = _resolve_path(path)
         target = (base / name) if name else base
         if not _is_safe_path(target):
             return f"Access denied: {target}"
@@ -454,11 +466,11 @@ def write_file(path: str, name: str = "", content: str = "",
         if target.exists():
             try:
                 if target.stat().st_size > _UNDO_CONTENT_LIMIT:
-                    undoable = False       # too large to hold in memory
+                    undoable = False  # too large to hold in memory
                 else:
                     previous = target.read_text(encoding="utf-8", errors="ignore")
             except Exception:
-                undoable = False           # binary, locked, unreadable
+                undoable = False  # binary, locked, unreadable
 
         mode = "a" if append else "w"
         with open(target, mode, encoding="utf-8") as f:
@@ -468,25 +480,44 @@ def write_file(path: str, name: str = "", content: str = "",
         if undoable:
             push_undo(f"wrote to {target.name}", _undo_write(target, previous))
             return f"{action}: {target.name}"
-        return (f"{action}: {target.name}. "
-                f"(Too large to keep a copy of the old contents, so this one "
-                f"cannot be undone.)")
+        return f"{action}: {target.name}. (Too large to keep a copy of the old contents, so this one cannot be undone.)"
     except Exception as e:
         return f"Could not write file: {e}"
 
 
 SKIP_SEARCH_DIRS = {
-    "node_modules", ".git", ".svn", ".hg", "appdata", "__pycache__",
-    "$recycle.bin", "system volume information", "venv", ".venv", "env",
-    ".cache", "temp", "tmp", "windows", "program files", "program files (x86)",
-    ".gemini", ".idea", ".vscode", "dist", "build", ".next", ".nuget"
+    "node_modules",
+    ".git",
+    ".svn",
+    ".hg",
+    "appdata",
+    "__pycache__",
+    "$recycle.bin",
+    "system volume information",
+    "venv",
+    ".venv",
+    "env",
+    ".cache",
+    "temp",
+    "tmp",
+    "windows",
+    "program files",
+    "program files (x86)",
+    ".gemini",
+    ".idea",
+    ".vscode",
+    "dist",
+    "build",
+    ".next",
+    ".nuget",
 }
 
 
 def _clean_tokens(s: str) -> list[str]:
     """Split string into lowercase alphanumeric tokens."""
     import re
-    cleaned = re.sub(r'[\W_]+', ' ', (s or '').lower()).strip()
+
+    cleaned = re.sub(r"[\W_]+", " ", (s or "").lower()).strip()
     return [t for t in cleaned.split() if t]
 
 
@@ -509,13 +540,13 @@ def _score_file_match(filename: str, query: str, query_ext: str = "") -> tuple[f
         return 1.0, True
 
     # 2. Clean alphanumeric match (ignoring symbols and underscores)
-    f_clean = re.sub(r'[\W_]+', ' ', f_lower).strip()
-    q_clean = re.sub(r'[\W_]+', ' ', q_lower).strip()
+    f_clean = re.sub(r"[\W_]+", " ", f_lower).strip()
+    q_clean = re.sub(r"[\W_]+", " ", q_lower).strip()
     if q_clean and (q_clean in f_clean or f_clean in q_clean):
         return 0.95, True
 
     stem = Path(filename).stem.lower()
-    stem_clean = re.sub(r'[\W_]+', ' ', stem).strip()
+    stem_clean = re.sub(r"[\W_]+", " ", stem).strip()
     ext = Path(filename).suffix.lower()
 
     q_tokens = _clean_tokens(query)
@@ -558,8 +589,7 @@ def _score_file_match(filename: str, query: str, query_ext: str = "") -> tuple[f
     return composite, False
 
 
-def find_files(name: str = "", extension: str = "",
-               path: str = "home", max_results: int = 20) -> str:
+def find_files(name: str = "", extension: str = "", path: str = "home", max_results: int = 20) -> str:
     """
     Search for files with multi-tier fallback, fast directory pruning, and fuzzy matching.
     If exact file name is not found in the initial location, searches common user locations
@@ -611,16 +641,13 @@ def find_files(name: str = "", extension: str = "",
 
             for dirpath, dirnames, filenames in os.walk(str(root), topdown=True):
                 # Prune heavy/unnecessary system and cache directories in-place
-                dirnames[:] = [
-                    d for d in dirnames
-                    if d.lower() not in SKIP_SEARCH_DIRS and not d.startswith('.')
-                ]
+                dirnames[:] = [d for d in dirnames if d.lower() not in SKIP_SEARCH_DIRS and not d.startswith(".")]
                 dir_count += 1
                 if dir_count > max_dirs or (time.monotonic() - start_time) > time_limit_sec:
                     break
 
                 for fname in filenames:
-                    if fname.startswith('.'):
+                    if fname.startswith("."):
                         continue
                     item_path = Path(dirpath) / fname
                     item_ext = item_path.suffix.lower()
@@ -767,8 +794,8 @@ def get_largest_files(path: str = "downloads", count: int = 10) -> str:
 def get_disk_usage(path: str = "home") -> str:
     try:
         target = _resolve_path(path)
-        usage  = shutil.disk_usage(target)
-        pct    = usage.used / usage.total * 100
+        usage = shutil.disk_usage(target)
+        pct = usage.used / usage.total * 100
         return (
             f"Disk usage ({target}):\n"
             f"  Total : {_format_size(usage.total)}\n"
@@ -781,19 +808,30 @@ def get_disk_usage(path: str = "home") -> str:
 
 def organize_desktop() -> str:
     type_map = {
-        "Images":    {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".svg", ".ico", ".heic"},
-        "Documents": {".pdf", ".doc", ".docx", ".txt", ".xls", ".xlsx",
-                      ".ppt", ".pptx", ".csv", ".odt", ".ods", ".odp"},
-        "Videos":    {".mp4", ".avi", ".mkv", ".mov", ".wmv", ".flv", ".webm", ".m4v"},
-        "Music":     {".mp3", ".wav", ".flac", ".aac", ".ogg", ".wma", ".m4a"},
-        "Archives":  {".zip", ".rar", ".7z", ".tar", ".gz", ".bz2", ".xz"},
-        "Code":      {".py", ".js", ".ts", ".html", ".css", ".json", ".xml",
-                      ".cpp", ".java", ".cs", ".go", ".rs", ".sh"},
+        "Images": {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".svg", ".ico", ".heic"},
+        "Documents": {
+            ".pdf",
+            ".doc",
+            ".docx",
+            ".txt",
+            ".xls",
+            ".xlsx",
+            ".ppt",
+            ".pptx",
+            ".csv",
+            ".odt",
+            ".ods",
+            ".odp",
+        },
+        "Videos": {".mp4", ".avi", ".mkv", ".mov", ".wmv", ".flv", ".webm", ".m4v"},
+        "Music": {".mp3", ".wav", ".flac", ".aac", ".ogg", ".wma", ".m4a"},
+        "Archives": {".zip", ".rar", ".7z", ".tar", ".gz", ".bz2", ".xz"},
+        "Code": {".py", ".js", ".ts", ".html", ".css", ".json", ".xml", ".cpp", ".java", ".cs", ".go", ".rs", ".sh"},
     }
 
     desktop = _get_desktop()
     moved, skipped = [], []
-    journal: list[tuple[Path, Path]] = []   # (where it was, where it went)
+    journal: list[tuple[Path, Path]] = []  # (where it was, where it went)
 
     try:
         for item in desktop.iterdir():
@@ -803,7 +841,7 @@ def organize_desktop() -> str:
             if item.name in {k for k in type_map}:
                 continue
 
-            ext        = item.suffix.lower()
+            ext = item.suffix.lower()
             target_dir = desktop / "Others"
             for folder, exts in type_map.items():
                 if ext in exts:
@@ -827,6 +865,7 @@ def organize_desktop() -> str:
         # thing the assistant can do to a person's files, and it was completely
         # ungated.
         if journal:
+
             def _undo_organize(entries=tuple(journal)):
                 restored = 0
                 for origin, moved_to in entries:
@@ -846,6 +885,7 @@ def organize_desktop() -> str:
                     except Exception:
                         pass
                 return f"{restored} file(s) put back on the desktop."
+
             push_undo(f"organized the desktop ({len(journal)} files)", _undo_organize)
 
         result = f"Desktop organized: {len(moved)} files moved."
@@ -864,7 +904,7 @@ def organize_desktop() -> str:
 
 def get_file_info(path: str, name: str = "") -> str:
     try:
-        base   = _resolve_path(path)
+        base = _resolve_path(path)
         target = (base / name) if name else base
         if not _is_safe_path(target):
             return f"Access denied: {target}"
@@ -873,18 +913,19 @@ def get_file_info(path: str, name: str = "") -> str:
 
         stat = target.stat()
         info = {
-            "Name":      target.name,
-            "Type":      "Folder" if target.is_dir() else "File",
-            "Size":      _format_size(stat.st_size),
-            "Location":  str(target.parent),
-            "Created":   datetime.fromtimestamp(stat.st_ctime).strftime("%Y-%m-%d %H:%M"),
-            "Modified":  datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M"),
+            "Name": target.name,
+            "Type": "Folder" if target.is_dir() else "File",
+            "Size": _format_size(stat.st_size),
+            "Location": str(target.parent),
+            "Created": datetime.fromtimestamp(stat.st_ctime).strftime("%Y-%m-%d %H:%M"),
+            "Modified": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M"),
             "Extension": target.suffix or "—",
         }
         return "\n".join(f"  {k}: {v}" for k, v in info.items())
 
     except Exception as e:
         return f"Could not get file info: {e}"
+
 
 def file_controller(
     parameters: dict = None,
@@ -894,8 +935,8 @@ def file_controller(
 ) -> str:
     params = parameters or {}
     action = params.get("action", "").lower().strip()
-    path   = params.get("path", "desktop")
-    name   = params.get("name", "")
+    path = params.get("path", "desktop")
+    name = params.get("name", "")
 
     if player:
         print(f"[File] {action} {name or path}")  # terminal, not the HUD
@@ -926,11 +967,7 @@ def file_controller(
             return read_file(path, name=name)
 
         elif action == "write":
-            return write_file(
-                path, name=name,
-                content=params.get("content", ""),
-                append=params.get("append", False)
-            )
+            return write_file(path, name=name, content=params.get("content", ""), append=params.get("append", False))
 
         elif action in ("find", "search", "search_files"):
             search_query = name or params.get("query") or params.get("name", "")
@@ -978,40 +1015,20 @@ TOOL = {
         "properties": {
             "action": {
                 "type": "STRING",
-                "description": "list | create_file | create_folder | delete | move | copy | rename | read | write | find | largest | disk_usage | organize_desktop | info | empty_recycle_bin"
+                "description": "list | create_file | create_folder | delete | move | copy | rename | read | write | find | largest | disk_usage | organize_desktop | info | empty_recycle_bin",
             },
             "path": {
                 "type": "STRING",
-                "description": "File/folder path or shortcut: desktop, downloads, documents, home, global/all for entire computer"
+                "description": "File/folder path or shortcut: desktop, downloads, documents, home, global/all for entire computer",
             },
-            "destination": {
-                "type": "STRING",
-                "description": "Destination path for move/copy"
-            },
-            "new_name": {
-                "type": "STRING",
-                "description": "New name for rename"
-            },
-            "content": {
-                "type": "STRING",
-                "description": "Content for create_file/write"
-            },
-            "name": {
-                "type": "STRING",
-                "description": "File name to search for"
-            },
-            "extension": {
-                "type": "STRING",
-                "description": "File extension to search (e.g. .pdf)"
-            },
-            "count": {
-                "type": "INTEGER",
-                "description": "Number of results for largest"
-            }
+            "destination": {"type": "STRING", "description": "Destination path for move/copy"},
+            "new_name": {"type": "STRING", "description": "New name for rename"},
+            "content": {"type": "STRING", "description": "Content for create_file/write"},
+            "name": {"type": "STRING", "description": "File name to search for"},
+            "extension": {"type": "STRING", "description": "File extension to search (e.g. .pdf)"},
+            "count": {"type": "INTEGER", "description": "Number of results for largest"},
         },
-        "required": [
-            "action"
-        ]
+        "required": ["action"],
     },
     "handler": file_controller,
 }

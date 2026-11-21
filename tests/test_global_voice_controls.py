@@ -281,6 +281,7 @@ class TestGlobalVoiceIntegration(unittest.TestCase):
         mock_ui.muted = False
 
         from main import JarvisLive
+
         live = JarvisLive.__new__(JarvisLive)
         live.ui = mock_ui
         live._interrupted = False
@@ -309,6 +310,7 @@ class TestGlobalVoiceIntegration(unittest.TestCase):
         mock_ui.muted = False
 
         from main import JarvisLive
+
         live = JarvisLive.__new__(JarvisLive)
         live.ui = mock_ui
         live._interrupted = False
@@ -341,7 +343,7 @@ class TestAdvancedStateHotkeysWakeAndSleep(unittest.TestCase):
         from main import JarvisLive, IDLE_SLEEP_TIMEOUT
 
         mock_ui = MagicMock()
-        mock_ui.muted = (initial_state == VoiceState.DISABLED)
+        mock_ui.muted = initial_state == VoiceState.DISABLED
         mock_ui.sync_mute_state = MagicMock()
         mock_ui.set_state = MagicMock()
         mock_ui.write_log = MagicMock()
@@ -352,7 +354,7 @@ class TestAdvancedStateHotkeysWakeAndSleep(unittest.TestCase):
         live._in_interrupt = False
         live._interrupt_lock = threading.Lock()
         live._speaking_lock = threading.Lock()
-        live._is_speaking = (initial_state == VoiceState.SPEAKING)
+        live._is_speaking = initial_state == VoiceState.SPEAKING
         live._tail_until = 0.0
         live._out_latency = 0.0
         live.audio_in_queue = None
@@ -368,7 +370,7 @@ class TestAdvancedStateHotkeysWakeAndSleep(unittest.TestCase):
         live._wake_detector = None
         live._wake_detector_lock = threading.Lock()
         live._wake_sleep_timeout = IDLE_SLEEP_TIMEOUT
-        live._awake = (initial_state not in (VoiceState.SLEEPING,))
+        live._awake = initial_state not in (VoiceState.SLEEPING,)
         live._last_user_speech = time.monotonic()
         live.voice_state = VoiceStateManager(
             initial_state=initial_state,
@@ -732,12 +734,14 @@ class TestAdvancedStateHotkeysWakeAndSleep(unittest.TestCase):
     def test_wake_word_enabled_by_default_and_sanitize(self):
         """Verify wake_word_enabled defaults to True and is properly preserved/sanitized."""
         from memory import config_manager
+
         self.assertTrue(config_manager.DEFAULT_WAKE_WORD_ENABLED)
         self.assertTrue(config_manager.get_wake_word_enabled())
 
     def test_sleeping_detector_resumes_and_feeds_frames(self):
         """When sleeping, paused detector is resumed and mic audio frames are fed."""
         import numpy as np
+
         live, mock_ui = self._make_stub_live(VoiceState.LISTENING)
         live._wake_enabled = True
 
@@ -806,4 +810,3 @@ class TestAdvancedStateHotkeysWakeAndSleep(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
