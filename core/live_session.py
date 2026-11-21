@@ -154,7 +154,7 @@ class JarvisLive(LiveAudioMixin, LiveMonitorsMixin, LiveVoiceMixin):
         self._enhanced_live = True  # proactive audio; auto-disabled if the server rejects it
         self._tuned_live    = True  # turn-taking / media / thinking knobs; same fallback
 
-        _base_dir = Path(__file__).resolve().parent
+        _base_dir = BASE_DIR
         _inline_names: set[str] = {str(t.get("name", "")) for t in TOOL_DECLARATIONS if isinstance(t, dict)}
 
         # File-backed tools: every actions/*.py with a TOOL dict, discovered the
