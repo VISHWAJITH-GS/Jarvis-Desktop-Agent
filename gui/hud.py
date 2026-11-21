@@ -473,75 +473,81 @@ class HudCanvas(QWidget):
         super().mouseReleaseEvent(e)
 
     def _step(self):
-        now = time.time()
-        dt = min(now - self._step_t, 0.1)
-        self._step_t = now
+        try:
+            now = time.time()
+            prev_t = getattr(self, "_step_t", now)
+            dt = min(max(0.0, now - prev_t), 0.1)
+            self._step_t = now
 
-        # Visemes / Peak audio
-        sched = self._visemes
-        if sched is not None:
-            frames, t0, hop = sched
-            i = int((now - t0) / hop)
-            if 0 <= i < len(frames):
-                v_seq = frames[max(0, self._vis_i or i) : i + 1]
-                self._vis_i = i + 1
-                if v_seq:
-                    peak = max(f[0] for f in v_seq)
-                    if peak > self._live_amp:
-                        self._live_amp = peak
-            elif i >= len(frames):
-                self._visemes = None
-                self._vis_i = None
+            # Visemes / Peak audio
+            sched = getattr(self, "_visemes", None)
+            if sched is not None and isinstance(sched, (tuple, list)) and len(sched) == 3:
+                frames, t0, hop = sched
+                if hop > 0:
+                    i = int((now - t0) / hop)
+                    if 0 <= i < len(frames):
+                        v_seq = frames[max(0, self._vis_i or i) : i + 1]
+                        self._vis_i = i + 1
+                        if v_seq:
+                            peak = max((f[0] if isinstance(f, (tuple, list)) else float(f)) for f in v_seq)
+                            if peak > self._live_amp:
+                                self._live_amp = peak
+                    elif i >= len(frames):
+                        self._visemes = None
+                        self._vis_i = None
 
-        self._live_amp *= 0.88
-        self._amp_disp += (self._live_amp - self._amp_disp) * 0.45
-        amp = self._amp_disp
+            self._live_amp = getattr(self, "_live_amp", 0.0) * 0.88
+            self._amp_disp = getattr(self, "_amp_disp", 0.0) + (self._live_amp - getattr(self, "_amp_disp", 0.0)) * 0.45
+            amp = self._amp_disp
 
-        st = (self.state or "STANDBY").upper()
-        if self.muted:
-            st = "MUTED"
+            st = (self.state or "STANDBY").upper()
+            if self.muted:
+                st = "MUTED"
 
-        if st != getattr(self, "_active_state", None):
-            self._prev_state = getattr(self, "_active_state", "STANDBY")
-            self._prev_accent = getattr(self, "_current_accent", COLOR_STATE_LISTENING)
-            self._active_state = st
-            self._state_start_t = now
+            if st != getattr(self, "_active_state", None):
+                self._prev_state = getattr(self, "_active_state", "STANDBY")
+                self._prev_accent = getattr(self, "_current_accent", COLOR_STATE_LISTENING)
+                self._active_state = st
+                self._state_start_t = now
 
-        speed = {
-            "THINKING": 220,
-            "PROCESSING": 180,
-            "LISTENING": 28,
-            "SPEAKING": 45,
-            "EXECUTING": 160,
-            "INTERRUPTED": 90,
-            "RECONNECTING": 12,
-            "MUTED": 10,
-            "SLEEPING": 6,
-        }.get(st, 14)
-        self.spin = (self.spin + dt * speed) % 360.0
+            speed = {
+                "THINKING": 220,
+                "PROCESSING": 180,
+                "LISTENING": 28,
+                "SPEAKING": 45,
+                "EXECUTING": 160,
+                "INTERRUPTED": 90,
+                "RECONNECTING": 12,
+                "MUTED": 10,
+                "SLEEPING": 6,
+            }.get(st, 14)
+            self.spin = (getattr(self, "spin", 0.0) + dt * speed) % 360.0
 
-        if st == "SPEAKING":
-            self._level_target = max(amp, 0.35 + 0.65 * abs(math.sin(now * 5.3) * math.sin(now * 2.1 + 1)))
-        elif st == "LISTENING":
-            # Live sound frequency indication when user talks to JARVIS
-            self._level_target = max(amp * 1.5, self._live_amp * 1.5)
-        elif st in ("THINKING", "PROCESSING"):
-            self._level_target = 0.2 + 0.2 * abs(math.sin(now * 3.5))
-        else:
-            self._level_target = max(0.0, amp * 0.5)
+            if st == "SPEAKING":
+                self._level_target = max(amp, 0.35 + 0.65 * abs(math.sin(now * 5.3) * math.sin(now * 2.1 + 1)))
+            elif st == "LISTENING":
+                # Live sound frequency indication when user talks to JARVIS
+                self._level_target = max(amp * 1.5, self._live_amp * 1.5)
+            elif st in ("THINKING", "PROCESSING"):
+                self._level_target = 0.2 + 0.2 * abs(math.sin(now * 3.5))
+            else:
+                self._level_target = max(0.0, amp * 0.5)
 
-        cur_lvl = getattr(self, "level", 0.0)
-        cur_lvl += (self._level_target - cur_lvl) * min(1.0, dt * 14)
-        self.level = cur_lvl
+            cur_lvl = getattr(self, "level", 0.0)
+            cur_lvl += (self._level_target - cur_lvl) * min(1.0, dt * 14)
+            self.level = cur_lvl
 
-        lvl_sample = self.level * random.uniform(0.55, 1.0) if st == "LISTENING" else 0.0
-        self.wave = self.wave[1:] + [lvl_sample]
+            lvl_sample = self.level * random.uniform(0.55, 1.0) if st == "LISTENING" else 0.0
+            if hasattr(self, "wave") and isinstance(self.wave, list) and len(self.wave) > 1:
+                self.wave = self.wave[1:] + [lvl_sample]
 
-        if self.reply_text:
-            self.reply_shown = min(len(self.reply_text), self.reply_shown + dt * 45)
+            if getattr(self, "reply_text", None):
+                self.reply_shown = min(len(self.reply_text), getattr(self, "reply_shown", 0) + dt * 45)
 
-        if self.isVisible():
-            self.update()
+            if self.isVisible():
+                self.update()
+        except Exception:
+            pass
 
     def paintEvent(self, event):
         p = QPainter(self)

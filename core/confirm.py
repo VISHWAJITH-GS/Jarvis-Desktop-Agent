@@ -98,19 +98,58 @@ def _normalize_text(text: str) -> str:
     return re.sub(r"[^\w\s]", " ", clean, flags=re.UNICODE).strip()
 
 
+def _is_command_or_action_utterance(norm: str) -> bool:
+    """True if utterance is a full action command or complex sentence, not a confirmation token."""
+    # Check prefixes that initiate actions
+    for p in (
+        "send a ", "send an ", "send the ", "send to ", "send this ", "send that ",
+        "send message", "send msg", "send text", "send email", "send mail",
+        "send whatsapp", "send him", "send her", "send them", "send their",
+        "can you send", "could you send", "please send a", "please send me",
+        "tell ", "ask ", "open ", "call ", "search for ", "play ",
+    ):
+        if norm.startswith(p):
+            return True
+    # Check phrases indicating target/recipient or conversational structure
+    for p in ("message to ", "text to ", "email to ", "mail to ", "call to ", "write to "):
+        if p in norm:
+            return True
+    # Conversational negatives / queries that shouldn't match confirmation or cancellation
+    for p in ("is it fine", "are you sure", "is not sent", "not sent", "doesnt make", "doesn't make", "did not", "didn't"):
+        if p in norm:
+            return True
+    return False
+
+
 def matches_confirm(utterance: str) -> bool:
     """True if utterance expresses confirmation in any supported language."""
     norm = _normalize_text(utterance)
     if not norm:
         return False
+    if _is_command_or_action_utterance(norm):
+        return False
     if norm in CONFIRM_WORDS:
         return True
     # Multi-word phrase matching
-    for phrase in ("go ahead", "do it", "send it", "please do", "de acuerdo", "in ordnung", "va bene", "com certeza", "bhej do", "kar do", "theek hai"):
-        if phrase in norm:
+    confirm_phrases = (
+        "go ahead", "do it", "send it", "please do", "please send", "yes please",
+        "yes go ahead", "yeah go ahead", "ok do it", "okay do it", "confirm it",
+        "confirm please", "proceed please", "de acuerdo", "in ordnung", "va bene",
+        "com certeza", "bhej do", "kar do", "theek hai"
+    )
+    for phrase in confirm_phrases:
+        if norm == phrase or norm.startswith(phrase + " ") or norm.endswith(" " + phrase):
             return True
-    words = set(norm.split())
-    return bool(words & CONFIRM_WORDS)
+
+    words = norm.split()
+    # A voice confirmation token is short (at most 4 words)
+    if len(words) <= 4:
+        first = words[0]
+        if first in ("yes", "yeah", "yep", "yup", "sure", "ok", "okay", "please", "haan", "ha", "si", "sí", "oui", "ja"):
+            safe_fillers = {"please", "jarvis", "that", "it", "ahead", "do", "now", "go", "proceed", "send", "confirm"}
+            if all(w in CONFIRM_WORDS or w in safe_fillers for w in words):
+                return True
+    return False
 
 
 def matches_cancel(utterance: str) -> bool:
@@ -118,13 +157,29 @@ def matches_cancel(utterance: str) -> bool:
     norm = _normalize_text(utterance)
     if not norm:
         return False
+    if _is_command_or_action_utterance(norm):
+        return False
     if norm in CANCEL_WORDS:
         return True
-    for phrase in ("never mind", "don't do it", "mat bhejo", "band karo"):
-        if phrase in norm:
+    cancel_phrases = (
+        "never mind", "don't do it", "dont do it", "mat bhejo", "band karo",
+        "no cancel", "no stop", "cancel it", "cancel that", "stop it",
+        "don't send", "dont send", "no don't", "no dont", "no thanks",
+        "no thank you", "please don't", "please dont"
+    )
+    for phrase in cancel_phrases:
+        if norm == phrase or norm.startswith(phrase + " ") or norm.endswith(" " + phrase):
             return True
-    words = set(norm.split())
-    return bool(words & CANCEL_WORDS)
+
+    words = norm.split()
+    # A voice cancellation token is short (at most 4 words)
+    if len(words) <= 4:
+        first = words[0]
+        if first in ("no", "nope", "nah", "nahi", "non", "nein"):
+            safe_fillers = {"please", "jarvis", "thanks", "thank", "you", "it", "that", "dont", "don't", "stop", "cancel", "never", "mind"}
+            if all(w in CANCEL_WORDS or w in safe_fillers for w in words):
+                return True
+    return False
 
 
 # ── PendingAction Dataclass ──────────────────────────────────────────────────
@@ -161,6 +216,7 @@ class PendingAction:
         self.expires_in = float(expires_in)
         self.status = status
         self.executed = executed
+        self.executed_at: Optional[float] = None
         self.run = run
         self.title = title or f"Execute {self.tool}"
         self.detail = detail or ""
@@ -441,8 +497,9 @@ class ConfirmationManager:
         now = time.monotonic()
         with cls._lock:
             for p in cls._store.values():
-                if p.tool == tool_name and p.executed and (now - p.created_at) < (p.expires_in + seconds):
-                    return True
+                if p.tool == tool_name and p.executed and p.executed_at is not None:
+                    if (now - p.executed_at) <= seconds:
+                        return True
         return False
 
     @classmethod
@@ -501,6 +558,7 @@ class ConfirmationManager:
             # Mark executed immediately before invoking run to reject concurrent duplicates
             p.status = "executed"
             p.executed = True
+            p.executed_at = time.monotonic()
             cls._executed_ids.add(p.id)
             cls._last_executed = p
             cls._active_id = None
@@ -695,6 +753,7 @@ class ConfirmationManager:
             # Mark executed immediately under lock
             p.status = "executed"
             p.executed = True
+            p.executed_at = time.monotonic()
             cls._executed_ids.add(p.id)
             cls._last_executed = p
             cls._active_id = None

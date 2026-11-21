@@ -279,6 +279,93 @@ class TestWhatsAppConfirmation(unittest.TestCase):
             self.assertNotIn("I have sent the message", res_unver.message)
             self.assertIn("could not be confirmed", res_unver.message)
 
+    # ── Test 9: Action requests and conversational sentences do NOT false-confirm ──
+
+    def test_command_and_conversational_utterances_not_false_confirmed(self):
+        """Action initiating requests and conversational sentences must NOT match confirm."""
+        false_cases = [
+            "Send a message to my mom, Hi.",
+            "Send a message to Mom - HI",
+            "Then send their hair a high.",
+            "Can you send an email to Bob?",
+            "Please send a message to Dad",
+            "Send text to sister: arrived safely",
+            "Are you sure?",
+            "Is everything fine?",
+        ]
+        for utterance in false_cases:
+            self.assertFalse(
+                confirm.matches_confirm(utterance),
+                f"Utterance '{utterance}' falsely matched confirmation!",
+            )
+
+    # ── Test 10: Conversational sentences do NOT false-cancel ────────────────
+
+    def test_conversational_sentences_not_false_cancelled(self):
+        """Conversational sentences containing negative words must NOT cancel pending actions."""
+        false_cases = [
+            "No, it doesn't make Message is not sent.",
+            "No problem at all",
+            "I have no doubt about that",
+            "There is no issue here",
+        ]
+        for utterance in false_cases:
+            self.assertFalse(
+                confirm.matches_cancel(utterance),
+                f"Utterance '{utterance}' falsely matched cancellation!",
+            )
+
+    # ── Test 11: has_recent_execution uses executed_at and expires accurately ─
+
+    def test_has_recent_execution_uses_executed_at(self):
+        """has_recent_execution checks actual executed_at time, not full timeout duration."""
+        pending = confirm.save_pending(
+            tool="whatsapp_send",
+            params={"contact": "Mom", "text": "HI"},
+            run=lambda: "Done",
+            expires_in=60.0,
+            title="Send WhatsApp message to Mom",
+        )
+        self.assertFalse(confirm.has_recent_execution("whatsapp_send", seconds=5.0))
+
+        # Execute the action
+        confirm.resolve(True, action_id=pending.id)
+        self.assertTrue(confirm.has_recent_execution("whatsapp_send", seconds=5.0))
+
+        # Simulate 6 seconds passed after execution (within 60s timeout, but beyond 5s deduplication window)
+        stored = confirm.get_pending(pending.id)
+        self.assertIsNotNone(stored)
+        stored.executed_at = time.monotonic() - 6.0
+
+        # Should now return False, allowing subsequent messages to be sent!
+        self.assertFalse(confirm.has_recent_execution("whatsapp_send", seconds=5.0))
+
+    # ── Test 12: WhatsAppDriver UIA fallback allows contact selection & sending ──
+
+    def test_whatsapp_driver_resolve_contact_fallback(self):
+        """When UIA returns 0 list items, resolve_contact falls back to Enter rather than aborting."""
+        from plugins._whatsapp_core import WhatsAppDriver
+        driver = WhatsAppDriver()
+
+        # Mock open_whatsapp and find_whatsapp_window
+        mock_win = MagicMock()
+        with patch.object(driver, "open_whatsapp", return_value=True), \
+             patch.object(driver, "_find_whatsapp_window", return_value=mock_win), \
+             patch("plugins._whatsapp_core._paste_text"), \
+             patch("plugins._whatsapp_core._PYAUTOGUI", True), \
+             patch("plugins._whatsapp_core.pyautogui") as mock_pag:
+            # UIA search returns no list items
+            if driver.uia:
+                with patch.object(driver.uia, "find_elements", return_value={"status": "success", "matches": []}):
+                    ok, chosen, candidates = driver.resolve_contact("Mom")
+            else:
+                ok, chosen, candidates = driver.resolve_contact("Mom")
+
+            self.assertTrue(ok)
+            self.assertEqual(chosen, "Mom")
+            # Verify Enter was pressed to select the search result
+            mock_pag.press.assert_any_call("enter")
+
 
 if __name__ == "__main__":
     unittest.main()

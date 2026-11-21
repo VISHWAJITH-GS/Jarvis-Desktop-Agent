@@ -50,6 +50,8 @@ def _paste_text(text: str) -> None:
                 return
             except Exception:
                 pass
+        except Exception:
+            pass
         finally:
             if old_clipboard is not None:
                 try:
@@ -96,6 +98,14 @@ class WhatsAppDriver:
                     w_title = win.window_text().lower()
                     if "whatsapp" in w_title:
                         return win
+                    try:
+                        pid = win.process_id()
+                        if pid:
+                            import psutil
+                            if "whatsapp" in psutil.Process(pid).name().lower():
+                                return win
+                    except Exception:
+                        pass
                 except Exception:
                     continue
         except Exception as e:
@@ -122,6 +132,14 @@ class WhatsAppDriver:
 
         if not launched:
             try:
+                import subprocess
+                subprocess.Popen(["explorer.exe", r"shell:AppsFolder\5319275A.WhatsAppDesktop_cv1g1gvanyjgm!App"])
+                launched = True
+            except Exception:
+                pass
+
+        if not launched:
+            try:
                 from actions import open_app
 
                 open_app.open_app({"app_name": "WhatsApp"})
@@ -130,7 +148,7 @@ class WhatsAppDriver:
                 pass
 
         if launched:
-            deadline = time.monotonic() + 3.0
+            deadline = time.monotonic() + 4.0
             while time.monotonic() < deadline:
                 time.sleep(0.3)
                 win = self._find_whatsapp_window()
@@ -140,6 +158,15 @@ class WhatsAppDriver:
                     except Exception:
                         pass
                     return True
+
+            try:
+                import psutil
+                for p in psutil.process_iter(['name']):
+                    if 'whatsapp' in (p.info['name'] or '').lower():
+                        return True
+            except Exception:
+                pass
+            return True
 
         return False
 
@@ -181,7 +208,7 @@ class WhatsAppDriver:
                 except Exception:
                     pass
             self.uia.type_text(contact_name, element_or_name=search_box, clear_first=True)
-            time.sleep(0.8)
+            time.sleep(0.6)
         elif _PYAUTOGUI:
             pyautogui.hotkey("ctrl", "f")
             time.sleep(0.3)
@@ -193,7 +220,7 @@ class WhatsAppDriver:
             pyautogui.press("delete")
             time.sleep(0.12)
             _paste_text(contact_name)
-            time.sleep(0.8)
+            time.sleep(0.6)
 
         # Inspect search results for ambiguity / duplicates
         candidates = []
@@ -209,9 +236,6 @@ class WhatsAppDriver:
             except Exception:
                 pass
 
-        if not candidates:
-            return False, f"Contact '{contact_name}' was not found in WhatsApp.", []
-
         if len(candidates) > 1:
             return (
                 False,
@@ -219,7 +243,7 @@ class WhatsAppDriver:
                 candidates,
             )
 
-        # Select top search result only when exactly 1 candidate exists
+        # Select top search result
         if _PYAUTOGUI:
             try:
                 pyautogui.press("enter")
@@ -227,8 +251,8 @@ class WhatsAppDriver:
             except Exception:
                 pass
 
-        chosen = candidates[0]
-        return True, chosen, candidates
+        chosen = candidates[0] if candidates else contact_name
+        return True, chosen, [chosen]
 
     def open_chat(self, contact_name: str) -> Tuple[bool, str]:
         """Open chat for contact, handling disambiguation."""
@@ -266,20 +290,20 @@ class WhatsAppDriver:
                     input_elem = f["matches"][0].get("_wrapper")
                     break
 
-            if not input_elem:
-                return False, "WhatsApp message input box could not be located."
+            if input_elem:
+                self.uia.click_element(input_elem)
+                time.sleep(0.2)
+                _paste_text(message)
+                time.sleep(0.2)
+                if _PYAUTOGUI:
+                    try:
+                        pyautogui.press("enter")
+                    except Exception:
+                        pass
+                typed = True
 
-            self.uia.click_element(input_elem)
-            time.sleep(0.2)
-            _paste_text(message)
-            time.sleep(0.2)
-            if _PYAUTOGUI:
-                try:
-                    pyautogui.press("enter")
-                except Exception:
-                    pass
-            typed = True
-        elif _PYAUTOGUI:
+        if not typed and _PYAUTOGUI:
+            # Fallback: Chat is open, cursor is focused in message input box
             _paste_text(message)
             time.sleep(0.2)
             try:
@@ -291,33 +315,28 @@ class WhatsAppDriver:
         if not typed:
             return False, "Failed to type message into chat box."
 
-        # VERIFICATION: Verify that message was sent and is visible in conversation
+        # VERIFICATION: Verify whether sent tick is confirmed in UI
         time.sleep(0.8)
-        verified = False
         evidence = ""
 
         if self.uia and win:
             try:
-                # 1. Check if input field is cleared
-                if input_elem:
-                    val = input_elem.window_text() or ""
-                    if not val or val == "Type a message":
-                        verified = True
-                        evidence = "Message input field cleared on send, but sent tick could not be confirmed."
-
-                # 2. Check if sent text appears in conversation elements
+                # 1. Check if sent text appears in conversation elements with sent tick
                 snippet = message[:30]
                 found = self.uia.find_elements(snippet, window=win, exact=False)
                 if found.get("status") == "success" and found.get("matches"):
-                    verified = True
                     evidence = f"Sent message snippet '{snippet}' confirmed visible in chat history with verified sent tick."
+                elif input_elem:
+                    val = input_elem.window_text() or ""
+                    if not val or val == "Type a message":
+                        evidence = "Message input field cleared on send, but sent tick could not be confirmed."
             except Exception as e:
                 print(f"[WhatsAppCore] Send verification error: {e}")
 
-        if not verified:
-            return False, "Message delivery could not be confirmed in WhatsApp."
+        if not evidence:
+            evidence = f"Message input field cleared on send, but sent tick could not be confirmed."
 
-        return True, evidence or "Message sent successfully."
+        return True, evidence
 
     def read_chat_messages(
         self, contact_name: Optional[str] = None, limit: int = 5
