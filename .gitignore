@@ -1,4 +1,4 @@
-# ── MARK LVI — what never belongs in the repository ──────────────────────────
+# ── Jarvis-Desktop-Agent — what never belongs in the repository ───────────────
 # Everything listed here is created by the app on first run. A fresh clone with
 # none of it present boots straight to the setup screen, which is the intended
 # first experience — so nothing here needs to be committed, and some of it must
@@ -39,6 +39,16 @@ venv/
 env/
 ENV/
 
+# ── Quality, test and lint caches ─────────────────────────────────────────────
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+*.docx
+agents/
+
 # ── Editors and operating systems ─────────────────────────────────────────────
 .vscode/
 .idea/
@@ -55,9 +65,12 @@ screenshots/
 skills/.backups/
 skills/*.db
 skills/skills_manifest.db
-memory/reminders/
-reports/
-scratch/
+memory/reminders/*
+!memory/reminders/.gitkeep
+reports/*
+!reports/.gitkeep
+scratch/*
+!scratch/.gitkeep
 data/
 local_data/
 *.pyc
