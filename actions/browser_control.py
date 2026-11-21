@@ -59,12 +59,33 @@ def browser_control(parameters: Optional[Dict[str, Any]] = None, **kwargs: Any) 
         if not ok:
             return outcome.failed("browser_control", err_msg)
 
+        # ── Setup / First-Run Sign-In ─────────────────────────────────────────
+        if action in ("setup", "setup_browser", "first_run", "signin"):
+            from actions.setup_browser import setup_browser
+            return setup_browser(parameters=params, player=kwargs.get("player"))
+
         # ── Navigation ────────────────────────────────────────────────────────
-        if action in ("go_to", "navigate", "open"):
+        elif action in ("go_to", "navigate", "open"):
             url = str(params.get("url", "")).strip()
             if not url:
                 return outcome.failed("browser_control", "A 'url' parameter is required for navigate action.")
             msg = session_mgr.run_coroutine(executor.navigate_to(url))
+            from actions.signed_out_detector import check_signed_out_status
+            page = session_mgr.active_page
+            if page:
+                try:
+                    title = session_mgr.run_coroutine(page.title())
+                    signed_out_msg = check_signed_out_status(page.url, title)
+                    if signed_out_msg:
+                        return outcome.done(
+                            "browser_control",
+                            message=f"{msg} Notice: {signed_out_msg}",
+                            action="navigate",
+                            url=url,
+                            warning=signed_out_msg,
+                        )
+                except Exception:
+                    pass
             return outcome.done("browser_control", message=msg, action="navigate", url=url)
 
         # ── Observation / Perception ──────────────────────────────────────────
