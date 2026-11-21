@@ -137,6 +137,13 @@ class WhisperSTT:
                 )
             return self._model
 
+    def unload_model(self) -> None:
+        """Release faster-whisper model from memory."""
+        self._model = None
+        import gc
+
+        gc.collect()
+
     def _transcribe_blocking(self, samples) -> str:
         segments, info = self._model.transcribe(
             samples,

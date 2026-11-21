@@ -396,6 +396,15 @@ def get_wake_word_enabled() -> bool:
     return DEFAULT_WAKE_WORD_ENABLED
 
 
+def get_wake_word_whisper_spotter() -> bool:
+    """Config flag to enable secondary faster-whisper keyword spotter (default False to conserve ~50-100MB RAM)."""
+    return bool(load_api_keys().get("enable_whisper_spotter", False))
+
+
+def save_wake_word_whisper_spotter(enabled: bool) -> None:
+    _save_flag("enable_whisper_spotter", bool(enabled))
+
+
 def save_wake_word_enabled(enabled: bool) -> None:
     ensure_config_dir()
     data: dict = {}

@@ -93,15 +93,50 @@ class WindowMediaMixin:
 
     def _on_video_close(self) -> None:
         if self._video_sync:
-            self._video_sync.stop()
+            try:
+                self._video_sync.stop()
+            except Exception:
+                pass
+            self._video_sync = None
         for p in (self._video_player, self._video_sound):
             if p:
-                p.stop()
-                p.setSource(QUrl())
+                try:
+                    p.stop()
+                    p.setSource(QUrl())
+                except Exception:
+                    pass
+        self._video_player = None
+        self._video_sound = None
+        self._video_audio = None
+        self._video_sound_out = None
         self._video_split = False
         self._video_on = False
         self._hud_cam_stack.setCurrentIndex(0)
         self._sync_mic_for_video()  # gives the microphone back
+        import gc
+
+        gc.collect()
+
+    def _ensure_video_player(self) -> None:
+        if getattr(self, "_video_player", None) is not None:
+            return
+        if getattr(self, "_video_item", None) is not None and HAVE_VIDEO:
+            self._video_audio = QAudioOutput()
+            self._video_audio.setMuted(True)
+            self._video_player = QMediaPlayer()
+            self._video_player.setVideoOutput(self._video_item)
+            self._video_item.nativeSizeChanged.connect(self._fit_video)
+            self._video_player.setAudioOutput(self._video_audio)
+            self._video_player.errorOccurred.connect(self._on_video_error)
+
+            self._video_sound = QMediaPlayer()
+            self._video_sound_out = QAudioOutput()
+            self._video_sound_out.setMuted(True)
+            self._video_sound.setAudioOutput(self._video_sound_out)
+
+            self._video_sync = QTimer(self)
+            self._video_sync.setInterval(1000)
+            self._video_sync.timeout.connect(self._sync_video_sound)
 
     def _set_video_muted(self, muted: bool) -> None:
         """Silence whichever output is carrying the sound for this video."""

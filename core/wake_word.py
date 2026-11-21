@@ -268,7 +268,7 @@ class WakeWordDetector:
         wake_words: Optional[Iterable[str]] = None,
         logger: Callable[[str], None] = print,
         notify: Callable[[str], None] | None = None,
-        enable_keyword_spotter: bool = True,
+        enable_keyword_spotter: Optional[bool] = None,
     ):
         self._on_detect = on_detect
         try:
@@ -281,7 +281,15 @@ class WakeWordDetector:
         self._wake_words: list[str] = normalize_wake_words(wake_words)
         self._logger = logger
         self._notify = notify or (lambda _msg: None)
-        self._enable_keyword_spotter = bool(enable_keyword_spotter)
+        if enable_keyword_spotter is None:
+            try:
+                from memory.config_manager import get_wake_word_whisper_spotter
+
+                self._enable_keyword_spotter = get_wake_word_whisper_spotter()
+            except Exception:
+                self._enable_keyword_spotter = False
+        else:
+            self._enable_keyword_spotter = bool(enable_keyword_spotter)
 
         self._queue: queue.Queue = queue.Queue(maxsize=50)
         self._spotter_queue: queue.Queue = queue.Queue(maxsize=1)
@@ -402,7 +410,11 @@ class WakeWordDetector:
             except Exception:
                 pass
         self._model = None
+        self._whisper_model = None
         self._ready = False
+        import gc
+
+        gc.collect()
 
     def pause(self) -> None:
         """Pause wake-word processing without unloading models from memory."""

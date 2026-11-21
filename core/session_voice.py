@@ -539,9 +539,19 @@ class LiveVoiceMixin:
 
     def _make_remote_key(self):
         """Called from Qt main thread when user presses Remote Control."""
-        if self._dashboard is None:
-            self.ui.write_log('SYS: Dashboard unavailable. Run: pip install fastapi "uvicorn[standard]" cryptography')
-            return None
+        if self._dashboard is None or not getattr(self._dashboard, "_running", False):
+            try:
+                from dashboard.server import DashboardServer
+
+                if self._dashboard is None:
+                    self._dashboard = DashboardServer()
+                    self._dashboard.set_connect_callback(self._on_phone_connected)
+                if not getattr(self._dashboard, "_running", False) and self._loop and not self._loop.is_closed():
+                    asyncio.run_coroutine_threadsafe(self._dashboard.serve(), self._loop)
+                    asyncio.run_coroutine_threadsafe(self._process_dashboard_commands(), self._loop)
+            except Exception as e:
+                self.ui.write_log(f'SYS: Dashboard unavailable ({e}). Run: pip install fastapi "uvicorn[standard]" cryptography')
+                return None
         # The firewall is fixed HERE, not at startup: this is the moment the
         # user asked for the phone dashboard, so a Windows admin prompt now has
         # an obvious reason. Once per run, and a no-op when nothing is blocked.

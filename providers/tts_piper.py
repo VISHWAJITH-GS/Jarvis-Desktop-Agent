@@ -254,6 +254,15 @@ class PiperTTS:
             _voices[voice] = loaded
         return loaded
 
+    @classmethod
+    def unload_voices(cls) -> None:
+        """Release cached Piper voice models from memory."""
+        with _voice_lock:
+            _voices.clear()
+        import gc
+
+        gc.collect()
+
     def _pick(self, language: str) -> str:
         """Which voice speaks this turn (English only)."""
         if self.voice and language_of(self.voice).startswith("en"):

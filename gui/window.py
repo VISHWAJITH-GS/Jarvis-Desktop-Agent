@@ -219,22 +219,12 @@ class MainWindow(
             self._video_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
             _vid_v.addWidget(self._video_widget, stretch=1)
 
-            self._video_audio = QAudioOutput()
-            self._video_audio.setMuted(True)
-            self._video_player = QMediaPlayer()
-            self._video_player.setVideoOutput(self._video_item)
-            self._video_item.nativeSizeChanged.connect(self._fit_video)
-            self._video_player.setAudioOutput(self._video_audio)
-            self._video_player.errorOccurred.connect(self._on_video_error)
-
-            self._video_sound = QMediaPlayer()
-            self._video_sound_out = QAudioOutput()
-            self._video_sound_out.setMuted(True)
-            self._video_sound.setAudioOutput(self._video_sound_out)
-
-            self._video_sync = QTimer(self)
-            self._video_sync.setInterval(1000)
-            self._video_sync.timeout.connect(self._sync_video_sound)
+            # Multimedia player and audio outputs are allocated lazily on first playback
+            self._video_audio = None
+            self._video_player = None
+            self._video_sound = None
+            self._video_sound_out = None
+            self._video_sync = None
         else:
             self._video_scene = None
             self._video_item = None

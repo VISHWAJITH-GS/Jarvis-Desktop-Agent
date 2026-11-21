@@ -612,18 +612,9 @@ class JarvisLive(LiveAudioMixin, LiveMonitorsMixin, LiveVoiceMixin):
         # and background Bluetooth/Windows endpoint hot-switch monitor.
         await asyncio.to_thread(self.audio_manager.initialize)
 
-        # Start dashboard (optional — needs: pip install fastapi "uvicorn[standard]" cryptography)
-        try:
-            from dashboard.server import DashboardServer
-
-            self._dashboard = DashboardServer()
-            self._dashboard.set_connect_callback(self._on_phone_connected)
-            asyncio.create_task(self._dashboard.serve())
-            # Runs for the whole lifetime, not just inside an active session
-            asyncio.create_task(self._process_dashboard_commands())
-        except Exception as e:
-            print(f"[Dashboard] Disabled: {e}")
-            self._dashboard = None
+        # Dashboard server starts on-demand when Remote Control is opened,
+        # conserving ~50 MB of FastAPI/uvicorn dependencies until requested.
+        self._dashboard = None
 
         while True:
             try:

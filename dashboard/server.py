@@ -876,6 +876,9 @@ class DashboardServer:
         # Set by serve() when the port could not be taken, so the UI can say
         # why the QR code leads nowhere instead of showing it regardless.
         self._bind_error: str = ""
+        self._running: bool = False
+        self._server = None
+        self._redirector_server = None
         self._login_html = _read("login.html")
         self._app_html = _read("app.html")
         self.app = self._build_app()
@@ -1777,7 +1780,8 @@ class DashboardServer:
         bind_host = "0.0.0.0" if get_dashboard_allow_lan() else "127.0.0.1"
         cfg = uvicorn.Config(bounce, host=bind_host, port=PORT, log_level="warning")
         print(f"[Dashboard] Type by hand:  {self._ip}:{PORT}  (sends you to the secure page)")
-        await uvicorn.Server(cfg).serve()
+        self._redirector_server = uvicorn.Server(cfg)
+        await self._redirector_server.serve()
 
     async def serve(self) -> None:
         if not _DEPS_OK:
@@ -1874,4 +1878,30 @@ class DashboardServer:
 
         print(f"[Dashboard] {self.get_url()}")
         print("[Dashboard] Press 'Remote Control' in JARVIS UI to get the QR code.")
-        await uvicorn.Server(cfg).serve()
+        self._server = uvicorn.Server(cfg)
+        self._running = True
+        asyncio.create_task(self._idle_monitor())
+        try:
+            await self._server.serve()
+        finally:
+            self._running = False
+
+    def stop(self) -> None:
+        """Stop dashboard server gracefully and release socket/RAM resources."""
+        self._running = False
+        if getattr(self, "_server", None) is not None:
+            self._server.should_exit = True
+        if getattr(self, "_redirector_server", None) is not None:
+            self._redirector_server.should_exit = True
+
+    async def _idle_monitor(self, idle_timeout: float = 600.0) -> None:
+        """Stops the server after idle_timeout seconds with no connected clients."""
+        last_active = time.time()
+        while getattr(self, "_running", False):
+            await asyncio.sleep(15.0)
+            if len(getattr(self, "_clients", set())) > 0:
+                last_active = time.time()
+            elif time.time() - last_active > idle_timeout:
+                print(f"[Dashboard] Idle timeout ({idle_timeout}s without connection) — stopping server to conserve RAM.")
+                self.stop()
+                break
