@@ -690,6 +690,65 @@ class TestAntigravityToolIntegration(unittest.TestCase):
             self.assertEqual(res4.status, outcome.STATUS_DONE)
             mock_rev.assert_called_once()
 
+        # Test terminal and git subactions dispatch
+        with (
+            patch("actions.antigravity_terminal.close_all_files", return_value=outcome.ActionResult(
+                status=outcome.STATUS_DONE, action="close_all_files", success=True, verified=True
+            )) as mock_close,
+            patch("actions.antigravity_terminal.new_terminal", return_value=outcome.ActionResult(
+                status=outcome.STATUS_DONE, action="new_terminal", success=True, verified=True
+            )) as mock_term,
+            patch("actions.antigravity_terminal.run_terminal_command", return_value=outcome.ActionResult(
+                status=outcome.STATUS_DONE, action="run_terminal_command", success=True, verified=True
+            )) as mock_run_cmd,
+            patch("actions.version_control.git_commit", return_value=outcome.ActionResult(
+                status=outcome.STATUS_DONE, action="git_commit", success=True, verified=True
+            )) as mock_commit,
+            patch("actions.version_control.git_push", return_value=outcome.ActionResult(
+                status=outcome.STATUS_DONE, action="git_push", success=True, verified=True
+            )) as mock_push,
+            patch("actions.version_control.git_status", return_value=outcome.ActionResult(
+                status=outcome.STATUS_DONE, action="git_status", success=True, verified=True
+            )) as mock_git_st,
+            patch("actions.version_control.git_pull", return_value=outcome.ActionResult(
+                status=outcome.STATUS_DONE, action="git_pull", success=True, verified=True
+            )) as mock_pull,
+        ):
+            # close_all_files
+            res_close = antigravity_ide.antigravity_ide({"action": "close_all_files", "save_first": True})
+            self.assertEqual(res_close.status, outcome.STATUS_DONE)
+            mock_close.assert_called_once_with(save_first=True, force=False, player=None)
+
+            # new_terminal
+            res_term = antigravity_ide.antigravity_ide({"action": "new_terminal", "cwd": "D:/proj"})
+            self.assertEqual(res_term.status, outcome.STATUS_DONE)
+            mock_term.assert_called_once_with(cwd="D:/proj", player=None)
+
+            # run_terminal_command
+            res_cmd = antigravity_ide.antigravity_ide({"action": "run_terminal_command", "command": "pytest", "cwd": "D:/proj"})
+            self.assertEqual(res_cmd.status, outcome.STATUS_DONE)
+            mock_run_cmd.assert_called_once_with(command="pytest", cwd="D:/proj", timeout=60.0, player=None)
+
+            # git_commit
+            res_c = antigravity_ide.antigravity_ide({"action": "git_commit", "message": "feat: test", "files": ["a.py"]})
+            self.assertEqual(res_c.status, outcome.STATUS_DONE)
+            mock_commit.assert_called_once_with(message="feat: test", files=["a.py"], cwd=None, player=None)
+
+            # git_push
+            res_p = antigravity_ide.antigravity_ide({"action": "git_push", "remote": "origin", "branch": "main"})
+            self.assertEqual(res_p.status, outcome.STATUS_DONE)
+            mock_push.assert_called_once_with(remote="origin", branch="main", force=False, cwd=None, player=None)
+
+            # git_status
+            res_s = antigravity_ide.antigravity_ide({"action": "git_status"})
+            self.assertEqual(res_s.status, outcome.STATUS_DONE)
+            mock_git_st.assert_called_once()
+
+            # git_pull
+            res_pl = antigravity_ide.antigravity_ide({"action": "git_pull", "remote": "origin"})
+            self.assertEqual(res_pl.status, outcome.STATUS_DONE)
+            mock_pull.assert_called_once()
+
     def test_approval_prompts_never_auto_clicked(self):
         """Verify terminal approval prompts are reported and never auto-clicked."""
         from actions.antigravity_cdp import AntigravitySessionManager

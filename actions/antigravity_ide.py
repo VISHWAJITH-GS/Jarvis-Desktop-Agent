@@ -18,6 +18,8 @@ from actions import antigravity_cdp
 from actions import antigravity_files
 from actions import antigravity_launcher
 from actions import antigravity_review
+from actions import antigravity_terminal
+from actions import version_control
 from core import outcome
 
 logger = logging.getLogger("antigravity_ide")
@@ -43,7 +45,8 @@ TOOL = {
                     "'window_status', 'panel_status', 'open_panel', 'list_models', 'select_model', "
                     "'new_conversation', 'stop_agent', 'send_prompt', 'review_changes', "
                     "'accept_all', 'reject_all', 'accept_file', 'reject_file', 'create_file', "
-                    "'write_file', 'create_folder', 'save_file'."
+                    "'write_file', 'create_folder', 'save_file', 'close_all_files', 'new_terminal', "
+                    "'run_terminal_command', 'git_commit', 'git_push', 'git_status', 'git_pull'."
                 ),
                 "enum": [
                     "open_folder",
@@ -67,6 +70,13 @@ TOOL = {
                     "write_file",
                     "create_folder",
                     "save_file",
+                    "close_all_files",
+                    "new_terminal",
+                    "run_terminal_command",
+                    "git_commit",
+                    "git_push",
+                    "git_status",
+                    "git_pull",
                 ],
             },
             "path": {
@@ -113,6 +123,39 @@ TOOL = {
             "source": {
                 "type": "STRING",
                 "description": "Origin of prompt text (must be 'user' for safety).",
+            },
+            "command": {
+                "type": "STRING",
+                "description": "Terminal command to execute programmatically.",
+            },
+            "message": {
+                "type": "STRING",
+                "description": "Commit message for Git commit operations.",
+            },
+            "branch": {
+                "type": "STRING",
+                "description": "Target Git branch name.",
+            },
+            "remote": {
+                "type": "STRING",
+                "description": "Target Git remote name (default 'origin').",
+            },
+            "save_first": {
+                "type": "BOOLEAN",
+                "description": "Whether to save all open files before closing (for close_all_files).",
+            },
+            "force": {
+                "type": "BOOLEAN",
+                "description": "Force flag (e.g. force close without saving, or force push).",
+            },
+            "files": {
+                "type": "ARRAY",
+                "items": {"type": "STRING"},
+                "description": "Specific list of file paths to stage/commit.",
+            },
+            "cwd": {
+                "type": "STRING",
+                "description": "Working directory for terminal command or Git operations.",
             },
         },
         "required": ["action"],
@@ -271,6 +314,61 @@ def antigravity_ide(parameters: dict, player=None) -> outcome.ActionResult:
     if sub_act == "reject_file":
         fname = str(parameters.get("filename") or path or "")
         return antigravity_review.reject_file(filename=fname, player=player)
+
+    # 6. Terminal & Editor Shortcuts
+    if sub_act in ("close_all_files", "close_all_editors"):
+        return antigravity_terminal.close_all_files(
+            save_first=bool(parameters.get("save_first", False)),
+            force=bool(parameters.get("force", False)),
+            player=player,
+        )
+
+    if sub_act in ("new_terminal", "open_terminal"):
+        return antigravity_terminal.new_terminal(
+            cwd=parameters.get("cwd") or path,
+            player=player,
+        )
+
+    if sub_act in ("run_terminal_command", "run_command", "terminal_command"):
+        cmd_str = str(parameters.get("command") or parameters.get("cmd") or "")
+        return antigravity_terminal.run_terminal_command(
+            command=cmd_str,
+            cwd=parameters.get("cwd") or path,
+            timeout=float(parameters.get("timeout", 60.0)),
+            player=player,
+        )
+
+    # 7. Git & Version Control Shortcuts
+    if sub_act in ("git_commit", "commit"):
+        msg_str = str(parameters.get("message") or "")
+        return version_control.git_commit(
+            message=msg_str,
+            files=parameters.get("files"),
+            cwd=parameters.get("cwd") or path,
+            player=player,
+        )
+
+    if sub_act in ("git_push", "push"):
+        return version_control.git_push(
+            remote=str(parameters.get("remote") or "origin"),
+            branch=parameters.get("branch"),
+            force=bool(parameters.get("force", False)),
+            cwd=parameters.get("cwd") or path,
+            player=player,
+        )
+
+    if sub_act in ("git_status", "status_git"):
+        return version_control.git_status(
+            cwd=parameters.get("cwd") or path,
+        )
+
+    if sub_act in ("git_pull", "pull"):
+        return version_control.git_pull(
+            remote=str(parameters.get("remote") or "origin"),
+            branch=parameters.get("branch"),
+            cwd=parameters.get("cwd") or path,
+            player=player,
+        )
 
     return outcome.ActionResult(
         status=outcome.STATUS_FAILED,

@@ -727,13 +727,25 @@ class ActionPermissionManager:
                 return ActionRiskLevel.CONFIRMATION_REQUIRED
             if sub_act in ("accept_all", "reject_all"):
                 return ActionRiskLevel.CONFIRMATION_REQUIRED
+            if sub_act in ("git_push", "push"):
+                return ActionRiskLevel.CONFIRMATION_REQUIRED
             # Read-only or normal controls
             if sub_act in (
                 "status", "window_status", "panel_status", "list_models",
                 "open_folder", "open_file", "open_diff", "add_folder", "open_panel",
                 "select_model", "new_conversation", "stop_agent", "create_file",
                 "write_file", "create_folder", "save_file", "review_changes",
+                "close_all_files", "close_all_editors", "new_terminal", "open_terminal",
+                "run_terminal_command", "run_command", "terminal_command",
+                "git_commit", "commit", "git_status", "status_git", "git_pull", "pull",
             ):
+                return ActionRiskLevel.IMMEDIATE
+
+        # Version Control Risk Classifications
+        if act == "version_control":
+            if sub_act == "push":
+                return ActionRiskLevel.CONFIRMATION_REQUIRED
+            if sub_act in ("status", "commit", "pull"):
                 return ActionRiskLevel.IMMEDIATE
 
         # Productivity actions (to-do list, tasks, habits) execute immediately without confirmation
@@ -952,12 +964,28 @@ class ActionPermissionManager:
                 fc = params.get("file_count") or params.get("files") or "all"
                 title = "Accept All Changes in Antigravity IDE"
                 detail = f"Accept all agent code edits in Antigravity IDE ({fc} files)."
+            elif sub_act in ("git_push", "push"):
+                br = params.get("branch") or "current branch"
+                rem = params.get("remote") or "origin"
+                title = "Push Git Commits to Remote"
+                detail = f"Push commits on branch '{br}' to remote repository '{rem}'."
             elif sub_act == "reject_all":
                 title = "Reject All Changes in Antigravity IDE"
                 detail = "Discard all agent code changes in Antigravity IDE."
             else:
                 title = f"Antigravity IDE: {sub_act}"
                 detail = f"Execute Antigravity IDE action '{sub_act}'."
+
+        # Version Control Actions
+        elif act == "version_control":
+            br = params.get("branch") or "current branch"
+            rem = params.get("remote") or "origin"
+            if sub_act == "push":
+                title = "Push Git Commits to Remote"
+                detail = f"Push commits on branch '{br}' to remote repository '{rem}'."
+            else:
+                title = f"Version Control: {sub_act}"
+                detail = f"Execute Git version control action '{sub_act}'."
 
         else:
             title = f"Execute {action_name}"
