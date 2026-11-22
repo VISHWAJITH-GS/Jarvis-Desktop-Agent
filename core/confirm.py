@@ -26,9 +26,11 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional, Tuple
 
 from core import outcome
+from core.risk_tiers import RiskTier, parse_tier
 
 # A pending confirmation expires after this long (default 60 seconds).
 TIMEOUT_SECONDS = 60.0
+
 
 
 # ── Multilingual Confirmation & Cancellation Lexicons ─────────────────────────
@@ -104,8 +106,27 @@ def _normalize_text(text: str) -> str:
     return re.sub(r"[^\w\s]", " ", clean, flags=re.UNICODE).strip()
 
 
+def is_status_query(utterance: str) -> bool:
+    """Check if utterance is an inquiry about status rather than an action or confirmation."""
+    norm = _normalize_text(utterance)
+    if not norm:
+        return False
+    status_phrases = (
+        "is it sent", "is it sent yet", "did it send", "did you send it", "has it sent",
+        "has it been sent", "did you send", "was it sent", "is it done", "is it done yet",
+        "did it work", "did you do it", "status", "what is the status", "check status",
+        "has the message been sent", "did the message go through", "is the message sent",
+    )
+    for p in status_phrases:
+        if norm == p or norm.startswith(p + " ") or norm.endswith(" " + p):
+            return True
+    return False
+
+
 def _is_command_or_action_utterance(norm: str) -> bool:
     """True if utterance is a full action command or complex sentence, not a confirmation token."""
+    if is_status_query(norm):
+        return True
     # Check prefixes that initiate actions
     for p in (
         "send a ", "send an ", "send the ", "send to ", "send this ", "send that ",
@@ -128,6 +149,7 @@ def _is_command_or_action_utterance(norm: str) -> bool:
         if p in norm:
             return True
     return False
+
 
 
 def is_explicit_confirm(utterance: str) -> bool:
@@ -307,6 +329,8 @@ class PendingAction:
         payment_details: Optional[dict] = None,
         visual_prompt: bool = False,
         result: Optional[Any] = None,
+        tier: Optional[RiskTier] = None,
+        turn_id: Optional[str] = None,
         # Legacy backward-compatibility parameters
         key: Optional[str] = None,
         action: Optional[str] = None,
@@ -325,10 +349,17 @@ class PendingAction:
         self.title = title or f"Execute {self.tool}"
         self.detail = detail or ""
         self.risk_level = risk_level
+        self.tier: RiskTier = parse_tier(tier) or parse_tier(risk_level) or RiskTier.MEDIUM
         self.payment_details = payment_details
         self.visual_prompt = visual_prompt
         self.result = result
         self.prompt_count = 0
+        self.turn_id = turn_id
+        self.prompt_spoken_at: Optional[float] = None
+        self.voice_confirmed: bool = False
+        self.voice_confirmed_at: Optional[float] = None
+        self.button_confirmed: bool = False
+        self.button_confirmed_at: Optional[float] = None
 
         # Ensure contact and text params are populated if receiver/message were used
         if "contact" not in self.params and "receiver" in self.params:
@@ -338,6 +369,17 @@ class PendingAction:
                 if k in self.params:
                     self.params["text"] = self.params[k]
                     break
+
+    def is_dual_confirmation_required(self) -> bool:
+        """HIGH tier actions require BOTH voice confirmation AND on-screen button press."""
+        return self.tier == RiskTier.HIGH
+
+    def is_fully_confirmed(self) -> bool:
+        """Check if all required confirmation factors have been satisfied."""
+        if self.is_dual_confirmation_required():
+            return self.voice_confirmed and self.button_confirmed
+        return self.voice_confirmed or self.button_confirmed
+
 
     # Backward-compatible properties
     @property
@@ -393,8 +435,10 @@ class PendingAction:
 _VISUAL_CONFIRM_LEVELS = ("high_impact", "high", "heavy", "sensitive", "destructive")
 
 
-def requires_visual_prompt(risk_level: str, payment_details: Optional[dict] = None) -> bool:
-    """Confirmation UI policy."""
+def requires_visual_prompt(risk_level: str, payment_details: Optional[dict] = None, tier: Optional[RiskTier] = None) -> bool:
+    """Confirmation UI policy: HIGH tier actions strictly require visual prompt."""
+    if tier == RiskTier.HIGH:
+        return True
     if payment_details:
         return True
     lvl = str(risk_level or "").strip().lower()
@@ -402,10 +446,15 @@ def requires_visual_prompt(risk_level: str, payment_details: Optional[dict] = No
 
 
 # Callbacks wired to UI banner
-_show_cb: Optional[Callable[[str, str], None]] = None
+_show_cb: Optional[Callable[..., None]] = None
 _hide_cb: Optional[Callable[[], None]] = None
 _log_cb: Optional[Callable[[str], None]] = None
 _feedback_cb: Optional[Callable[[outcome.ActionResult, PendingAction], None]] = None
+
+
+def is_hud_available() -> bool:
+    """Check if on-screen HUD window is active and available for physical button confirmation."""
+    return _show_cb is not None
 
 
 def bind(show, hide, log=None) -> None:
@@ -454,6 +503,12 @@ class ConfirmationManager:
                 pass
 
     @classmethod
+    def has_active_pending(cls) -> bool:
+        """True if an active, unexpired pending confirmation exists."""
+        with cls._lock:
+            return cls.get_pending_internal() is not None
+
+    @classmethod
     def save_pending(
         cls,
         tool: str,
@@ -466,8 +521,11 @@ class ConfirmationManager:
         payment_details: Optional[dict] = None,
         visual_prompt: bool = False,
         action_id: Optional[str] = None,
+        tier: Optional[RiskTier] = None,
+        turn_id: Optional[str] = None,
     ) -> PendingAction:
         """Save a pending action into the store deterministically without launching any app."""
+        parsed_tier = parse_tier(tier) or parse_tier(risk_level) or RiskTier.MEDIUM
         with cls._lock:
             # 1. Canonical parameter comparison against active pending action
             active_p = cls.get_pending_internal()
@@ -478,6 +536,8 @@ class ConfirmationManager:
                     active_p.title = title
                 if detail:
                     active_p.detail = detail
+                if parsed_tier:
+                    active_p.tier = parsed_tier
                 return active_p
 
             # Check store for non-active pending actions that are equivalent and unexpired
@@ -486,6 +546,8 @@ class ConfirmationManager:
                     if actions_equivalent(stored_p.tool, stored_p.params, tool, params):
                         if run is not None:
                             stored_p.run = run
+                        if parsed_tier:
+                            stored_p.tier = parsed_tier
                         cls._active_id = stored_p.id
                         return stored_p
 
@@ -502,6 +564,8 @@ class ConfirmationManager:
                 risk_level=risk_level,
                 payment_details=payment_details,
                 visual_prompt=visual_prompt,
+                tier=parsed_tier,
+                turn_id=turn_id,
             )
             cls._store[p.id] = p
             cls._active_id = p.id
@@ -522,8 +586,13 @@ class ConfirmationManager:
         run: Callable[[], str],
         payment_details: Optional[dict] = None,
         action_id: Optional[str] = None,
+        tier: Optional[RiskTier] = None,
+        turn_id: Optional[str] = None,
+        player=None,
     ) -> str:
         """Park an action behind the confirmation gate."""
+        parsed_tier = parse_tier(tier) or parse_tier(risk_level) or RiskTier.MEDIUM
+
         # Safeguard: status checks and read-only actions must never be parked for confirmation
         try:
             from core.permissions import ActionPermissionManager, ActionRiskLevel
@@ -533,7 +602,13 @@ class ConfirmationManager:
         except Exception:
             pass
 
-        show_visual = requires_visual_prompt(risk_level, payment_details=payment_details)
+        # HIGH tier fail-closed safeguard: If HUD is unavailable, reject action immediately
+        if parsed_tier == RiskTier.HIGH and not is_hud_available():
+            refuse_msg = "High-risk actions require on-screen confirmation; please open the Jarvis window."
+            _log(f"SYS: Refused high-risk action '{title}' because HUD is unavailable.")
+            return f"[CONFIRMATION_REFUSED] {refuse_msg}"
+
+        show_visual = (parsed_tier == RiskTier.HIGH) or requires_visual_prompt(risk_level, payment_details=payment_details, tier=parsed_tier)
 
         p = cls.save_pending(
             tool=action,
@@ -546,6 +621,8 @@ class ConfirmationManager:
             payment_details=payment_details,
             visual_prompt=show_visual,
             action_id=action_id,
+            tier=parsed_tier,
+            turn_id=turn_id,
         )
 
         p.prompt_count += 1
@@ -556,17 +633,31 @@ class ConfirmationManager:
         if show_visual:
             if _show_cb is not None:
                 try:
-                    _show_cb(title, detail)
+                    # Pass tier if signature supports it, else title and detail
+                    import inspect
+                    sig = inspect.signature(_show_cb)
+                    if len(sig.parameters) >= 3:
+                        _show_cb(title, detail, str(parsed_tier.value))
+                    else:
+                        _show_cb(title, detail)
                 except Exception:
-                    pass
-            _log(f"SYS: Awaiting voice + visual confirmation — {title} [{risk_level}] (id={p.id})")
+                    try:
+                        _show_cb(title, detail)
+                    except Exception:
+                        pass
+            _log(f"SYS: Awaiting confirmation — {title} [{parsed_tier.value}] (id={p.id})")
         else:
             if _hide_cb is not None:
                 try:
                     _hide_cb()
                 except Exception:
                     pass
-            _log(f"SYS: Awaiting voice-only confirmation — {title} [{risk_level}] (id={p.id})")
+            _log(f"SYS: Awaiting voice confirmation — {title} [{parsed_tier.value}] (id={p.id})")
+
+        # Check muted states
+        is_mic_muted = False
+        if player is not None and getattr(player, "mic_muted", False):
+            is_mic_muted = True
 
         # Voice prompt phrasing
         if payment_details:
@@ -576,13 +667,19 @@ class ConfirmationManager:
                 f"[CONFIRMATION_PENDING] Shall I proceed with payment of {amt} to {recip}? "
                 f"Say confirm to execute, or no to cancel."
             )
-        elif show_visual:
+        elif is_mic_muted:
             return (
                 f"[CONFIRMATION_PENDING] Shall I proceed with {title}? "
-                f"Note: {detail}. Say confirm or click CONFIRM to execute, or say no to cancel."
+                f"Note: microphone is muted, please click Confirm or unmute."
+            )
+        elif parsed_tier == RiskTier.HIGH:
+            return (
+                f"[CONFIRMATION_PENDING] Shall I proceed with {title}? "
+                f"Note: {detail}. Say confirm AND click CONFIRM on screen to execute, or say no to cancel."
             )
         else:
             return f"[CONFIRMATION_PENDING] Shall I proceed with {title}? Say confirm to execute, or no to cancel."
+
 
     @classmethod
     def discard_pending(cls, reason: str = "") -> None:
@@ -688,8 +785,12 @@ class ConfirmationManager:
             return "Done."
 
     @classmethod
-    def resolve(cls, accepted: bool, action_id: Optional[str] = None, sync: bool = False) -> bool:
-        """Execute or cancel the pending action with strict idempotency."""
+    def resolve_by_button(
+        cls, accepted: bool, action_id: Optional[str] = None, sync: bool = False, player=None
+    ) -> Tuple[bool, str]:
+        """Process an on-screen button click from the HUD banner.
+        Returns: (executed: bool, message: str)
+        """
         with cls._lock:
             if action_id:
                 p = cls._store.get(action_id)
@@ -697,25 +798,41 @@ class ConfirmationManager:
                 p = cls.get_pending_internal()
 
             if p is None:
-                return False
+                return False, "There is nothing pending to confirm."
 
-            # Idempotency check: Reject duplicate runs
-            if p.executed or p.id in cls._executed_ids:
-                _log(f"SYS: Reject duplicate execution attempt for '{p.title}' (id={p.id})")
-                return False
+            if not accepted:
+                p.status = "cancelled"
+                cls._active_id = None
+                if _hide_cb:
+                    try:
+                        _hide_cb()
+                    except Exception:
+                        pass
+                _log(f"SYS: User clicked CANCEL — cancelled {p.title}")
+                return False, f"Cancelled {p.title}."
 
             if p.is_expired():
                 p.status = "expired"
                 cls._last_expired = p
                 cls._active_id = None
+                if _hide_cb:
+                    try:
+                        _hide_cb()
+                    except Exception:
+                        pass
                 _log(f"SYS: Confirmation expired — {p.title}")
-                return False
+                return False, "That confirmation timed out, please ask again."
 
-            if not accepted:
-                p.status = "cancelled"
-                cls._active_id = None
-                _log(f"SYS: Cancelled — {p.title}")
-                return False
+            if p.executed or p.id in cls._executed_ids:
+                dup_msg = "Already sent." if p.tool in ("whatsapp_send", "whatsapp", "send_message") else f"Already done. Action '{p.title}' has already been executed."
+                return False, dup_msg
+
+            p.button_confirmed = True
+            p.button_confirmed_at = time.monotonic()
+
+            if p.is_dual_confirmation_required() and not p.voice_confirmed:
+                _log(f"SYS: Button confirmed for '{p.title}'. Awaiting spoken confirmation...")
+                return False, "Button confirmed. Please say confirm to execute."
 
             # Mark executed immediately before invoking run to reject concurrent duplicates
             p.status = "executed"
@@ -733,7 +850,7 @@ class ConfirmationManager:
 
         if sync:
             try:
-                res = cls._execute_saved_action(p)
+                res = cls._execute_saved_action(p, player=player)
                 p.result = res
                 _log(f"SYS: Confirmed — {p.title}. {res}")
                 if _feedback_cb:
@@ -742,15 +859,15 @@ class ConfirmationManager:
                         _feedback_cb(res_obj, p)
                     except Exception:
                         pass
-                return True
+                return True, str(res)
             except Exception as e:
                 _log(f"ERR: {p.title} failed — {e}")
-                return False
+                return False, str(e)
 
         # Execute on background worker thread
         def _worker():
             try:
-                res = cls._execute_saved_action(p)
+                res = cls._execute_saved_action(p, player=player)
                 p.result = res
                 _log(f"SYS: Confirmed — {p.title}. {res}")
                 if _feedback_cb:
@@ -765,9 +882,15 @@ class ConfirmationManager:
         threading.Thread(
             target=_worker,
             daemon=True,
-            name=f"confirm-{p.id}",
+            name=f"confirm-btn-{p.id}",
         ).start()
-        return True
+        return True, f"Executing confirmed action {p.title}."
+
+    @classmethod
+    def resolve(cls, accepted: bool, action_id: Optional[str] = None, sync: bool = False, player=None) -> bool:
+        """Backward-compatible resolve call routing through button resolution."""
+        ok, _ = cls.resolve_by_button(accepted, action_id=action_id, sync=sync, player=player)
+        return ok
 
     @classmethod
     def intercept_confirmation(
@@ -775,6 +898,7 @@ class ConfirmationManager:
         utterance: str,
         player=None,
         speak=None,
+        turn_id: Optional[str] = None,
     ) -> Optional[outcome.ActionResult]:
         """
         Intercept confirmation or cancellation utterances BEFORE the model sees them.
@@ -784,6 +908,16 @@ class ConfirmationManager:
             - outcome.ActionResult when resolved or handled.
             - None if utterance does not match confirmation or cancellation vocabulary.
         """
+        # Reject voice input during TTS playback (echo)
+        if player is not None:
+            if getattr(player, "is_speaking", False) or getattr(player, "_tts_playing", False):
+                _log(f"SYS: Ignored utterance during TTS playback (echo): '{utterance}'")
+                return None
+
+        # Status queries ("is it sent yet?") never match confirmations or cancellations
+        if is_status_query(utterance):
+            return None
+
         is_conf = matches_confirm(utterance)
         is_canc = matches_cancel(utterance)
 
@@ -798,6 +932,11 @@ class ConfirmationManager:
                     p.status = "cancelled"
                     cls._active_id = None
                     cls._store.pop(p.id, None)
+                    if _hide_cb:
+                        try:
+                            _hide_cb()
+                        except Exception:
+                            pass
                     _log(f"Cleared pending action '{p.title}' because user changed subject / asked for something else.")
             return None
 
@@ -854,7 +993,7 @@ class ConfirmationManager:
                             break
 
                 if last_exec is not None and (last_exec.executed or last_exec.id in cls._executed_ids):
-                    dup_msg = f"Action '{last_exec.title}' has already been executed."
+                    dup_msg = "Already sent." if last_exec.tool in ("whatsapp_send", "whatsapp", "send_message") else f"Already done. Action '{last_exec.title}' has already been executed."
                     if player and hasattr(player, "write_log"):
                         try:
                             player.write_log(f"SYS: {dup_msg}")
@@ -879,10 +1018,9 @@ class ConfirmationManager:
                             break
 
                 if last_exp is not None:
-                    # Expired pending -> NEVER resurface as "shall I proceed anyway?" (Part 4.2)
                     cls._last_expired = None
                     cls._store.pop(last_exp.id, None)
-                    ask_msg = f"The confirmation for {last_exp.title} has expired and was cancelled."
+                    ask_msg = "That confirmation expired and timed out, please ask again."
                     if player and hasattr(player, "write_log"):
                         try:
                             player.write_log(f"SYS: {ask_msg}")
@@ -913,9 +1051,16 @@ class ConfirmationManager:
                         pass
                 return outcome.result_failed("confirmation", ask_msg, data={"no_pending": True})
 
-            # 2. Check duplicate execution: key by pending id, mark executed, reject duplicates
+            # 2. Check same-turn debounce / turn id
+            # A confirm utterance in the SAME turn that requested the action must not confirm it
+            if turn_id and p.turn_id and turn_id == p.turn_id:
+                _log(f"SYS: Ignored confirm in same turn as request for '{p.title}'")
+                return None
+
+
+            # 3. Check duplicate execution: key by pending id, mark executed, reject duplicates
             if p.executed or p.id in cls._executed_ids:
-                dup_msg = f"Action '{p.title}' has already been executed."
+                dup_msg = "Already sent." if p.tool in ("whatsapp_send", "whatsapp", "send_message") else f"Already done. Action '{p.title}' has already been executed."
                 if player and hasattr(player, "write_log"):
                     try:
                         player.write_log(f"SYS: {dup_msg}")
@@ -926,6 +1071,34 @@ class ConfirmationManager:
                     message=dup_msg,
                     verified=True,
                     data={"id": p.id, "duplicate": True},
+                )
+
+            # Record voice confirmation
+            p.voice_confirmed = True
+            p.voice_confirmed_at = time.monotonic()
+
+            # For HIGH risk actions, check if button was also confirmed
+            if p.is_dual_confirmation_required() and not p.button_confirmed:
+                wait_msg = f"Spoken confirmation received. Please click CONFIRM on the screen to execute {p.title}."
+                _log(f"SYS: {wait_msg}")
+                if player and hasattr(player, "_confirm_overlay") and player._confirm_overlay:
+                    try:
+                        if hasattr(player._confirm_overlay, "set_voice_confirmed"):
+                            player._confirm_overlay.set_voice_confirmed(True)
+                    except Exception:
+                        pass
+                if speak and not (player and getattr(player, "muted", False)):
+                    try:
+                        speak(wait_msg)
+                    except Exception:
+                        pass
+                return outcome.ActionResult(
+                    status=outcome.STATUS_NEEDS_CONFIRMATION,
+                    action=p.tool,
+                    success=False,
+                    verified=False,
+                    message=wait_msg,
+                    data={"id": p.id, "voice_confirmed": True, "waiting_button": True, "tier": str(p.tier.value)},
                 )
 
             # Mark executed immediately under lock
@@ -941,6 +1114,7 @@ class ConfirmationManager:
                 _hide_cb()
             except Exception:
                 pass
+
 
         # 3. Execute saved params exactly once
         try:
@@ -1009,6 +1183,8 @@ def save_pending(
     payment_details: Optional[dict] = None,
     visual_prompt: bool = False,
     action_id: Optional[str] = None,
+    tier: Optional[RiskTier] = None,
+    turn_id: Optional[str] = None,
 ) -> PendingAction:
     return ConfirmationManager.save_pending(
         tool=tool,
@@ -1021,18 +1197,23 @@ def save_pending(
         payment_details=payment_details,
         visual_prompt=visual_prompt,
         action_id=action_id,
+        tier=tier,
+        turn_id=turn_id,
     )
 
 
 def request_action(
     action: str,
     parameters: dict,
-    risk_level: str,
-    title: str,
-    detail: str,
-    run: Callable[[], str],
+    risk_level: str = "confirmation",
+    title: str = "",
+    detail: str = "",
+    run: Optional[Callable[[], str]] = None,
     payment_details: Optional[dict] = None,
     action_id: Optional[str] = None,
+    tier: Optional[RiskTier] = None,
+    turn_id: Optional[str] = None,
+    player=None,
 ) -> str:
     return ConfirmationManager.request_action(
         action=action,
@@ -1040,9 +1221,12 @@ def request_action(
         risk_level=risk_level,
         title=title,
         detail=detail,
-        run=run,
+        run=run or (lambda: "Done."),
         payment_details=payment_details,
         action_id=action_id,
+        tier=tier,
+        turn_id=turn_id,
+        player=player,
     )
 
 
@@ -1058,16 +1242,20 @@ def request(key: str, title: str, detail: str, run: Callable[[], str]) -> str:
     )
 
 
-def resolve(accepted: bool, action_id: Optional[str] = None, sync: bool = False) -> bool:
-    return ConfirmationManager.resolve(accepted, action_id=action_id, sync=sync)
+def resolve(accepted: bool, action_id: Optional[str] = None, sync: bool = False, player=None) -> bool:
+    return ConfirmationManager.resolve(accepted, action_id=action_id, sync=sync, player=player)
+
+
+def resolve_by_button(accepted: bool, action_id: Optional[str] = None, sync: bool = False, player=None) -> Tuple[bool, str]:
+    return ConfirmationManager.resolve_by_button(accepted, action_id=action_id, sync=sync, player=player)
 
 
 def resolve_by_voice(utterance: str) -> Optional[bool]:
     return ConfirmationManager.resolve_by_voice(utterance)
 
 
-def intercept_confirmation(utterance: str, player=None, speak=None) -> Optional[outcome.ActionResult]:
-    return ConfirmationManager.intercept_confirmation(utterance, player=player, speak=speak)
+def intercept_confirmation(utterance: str, player=None, speak=None, turn_id: Optional[str] = None) -> Optional[outcome.ActionResult]:
+    return ConfirmationManager.intercept_confirmation(utterance, player=player, speak=speak, turn_id=turn_id)
 
 
 def pending_title() -> str:
@@ -1076,6 +1264,10 @@ def pending_title() -> str:
 
 def get_pending(action_id: Optional[str] = None) -> Optional[PendingAction]:
     return ConfirmationManager.get_pending(action_id=action_id)
+
+
+def has_active_pending() -> bool:
+    return ConfirmationManager.has_active_pending()
 
 
 def discard_pending(reason: str = "") -> None:
@@ -1092,3 +1284,4 @@ def get_recent_execution(tool_name: str, params: Optional[dict] = None, seconds:
 
 def has_recent_execution(tool_name: str, params: Optional[dict] = None, seconds: float = 5.0) -> bool:
     return ConfirmationManager.has_recent_execution(tool_name, params=params, seconds=seconds)
+

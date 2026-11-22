@@ -81,7 +81,7 @@ class MainWindow(
     _clipboard_sig = pyqtSignal(str)  # clipboard text changed (thread-safe)
     _mute_sig = pyqtSignal(bool)  # thread-safe mute state toggle
     _mute_state_sig = pyqtSignal(bool, str)  # thread-safe atomic (muted, hud_state) sync
-    _confirm_sig = pyqtSignal(str, str)  # (title, detail) — irreversible-action gate
+    _confirm_sig = pyqtSignal([str, str], [str, str, str])  # (title, detail, [tier]) — irreversible-action gate
     _confirm_hide_sig = pyqtSignal()
     _wake_dl_sig = pyqtSignal(bool, str)  # wake-word install finished (ok, message)
     _quiz_sig = pyqtSignal(str, object, object)  # (topic, questions, grader)

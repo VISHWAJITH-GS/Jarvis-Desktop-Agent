@@ -643,15 +643,21 @@ class ConfirmBanner(_HudOverlay):
     tool round trips on every power command."""
 
     answered = pyqtSignal(bool)
-    _OW = 430
+    _OW = 450
 
-    def __init__(self, title: str, detail: str, parent=None):
+    def __init__(self, title: str, detail: str, tier: str = "MEDIUM", parent=None):
         super().__init__(parent)
+        self.tier = str(tier or "MEDIUM").strip().upper()
+        self.is_high = "HIGH" in self.tier
+        self._remaining = 60
+
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        border_col = "#FF3344" if self.is_high else C.ACC
+        bg_col = "rgba(20, 2, 4, 250)" if self.is_high else "rgba(14, 3, 0, 250)"
         self.setStyleSheet(f"""
             ConfirmBanner {{
-                background: rgba(14, 3, 0, 250);
-                border: 1px solid {C.ACC};
+                background: {bg_col};
+                border: 1px solid {border_col};
                 border-radius: 6px;
             }}
         """)
@@ -661,10 +667,19 @@ class ConfirmBanner(_HudOverlay):
         lay.setContentsMargins(20, 16, 20, 16)
         lay.setSpacing(8)
 
-        hdr = QLabel("⚠  CONFIRM")
-        hdr.setFont(QFont("Montserrat", 11, QFont.Weight.Bold))
-        hdr.setStyleSheet(f"color: {C.ACC}; background: transparent;")
-        lay.addWidget(hdr)
+        # Header with tier and countdown
+        hdr_row = QHBoxLayout()
+        hdr_text = "⚠  HIGH RISK: VOICE + BUTTON CONFIRMATION REQUIRED" if self.is_high else "⚠  CONFIRM"
+        hdr = QLabel(hdr_text)
+        hdr.setFont(QFont("Montserrat", 9 if self.is_high else 11, QFont.Weight.Bold))
+        hdr.setStyleSheet(f"color: {border_col}; background: transparent;")
+        hdr_row.addWidget(hdr, stretch=1)
+
+        self._countdown = QLabel("60s")
+        self._countdown.setFont(QFont("Montserrat", 9, QFont.Weight.Bold))
+        self._countdown.setStyleSheet(f"color: {C.TEXT_MED}; background: transparent;")
+        hdr_row.addWidget(self._countdown)
+        lay.addLayout(hdr_row)
 
         ttl = QLabel(title)
         ttl.setWordWrap(True)
@@ -679,17 +694,31 @@ class ConfirmBanner(_HudOverlay):
             dtl.setStyleSheet(f"color: {C.TEXT_MED}; background: transparent;")
             lay.addWidget(dtl)
 
+        # High tier dual-confirmation status chips
+        if self.is_high:
+            chip_row = QHBoxLayout()
+            chip_row.setSpacing(12)
+            self._voice_chip = QLabel("🎤 Voice: Pending")
+            self._voice_chip.setStyleSheet(f"color: {C.TEXT_MED}; background: transparent; font-size: 11px;")
+            chip_row.addWidget(self._voice_chip)
+
+            self._button_chip = QLabel("👆 Button: Pending")
+            self._button_chip.setStyleSheet(f"color: {C.TEXT_MED}; background: transparent; font-size: 11px;")
+            chip_row.addWidget(self._button_chip)
+            chip_row.addStretch(1)
+            lay.addLayout(chip_row)
+
         row = QHBoxLayout()
         row.setSpacing(8)
 
         yes = QPushButton("CONFIRM")
-        yes.setIcon(get_uicon("shield-exclamation", color=C.ACC, size=15))
+        yes.setIcon(get_uicon("shield-exclamation", color=border_col, size=15))
         yes.setFixedHeight(32)
         yes.setFont(QFont("Montserrat", 9, QFont.Weight.Bold))
         yes.setCursor(Qt.CursorShape.PointingHandCursor)
         yes.setStyleSheet(f"""
-            QPushButton {{ background: transparent; color: {C.ACC};
-                border: 1px solid {C.ACC}; border-radius: 3px; }}
+            QPushButton {{ background: transparent; color: {border_col};
+                border: 1px solid {border_col}; border-radius: 3px; }}
             QPushButton:hover {{ background: rgba(255,107,0,40); }}
         """)
         yes.clicked.connect(lambda: self.answered.emit(True))
@@ -713,6 +742,58 @@ class ConfirmBanner(_HudOverlay):
         # safe answer wins.
         no.setDefault(True)
         no.setFocus()
+
+        # 60-second expiry countdown timer
+        self._timer = QTimer(self)
+        self._timer.setInterval(1000)
+        self._timer.timeout.connect(self._on_tick)
+        self._timer.start()
+
+    def _on_tick(self):
+        self._remaining -= 1
+        if self._remaining <= 0:
+            if hasattr(self, "_timer"):
+                self._timer.stop()
+            self.answered.emit(False)
+        else:
+            if hasattr(self, "_countdown"):
+                self._countdown.setText(f"{self._remaining}s")
+
+    def mousePressEvent(self, e):
+        # Exclude synthetic / injected input events for security
+        if not e.spontaneous():
+            e.ignore()
+            return
+        super().mousePressEvent(e)
+
+    def set_voice_confirmed(self, confirmed: bool = True):
+        if hasattr(self, "_voice_chip"):
+            if confirmed:
+                self._voice_chip.setText("🎤 Voice: Confirmed ✓")
+                self._voice_chip.setStyleSheet("color: #00FF66; background: transparent; font-size: 11px; font-weight: bold;")
+            else:
+                self._voice_chip.setText("🎤 Voice: Pending")
+                self._voice_chip.setStyleSheet(f"color: {C.TEXT_MED}; background: transparent; font-size: 11px;")
+
+    def set_button_confirmed(self, confirmed: bool = True):
+        if hasattr(self, "_button_chip"):
+            if confirmed:
+                self._button_chip.setText("👆 Button: Confirmed ✓")
+                self._button_chip.setStyleSheet("color: #00FF66; background: transparent; font-size: 11px; font-weight: bold;")
+            else:
+                self._button_chip.setText("👆 Button: Pending")
+                self._button_chip.setStyleSheet(f"color: {C.TEXT_MED}; background: transparent; font-size: 11px;")
+
+    def hideEvent(self, e):
+        if hasattr(self, "_timer") and self._timer.isActive():
+            self._timer.stop()
+        super().hideEvent(e)
+
+    def closeEvent(self, e):
+        if hasattr(self, "_timer") and self._timer.isActive():
+            self._timer.stop()
+        super().closeEvent(e)
+
 
 
 class AudioDeviceOverlay(_HudOverlay):

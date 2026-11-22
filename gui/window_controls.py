@@ -753,7 +753,7 @@ class WindowControlsMixin:
 
     # ── Irreversible-action confirmation ─────────────────────────────────────
 
-    def _show_confirm_banner(self, title: str, detail: str):
+    def _show_confirm_banner(self, title: str, detail: str, tier: str = "MEDIUM"):
         self._hide_confirm_banner()
 
         was_min = self.isMinimized() or getattr(self, "_is_minimized_top", False)
@@ -781,7 +781,7 @@ class WindowControlsMixin:
         self.raise_()
         self.activateWindow()
 
-        ov = ConfirmBanner(title, detail, parent=self.centralWidget())
+        ov = ConfirmBanner(title, detail, tier=tier, parent=self.centralWidget())
         ov.answered.connect(self._on_confirm_answered)
         self._centre_overlay(ov)
         self._confirm_overlay = ov
@@ -797,16 +797,25 @@ class WindowControlsMixin:
             self.showNormal()
 
     def _on_confirm_answered(self, accepted: bool):
-        # Tear the banner down first: core.confirm.resolve() may be about to
-        # shut the machine down, and a live widget mid-callback is not where you
-        # want to be when that happens.
-        self._hide_confirm_banner()
+        from core.confirm import ConfirmationManager
         try:
-            from core.confirm import resolve
-
-            resolve(bool(accepted))
+            if not accepted:
+                self._hide_confirm_banner()
+                ConfirmationManager.resolve_by_button(False)
+            else:
+                executed, msg = ConfirmationManager.resolve_by_button(True, player=self)
+                if executed:
+                    self._hide_confirm_banner()
+                else:
+                    # High tier waiting for voice confirmation: update banner chip and keep up
+                    ov = getattr(self, "_confirm_overlay", None)
+                    if ov is not None and hasattr(ov, "set_button_confirmed"):
+                        ov.set_button_confirmed(True)
+                    self._log.append_log("SYS: Button confirmed. Please speak confirmation to execute.")
         except Exception as e:
+            self._hide_confirm_banner()
             self._log.append_log(f"ERR: Confirmation failed — {e}")
+
 
     def _open_plugin_manager(self):
         plugins = self.get_plugins() if self.get_plugins else []
