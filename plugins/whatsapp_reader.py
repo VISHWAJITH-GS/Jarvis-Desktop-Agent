@@ -17,29 +17,36 @@ from plugins import _whatsapp_web
 PLUGIN = {
     "name": "whatsapp_read",
     "description": (
-        "Reads recent incoming WhatsApp messages or chat history with a specified contact on WhatsApp Web. "
+        "Reads recent incoming WhatsApp messages, chat history, or lists unread chats on WhatsApp Web. "
         "Capabilities: "
         "1. Read latest message from a contact: action='read_chat', contact='Mom' "
         "2. Read recent incoming messages across chats: action='read_latest', limit=5 "
-        "3. Summarize recent conversation with a contact: action='summarize', contact='Rahul' "
-        "Use whenever the user asks 'what did my friend send', 'read my latest WhatsApp message', "
-        "'read latest conversation with mom', or 'summarize my chat with X'."
+        "3. List unread chats / who messaged me: action='unread' "
+        "4. Open links found in messages in separate tabs: action='open_links', links=['https://...'] "
+        "5. Summarize recent conversation with a contact: action='summarize', contact='Rahul' "
+        "Use whenever the user asks 'what did my friend send', 'who messaged me', "
+        "'read my latest WhatsApp message', 'open the links from my chat in tabs', or 'summarize my chat with X'."
     ),
-    "brief": "Reads recent incoming WhatsApp messages, contact chat history, and summarizes conversations.",
+    "brief": "Reads recent WhatsApp messages, lists unread chats, extracts and opens links.",
     "parameters": {
         "type": "OBJECT",
         "properties": {
             "action": {
                 "type": "STRING",
-                "description": "read_chat | read_latest | summarize",
+                "description": "read_chat | read_latest | unread | open_links | summarize",
             },
             "contact": {
                 "type": "STRING",
-                "description": "The contact name (e.g. 'Mom', 'Rahul', 'Friend'). Optional for read_latest.",
+                "description": "The contact name (e.g. 'Mom', 'Rahul', 'Friend'). Optional for read_latest and unread.",
             },
             "limit": {
                 "type": "INTEGER",
                 "description": "Number of recent messages to inspect (default 5).",
+            },
+            "links": {
+                "type": "ARRAY",
+                "items": {"type": "STRING"},
+                "description": "List of URLs to open in separate tabs (for action='open_links').",
             },
         },
         "required": [],
@@ -55,7 +62,18 @@ def run(parameters: dict, player=None, session_memory=None) -> outcome.ActionRes
 
     driver = _whatsapp_web.get_driver()
 
-    # 1. Summarize conversation
+    # 1. List unread chats ("who messaged me")
+    if action in ("unread", "who_messaged_me", "unread_chats", "list_unread"):
+        return driver.list_unread_chats()
+
+    # 2. Open links in separate tabs
+    if action in ("open_links", "open_urls"):
+        links = params.get("links") or []
+        if isinstance(links, str):
+            links = [links]
+        return driver.open_links(links)
+
+    # 3. Summarize conversation
     if action in ("summarize", "summarize_chat", "summary"):
         if not contact:
             return outcome.result_failed("whatsapp_read", "Please specify which contact's conversation to summarize.")
@@ -69,7 +87,7 @@ def run(parameters: dict, player=None, session_memory=None) -> outcome.ActionRes
             )
         return outcome.result_failed("whatsapp_read", f"Could not summarize chat with {contact}: {summary}")
 
-    # 2. Read specific contact chat or latest
+    # 4. Read specific contact chat or latest
     res = driver.read_messages(contact_name=contact if contact else None, limit=limit, player=player)
     if not res.is_success():
         if res.status == outcome.STATUS_BLOCKED:
@@ -77,12 +95,13 @@ def run(parameters: dict, player=None, session_memory=None) -> outcome.ActionRes
         return outcome.result_failed("whatsapp_read", res.error or res.message)
 
     msgs = res.data.get("messages", [])
+    extracted_links = res.data.get("links", [])
     if not msgs:
         return outcome.result_done(
             "whatsapp_read",
             f"No messages found for {contact or 'the current chat'}.",
             verified=True,
-            data={"contact": contact, "count": 0, "messages": []},
+            data={"contact": contact, "count": 0, "messages": [], "links": []},
         )
 
     # Format output with untrusted-content markers preserved
@@ -91,7 +110,9 @@ def run(parameters: dict, player=None, session_memory=None) -> outcome.ActionRes
         sender = m.get("sender", contact or "Contact")
         raw_text = m.get("raw_text", m.get("text", ""))
         safe_wrapped = outcome.untrusted("whatsapp", raw_text)
-        lines.append(f"{sender}: {safe_wrapped}")
+        m_links = m.get("links", [])
+        link_suffix = f" [Links: {', '.join(m_links)}]" if m_links else ""
+        lines.append(f"{sender}: {safe_wrapped}{link_suffix}")
 
     spoken_summary = f"Recent messages with {contact or 'WhatsApp'}:\n" + "\n".join(lines)
     return outcome.result_done(
@@ -102,6 +123,7 @@ def run(parameters: dict, player=None, session_memory=None) -> outcome.ActionRes
             "contact": contact,
             "count": len(msgs),
             "messages": msgs,
+            "links": extracted_links,
             "timestamp_range": res.data.get("timestamp_range", "recent"),
         },
     )

@@ -976,48 +976,115 @@ class WhatsAppWebDriver:
     async def _read_messages_in_page(
         self, page, contact_name: Optional[str] = None, limit: int = 5, player=None
     ) -> outcome.ActionResult:
-        """Extract latest messages with sender, timestamp, and untrusted-wrapped body text."""
+        """Extract latest messages with DOM direction, grouped bubble author propagation, links, and untrusted wrapping."""
         if contact_name:
             res_contact = await self._resolve_contact_in_page(page, contact_name)
             if not res_contact.is_success():
                 return res_contact
 
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(0.4)
 
-        bubbles = await page.query_selector_all(SELECTORS.message_container)
+        eff_limit = max(1, min(int(limit or 5), 50))
+
+        # Check scroll container if more messages requested than visible
+        try:
+            bubbles = await _safe_call(page, "query_selector_all", SELECTORS.message_container) or []
+            if len(bubbles) < eff_limit:
+                scroll_container = await _safe_call(
+                    page,
+                    "query_selector",
+                    '#main div[data-testid="conversation-panel-messages"], #main div[role="application"]',
+                )
+                if scroll_container:
+                    for _ in range(min(4, (eff_limit - len(bubbles)) // 5 + 1)):
+                        await _safe_call(page, "evaluate", "(el) => { if (el) el.scrollTop = 0; }", scroll_container)
+                        await asyncio.sleep(0.3)
+                        bubbles = await _safe_call(page, "query_selector_all", SELECTORS.message_container) or []
+                        if len(bubbles) >= eff_limit:
+                            break
+        except Exception:
+            bubbles = await _safe_call(page, "query_selector_all", SELECTORS.message_container) or []
+
         if not bubbles:
             return outcome.result_done(
                 "whatsapp_read",
                 f"No messages found for {contact_name or 'the current chat'}.",
                 verified=True,
-                data={"contact": contact_name, "count": 0, "messages": []},
+                data={"contact": contact_name, "count": 0, "messages": [], "links": []},
             )
 
-        items = bubbles[-max(limit, 1) :]
+        items = bubbles[-eff_limit:]
         extracted_messages: List[Dict[str, Any]] = []
+        last_incoming_author = contact_name or "Contact"
 
         for b in items:
             try:
-                class_attr = (await b.get_attribute("class")) or ""
-                sender = "You" if "message-out" in class_attr else (contact_name or "Contact")
+                class_attr = (await _safe_call(b, "get_attribute", "class")) or ""
+                # Skip date separators or system bubbles
+                if "system-message" in class_attr:
+                    continue
 
-                pre_plain = (await b.get_attribute("data-pre-plain-text")) or ""
+                # DOM Direction Detection (never guessed from pixels)
+                tail_out = await _safe_call(b, "query_selector", '[data-icon="tail-out"], [data-testid="tail-out"]')
+                tail_in = await _safe_call(b, "query_selector", '[data-icon="tail-in"], [data-testid="tail-in"]')
+                out_tick = await _safe_call(
+                    b,
+                    "query_selector",
+                    '[data-icon="msg-check"], [data-icon="msg-dblcheck"], [data-icon="msg-dblcheck-ack"], [data-icon="status-time"]',
+                )
+
+                is_outgoing = ("message-out" in class_attr) or (tail_out is not None) or (out_tick is not None)
+                direction = "outgoing" if is_outgoing else "incoming"
+
+                # Sender & Timestamp
+                pre_plain = (await _safe_call(b, "get_attribute", "data-pre-plain-text")) or ""
                 time_val = "Recent"
+                sender = "You" if is_outgoing else last_incoming_author
+
                 if pre_plain:
                     m_time = re.search(r"\[(.*?)\]", pre_plain)
                     if m_time:
                         time_val = m_time.group(1).strip()
                     m_author = re.search(r"\]\s*(.*?):", pre_plain)
-                    if m_author and "message-out" not in class_attr:
-                        sender = m_author.group(1).strip()
+                    if m_author and not is_outgoing:
+                        author_str = m_author.group(1).strip()
+                        if author_str:
+                            sender = author_str
+                            last_incoming_author = author_str
 
-                text_el = await b.query_selector(SELECTORS.message_text)
+                if not is_outgoing and sender == "Contact":
+                    author_el = await _safe_call(b, "query_selector", '[data-testid="author"]')
+                    if author_el:
+                        a_text = (await _safe_call(author_el, "inner_text")) or ""
+                        if a_text.strip():
+                            sender = a_text.strip()
+                            last_incoming_author = sender
+
+                # Message Body
+                text_el = await _safe_call(b, "query_selector", SELECTORS.message_text)
+                if not text_el:
+                    text_el = await _safe_call(b, "query_selector", "span.selectable-text, .copyable-text")
                 if not text_el:
                     continue
-                raw_body = (await text_el.inner_text()) or ""
+
+                raw_body = (await _safe_call(text_el, "inner_text")) or ""
+                if not isinstance(raw_body, str):
+                    continue
                 raw_body = raw_body.strip()
                 if not raw_body:
                     continue
+
+                # Ignore pure date separators (e.g. "TODAY", "YESTERDAY")
+                if re.match(r"^(today|yesterday|\d{1,2}/\d{1,2}/\d{2,4})$", raw_body.lower()):
+                    continue
+
+                # Extract links (a[href])
+                links: List[str] = []
+                link_els = await _safe_call(b, "query_selector_all", "a[href], a") or []
+                for l in link_els:
+                    href = await _safe_call(l, "get_attribute", "href")
+                    if href and href.startswith("http") and href not in links:
+                        links.append(href)
 
                 # Security Isolation: wrap all external text in untrusted markers
                 safe_body = outcome.untrusted("whatsapp", raw_body)
@@ -1025,20 +1092,28 @@ class WhatsAppWebDriver:
                 extracted_messages.append(
                     {
                         "sender": sender,
+                        "direction": direction,
                         "timestamp": time_val,
                         "text": safe_body,
                         "raw_text": raw_body,
+                        "links": links,
                     }
                 )
             except Exception:
                 continue
+
+        all_links = []
+        for m in extracted_messages:
+            for lk in m.get("links", []):
+                if lk not in all_links:
+                    all_links.append(lk)
 
         if not extracted_messages:
             return outcome.result_done(
                 "whatsapp_read",
                 f"No messages found for {contact_name or 'the current chat'}.",
                 verified=True,
-                data={"contact": contact_name, "count": 0, "messages": []},
+                data={"contact": contact_name, "count": 0, "messages": [], "links": []},
             )
 
         # Audit / Player log: ONLY METADATA, never bodies
@@ -1067,9 +1142,161 @@ class WhatsAppWebDriver:
                 "contact": contact_name,
                 "count": len(extracted_messages),
                 "messages": extracted_messages,
+                "links": all_links,
                 "timestamp_range": ts_range,
             },
         )
+
+    async def _list_unread_chats_in_page(self, page) -> outcome.ActionResult:
+        """List chats with unread counts for 'who messaged me'."""
+        js_code = """
+        () => {
+            const pane = document.querySelector('#pane-side') || document.querySelector('#side');
+            if (!pane) return [];
+            const rows = pane.querySelectorAll('div[role="row"], div[data-testid^="list-item-"], div[data-testid="cell-frame-container"]');
+            const unread = [];
+            for (const r of rows) {
+                const badge = r.querySelector('[aria-label*="unread"], [data-testid="icon-unread-count"], span[aria-label*="no leído"]');
+                if (!badge) continue;
+                const badgeText = (badge.innerText || badge.getAttribute('aria-label') || '').trim();
+                const countMatch = badgeText.match(/(\\d+)/);
+                const count = countMatch ? parseInt(countMatch[1], 10) : 1;
+
+                const titleEl = r.querySelector('span[title], [data-testid="cell-frame-title"], span[dir="auto"]');
+                const title = (titleEl ? (titleEl.getAttribute('title') || titleEl.innerText) : '').trim();
+                if (!title) continue;
+
+                const previewEl = r.querySelector('div[role="gridcell"] span[dir="ltr"], div[role="gridcell"] span[dir="auto"]:last-child');
+                const preview = previewEl ? (previewEl.innerText || '').trim() : '';
+
+                unread.push({
+                    contact: title,
+                    unread_count: count,
+                    last_message: preview
+                });
+            }
+            return unread;
+        }
+        """
+        raw_unread = await _safe_call(page, "evaluate", js_code)
+        if not isinstance(raw_unread, list):
+            raw_unread = []
+
+        if not raw_unread:
+            badges = await _safe_call(page, "query_selector_all", '[aria-label*="unread"], span[data-testid="icon-unread-count"]') or []
+            for b in badges:
+                try:
+                    txt = (await _safe_call(b, "inner_text")) or (await _safe_call(b, "get_attribute", "aria-label")) or ""
+                    m = re.search(r"(\d+)", txt)
+                    count = int(m.group(1)) if m else 1
+                    parent_row = await _safe_call(b, "evaluate_handle", "el => el.closest('[role=\"row\"], [data-testid^=\"list-item-\"]')")
+                    title = ""
+                    if parent_row:
+                        title_el = await _safe_call(parent_row, "query_selector", 'span[title], span[dir="auto"]')
+                        if title_el:
+                            title = (await _safe_call(title_el, "get_attribute", "title")) or (await _safe_call(title_el, "inner_text")) or ""
+                    title = title.strip() if isinstance(title, str) else ""
+                    if title and not any(u["contact"] == title for u in raw_unread):
+                        raw_unread.append({"contact": title, "unread_count": count, "last_message": ""})
+                except Exception:
+                    continue
+
+        if not raw_unread:
+            return outcome.result_done(
+                "whatsapp_read",
+                "You have no unread messages on WhatsApp Web.",
+                verified=True,
+                data={"unread_chats": [], "total_unread": 0},
+            )
+
+        lines = [f"{idx}) {u['contact']} ({u['unread_count']} unread)" for idx, u in enumerate(raw_unread, 1)]
+        spoken = f"You have unread messages in {len(raw_unread)} chat{'s' if len(raw_unread) != 1 else ''}: " + ", ".join(lines)
+        return outcome.result_done(
+            "whatsapp_read",
+            spoken,
+            verified=True,
+            data={"unread_chats": raw_unread, "total_unread": sum(u.get("unread_count", 1) for u in raw_unread)},
+        )
+
+    def list_unread_chats(self, background: bool = True) -> outcome.ActionResult:
+        """Synchronously list chats with unread messages."""
+        state, page, reason = self.ensure_page_ready(background=background)
+        if state != "ready" or page is None:
+            if state == "blocked":
+                return outcome.result_blocked("whatsapp_read", reason)
+            return outcome.result_failed("whatsapp_read", reason)
+
+        bm = self._get_browser_manager()
+        try:
+            return bm.run_coroutine(self._list_unread_chats_in_page(page), timeout=25.0)
+        except Exception as e:
+            return outcome.result_failed("whatsapp_read", f"Error listing unread chats: {e}")
+
+    async def _open_links_in_tabs(self, bm, links: List[str]) -> outcome.ActionResult:
+        """Open extracted links in separate tabs, reporting load or failure status.
+        Never claim a link is 'unresolved' without trying!
+        """
+        if not links:
+            return outcome.result_failed("open_links", "No links provided to open.")
+
+        results: List[Dict[str, Any]] = []
+        for url in links:
+            url_str = (url or "").strip()
+            if not url_str:
+                continue
+            try:
+                if hasattr(bm, "create_page"):
+                    tab = await bm.create_page()
+                    await tab.goto(url_str, wait_until="domcontentloaded", timeout=20000)
+                    t = await _safe_call(tab, "title")
+                    title = t if isinstance(t, str) else url_str
+                elif hasattr(bm, "_open_tab"):
+                    tab_info = await bm._open_tab(url_str)
+                    title = getattr(tab_info, "title", url_str)
+                elif hasattr(bm, "_context") and bm._context:
+                    tab = await bm._context.new_page()
+                    await tab.goto(url_str, wait_until="domcontentloaded", timeout=20000)
+                    title = await tab.title()
+                else:
+                    tab_info = bm.open_tab(url_str)
+                    title = getattr(tab_info, "title", url_str)
+
+                results.append({"url": url_str, "status": "loaded", "title": title, "error": None})
+            except Exception as e:
+                err_msg = str(e)
+                results.append({"url": url_str, "status": "failed", "title": "", "error": err_msg})
+
+        loaded = [r for r in results if r["status"] == "loaded"]
+        failed = [r for r in results if r["status"] == "failed"]
+
+        spoken_lines = [
+            f"Opened {len(results)} link{'s' if len(results) != 1 else ''} in separate tabs: {len(loaded)} loaded, {len(failed)} failed."
+        ]
+        for r in results:
+            if r["status"] == "loaded":
+                spoken_lines.append(f"- {r['url']}: loaded ({r['title']})")
+            else:
+                spoken_lines.append(f"- {r['url']}: failed ({r['error']})")
+
+        return outcome.result_done(
+            "open_links",
+            "\n".join(spoken_lines),
+            verified=True,
+            data={
+                "results": results,
+                "total": len(results),
+                "loaded_count": len(loaded),
+                "failed_count": len(failed),
+            },
+        )
+
+    def open_links(self, links: List[str]) -> outcome.ActionResult:
+        """Synchronously open links in separate tabs."""
+        bm = self._get_browser_manager()
+        try:
+            return bm.run_coroutine(self._open_links_in_tabs(bm, links), timeout=45.0)
+        except Exception as e:
+            return outcome.result_failed("open_links", f"Error opening links: {e}")
 
     def read_messages(
         self,
