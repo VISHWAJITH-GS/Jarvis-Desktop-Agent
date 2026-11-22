@@ -694,3 +694,78 @@ def verify_outcome_action(parameters: dict, player=None) -> outcome.ActionResult
             "status_vocabulary": reporting["status"],
         },
     )
+
+
+def should_auto_verify(action_name: str, parameters: dict) -> bool:
+    """Return True if this action warrants automatic post-execution visual verification."""
+    act = str(action_name or "").lower().strip()
+    params = parameters or {}
+    sub_act = str(params.get("action") or "").lower().strip()
+
+    # 1. Sending messages
+    if act in ("send_message", "whatsapp_send", "whatsapp"):
+        return True
+
+    # 2. Writing / editing / saving files
+    if act in ("file_controller", "file_processor", "dev_agent") and sub_act in (
+        "write", "edit_file", "save_file", "create_file"
+    ):
+        return True
+
+    # 3. Antigravity IDE agent prompts, model selection, accept/reject
+    if act == "antigravity_ide" and sub_act in (
+        "send_prompt", "prompt", "accept_all", "reject_all", "select_model", "save_file"
+    ):
+        return True
+
+    # 4. Form submissions
+    if act in ("browser_control", "action_executor") and sub_act in ("submit_form", "fill_form"):
+        return True
+
+    return False
+
+
+def auto_verify_action(
+    action_name: str,
+    parameters: dict,
+    action_result: Any,
+    player: Any = None,
+) -> outcome.ActionResult:
+    """Perform automatic visual outcome verification following a side-effect action."""
+    act = str(action_name or "").lower().strip()
+    params = parameters or {}
+    sub_act = str(params.get("action") or "").lower().strip()
+
+    # Formulate concrete expected outcome
+    if act in ("send_message", "whatsapp_send", "whatsapp"):
+        recipient = str(
+            params.get("contact") or params.get("recipient") or params.get("receiver") or "recipient"
+        ).strip()
+        expected = f"WhatsApp chat '{recipient}' shows sent outgoing message with delivery checkmark"
+        scope = SCOPE_WINDOW
+    elif act in ("file_controller", "file_processor", "dev_agent"):
+        target = str(params.get("target") or params.get("name") or params.get("path") or "file").strip()
+        expected = f"File '{target}' written and saved with expected changes"
+        scope = SCOPE_WINDOW
+    elif act == "antigravity_ide":
+        if sub_act in ("send_prompt", "prompt"):
+            expected = "Antigravity agent panel shows submitted prompt and active response generation"
+        elif sub_act in ("accept_all", "reject_all"):
+            expected = f"Antigravity diff changes {sub_act.replace('_', ' ')} and applied"
+        elif sub_act == "select_model":
+            model = str(params.get("model") or "selected model").strip()
+            expected = f"Antigravity agent panel shows model '{model}' selected"
+        else:
+            expected = f"Antigravity IDE completed '{sub_act}'"
+        scope = SCOPE_WINDOW
+    else:
+        expected = f"Action '{act}' completed as intended"
+        scope = SCOPE_WINDOW
+
+    verify_params = {
+        "expected": expected,
+        "scope": scope,
+        "evidence_from_tool": action_result,
+        "user_request": "",
+    }
+    return verify_outcome_action(verify_params, player=player)

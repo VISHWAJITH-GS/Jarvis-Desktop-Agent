@@ -239,6 +239,21 @@ class ToolDispatcher:
                 else:
                     result = f"Unknown tool: {name}"
 
+            # Automatic visual outcome verification for side-effect actions
+            try:
+                from actions import visual_verifier
+                if visual_verifier.should_auto_verify(name, args):
+                    verif = await loop.run_in_executor(
+                        None, lambda: visual_verifier.auto_verify_action(name, args, result, player=live.ui)
+                    )
+                    if verif:
+                        v_data = verif.data or {}
+                        v_verdict = v_data.get("verdict", "unverifiable")
+                        v_vocab = v_data.get("status_vocabulary", "unverified")
+                        result = f"{result}\n[VERIFICATION: {v_vocab.upper()} - {v_verdict.upper()}] {verif.message}"
+            except Exception as verif_err:
+                print(f"[Verifier] ⚠️ Auto-verify hook error: {verif_err}")
+
         except Exception as e:
             result = f"Tool '{name}' failed: {e}"
             traceback.print_exc()

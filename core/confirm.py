@@ -328,6 +328,7 @@ class PendingAction:
         self.payment_details = payment_details
         self.visual_prompt = visual_prompt
         self.result = result
+        self.prompt_count = 0
 
         # Ensure contact and text params are populated if receiver/message were used
         if "contact" not in self.params and "receiver" in self.params:
@@ -523,6 +524,15 @@ class ConfirmationManager:
         action_id: Optional[str] = None,
     ) -> str:
         """Park an action behind the confirmation gate."""
+        # Safeguard: status checks and read-only actions must never be parked for confirmation
+        try:
+            from core.permissions import ActionPermissionManager, ActionRiskLevel
+            if ActionPermissionManager.get_risk_level(action, parameters) == ActionRiskLevel.IMMEDIATE:
+                res = run()
+                return str(res)
+        except Exception:
+            pass
+
         show_visual = requires_visual_prompt(risk_level, payment_details=payment_details)
 
         p = cls.save_pending(
@@ -537,6 +547,11 @@ class ConfirmationManager:
             visual_prompt=show_visual,
             action_id=action_id,
         )
+
+        p.prompt_count += 1
+        if p.prompt_count > 1:
+            _log(f"SYS: Already prompted for pending action '{p.title}' (count={p.prompt_count})")
+            return f"[CONFIRMATION_PENDING] Still awaiting confirmation for {title}. Say confirm to proceed or no to cancel."
 
         if show_visual:
             if _show_cb is not None:

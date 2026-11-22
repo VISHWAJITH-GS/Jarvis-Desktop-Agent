@@ -237,6 +237,7 @@ class ActionPermissionManager:
             "list_devices", "list_apps", "list_running_apps", "list_displays",
             "get_wifi_status", "wifi_status", "get_bluetooth_status", "bluetooth_status",
             "get_power_status", "battery_status", "volume_status", "get_audio_status",
+            "show_tasks", "get_tasks", "task_status", "show", "view", "display",
         )
         if act in READ_STATUS_LIST_ACTIONS or sub_act in READ_STATUS_LIST_ACTIONS:
             return ActionRiskLevel.IMMEDIATE
