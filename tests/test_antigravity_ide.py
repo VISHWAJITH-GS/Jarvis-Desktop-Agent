@@ -571,6 +571,8 @@ class TestAntigravityReview(unittest.TestCase):
                 data={"count": 2, "files": ["main.py"]}
             )),
             patch("actions.antigravity_review.create_git_checkpoint", return_value=(True, "Checkpoint ok")),
+            patch("actions.antigravity_review.time.sleep"),
+            patch("actions.antigravity_review.time.monotonic", side_effect=[0.0, 0.0, 5.0]),
             # Status check still shows pending files > 0
             patch.object(mgr, "panel_status", return_value={"pending_files": 1}),
         ):
@@ -590,6 +592,7 @@ class TestAntigravityReview(unittest.TestCase):
 
         with (
             patch("actions.antigravity_review.get_antigravity_cdp_manager", return_value=mgr),
+            patch("actions.antigravity_review.time.sleep"),
             patch.object(mgr, "get_workbench_page", return_value=mock_page),
             patch.object(mgr, "get_agent_panel_frame", return_value=mock_frame),
             patch.object(mgr, "panel_status", return_value={"pending_files": 0}),
@@ -635,6 +638,90 @@ class TestAntigravityReview(unittest.TestCase):
             res_reject = antigravity_review.reject_file("utils.py")
             self.assertEqual(res_reject.status, outcome.STATUS_DONE)
             mock_reject_btn.click.assert_called_once()
+
+
+class TestAntigravityToolIntegration(unittest.TestCase):
+    def test_tool_declaration_and_loader(self):
+        from pathlib import Path
+        from core.action_loader import discover_actions
+
+        registry = discover_actions(Path("actions"))
+        self.assertIn("antigravity_ide", registry._actions)
+        rec = registry._actions["antigravity_ide"]
+        self.assertTrue(rec.valid)
+        self.assertEqual(rec.tier, "core")
+        self.assertEqual(rec.parameters.get("type"), "OBJECT")
+        self.assertIn("action", rec.parameters.get("required", []))
+
+    def test_tool_dispatch_subactions(self):
+        from actions import antigravity_ide
+
+        with (
+            patch("actions.antigravity_launcher.open_folder", return_value=outcome.ActionResult(
+                status=outcome.STATUS_DONE, action="open_folder", success=True, verified=True
+            )) as mock_open_folder,
+            patch("actions.antigravity_launcher.get_window_status", return_value={
+                "is_running": True, "open_folder": "test_proj", "active_file": "main.py"
+            }),
+            patch("actions.antigravity_files.create_file", return_value=outcome.ActionResult(
+                status=outcome.STATUS_DONE, action="create_file", success=True, verified=True
+            )) as mock_create,
+            patch("actions.antigravity_review.review_changes", return_value=outcome.ActionResult(
+                status=outcome.STATUS_DONE, action="review_changes", success=True, verified=True
+            )) as mock_rev,
+        ):
+            # Test open_folder dispatch
+            res1 = antigravity_ide.antigravity_ide({"action": "open_folder", "path": "D:/proj", "new_window": True})
+            self.assertEqual(res1.status, outcome.STATUS_DONE)
+            mock_open_folder.assert_called_once_with(path="D:/proj", new_window=True)
+
+            # Test window_status dispatch
+            res2 = antigravity_ide.antigravity_ide({"action": "window_status"})
+            self.assertEqual(res2.status, outcome.STATUS_DONE)
+            self.assertIn("test_proj", res2.message)
+
+            # Test create_file dispatch
+            res3 = antigravity_ide.antigravity_ide({"action": "create_file", "path": "D:/proj/test.py", "content": "x = 1"})
+            self.assertEqual(res3.status, outcome.STATUS_DONE)
+            mock_create.assert_called_once_with(path="D:/proj/test.py", content="x = 1")
+
+            # Test review_changes dispatch
+            res4 = antigravity_ide.antigravity_ide({"action": "review_changes", "path": "D:/proj"})
+            self.assertEqual(res4.status, outcome.STATUS_DONE)
+            mock_rev.assert_called_once()
+
+    def test_approval_prompts_never_auto_clicked(self):
+        """Verify terminal approval prompts are reported and never auto-clicked."""
+        from actions.antigravity_cdp import AntigravitySessionManager
+
+        mgr = AntigravitySessionManager(port=9333)
+        mock_frame = MagicMock()
+        mock_allow_btn = MagicMock()
+        mock_allow_btn.is_visible.return_value = True
+
+        mock_cmd_el = MagicMock()
+        mock_cmd_el.inner_text.return_value = "rm -rf build"
+
+        def fake_query(selector):
+            if "Allow" in selector or "Run" in selector:
+                return mock_allow_btn
+            if "command-text" in selector or "command-preview" in selector:
+                return mock_cmd_el
+            return None
+
+        mock_frame.query_selector.side_effect = fake_query
+        mock_frame.query_selector_all.return_value = []
+
+        with (
+            patch.object(mgr, "get_workbench_page", return_value=MagicMock()),
+            patch.object(mgr, "get_agent_panel_frame", return_value=mock_frame),
+            patch.object(mgr, "is_panel_visible", return_value=True),
+        ):
+            st = mgr.panel_status()
+            self.assertTrue(st["approval_waiting"])
+            self.assertEqual(st["approval_command"], "rm -rf build")
+            # Verify the allow button was NEVER clicked during detection/status read
+            mock_allow_btn.click.assert_not_called()
 
 
 if __name__ == "__main__":
