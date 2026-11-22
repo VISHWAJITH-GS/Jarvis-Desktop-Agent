@@ -15,6 +15,7 @@ from typing import Any, Dict, Optional, Tuple
 
 from core import outcome
 from core import gemini
+from core import intent_tracker
 from core.permissions import log_action_audit
 from actions.verify_outcome import (
     VERDICT_VERIFIED,
@@ -541,6 +542,8 @@ def verify_outcome_action(parameters: dict, player=None) -> outcome.ActionResult
 
     evidence_from_tool = parameters.get("evidence_from_tool")
     user_request = str(parameters.get("user_request") or "").strip()
+    if not user_request:
+        user_request, _ = intent_tracker.get_task_intent()
 
     is_side_effect = any(
         k in expected.lower() for k in ("send", "message", "write", "save", "accept", "reject", "prompt")
@@ -572,10 +575,27 @@ def verify_outcome_action(parameters: dict, player=None) -> outcome.ActionResult
         verdict = synth["verdict"]
         reason = synth["reason"]
         seen = synth["seen"]
+
+        # Intent comparison check
+        intent_override, intent_reason = intent_tracker.compare_intent(
+            user_request, expected, seen, struct_analysis.get("structured_facts")
+        )
+        if intent_override:
+            verdict = intent_override
+            reason = f"{intent_reason}. ({reason})"
+
+        reporting = intent_tracker.format_reporting(verdict, expected, seen, reason)
         is_verified = (verdict == VERDICT_VERIFIED)
         status = outcome.STATUS_DONE if is_verified else (
             outcome.STATUS_UNVERIFIED if verdict == VERDICT_UNVERIFIABLE else outcome.STATUS_FAILED
         )
+
+        if player and hasattr(player, "write_log"):
+            try:
+                player.write_log(reporting["log"])
+            except Exception:
+                pass
+
         log_action_audit(
             "verify_outcome",
             {"verdict": verdict, "scope": scope, "expected": expected, "seen": seen},
@@ -589,13 +609,15 @@ def verify_outcome_action(parameters: dict, player=None) -> outcome.ActionResult
             action="verify_outcome",
             success=is_verified,
             verified=is_verified,
-            message=f"Outcome [{verdict}]: {reason}",
+            message=reporting["speech"],
             data={
                 "verdict": verdict,
                 "reason": reason,
                 "seen": seen,
                 "expected": expected,
                 "scope": scope,
+                "reporting": reporting,
+                "status_vocabulary": reporting["status"],
             },
         )
 
@@ -628,12 +650,26 @@ def verify_outcome_action(parameters: dict, player=None) -> outcome.ActionResult
     reason = synthesis.get("reason", "")
     seen = synthesis.get("seen", "")
 
+    # Intent comparison check against original verbatim user request
+    intent_override, intent_reason = intent_tracker.compare_intent(
+        user_request, expected, seen, struct_analysis.get("structured_facts")
+    )
+    if intent_override:
+        verdict = intent_override
+        reason = f"{intent_reason}. (Visual saw: '{seen}')"
+
+    reporting = intent_tracker.format_reporting(verdict, expected, seen, reason)
     is_verified = (verdict == VERDICT_VERIFIED)
     status = outcome.STATUS_DONE if is_verified else (
         outcome.STATUS_UNVERIFIED if verdict == VERDICT_UNVERIFIABLE else outcome.STATUS_FAILED
     )
 
-    msg = f"Outcome verification [{verdict}]: {reason}. Seen: '{seen}'."
+    if player and hasattr(player, "write_log"):
+        try:
+            player.write_log(reporting["log"])
+        except Exception:
+            pass
+
     log_action_audit(
         "verify_outcome",
         {"verdict": verdict, "scope": scope, "expected": expected, "seen": seen},
@@ -647,12 +683,14 @@ def verify_outcome_action(parameters: dict, player=None) -> outcome.ActionResult
         action="verify_outcome",
         success=is_verified,
         verified=is_verified,
-        message=msg,
+        message=reporting["speech"],
         data={
             "verdict": verdict,
             "reason": reason,
             "seen": seen,
             "expected": expected,
             "scope": scope,
+            "reporting": reporting,
+            "status_vocabulary": reporting["status"],
         },
     )
