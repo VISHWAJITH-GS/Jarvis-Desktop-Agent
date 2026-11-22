@@ -20,11 +20,17 @@ META_KEYS = ("tier", "brief")
 
 
 def strip_meta(decls: list) -> list:
-    """Declarations without META_KEYS. Non-dict entries pass through untouched;
+    """Declarations without META_KEYS, deduplicated by function name. Non-dict entries pass through untouched;
     a declaration carrying none is returned as the same object, so what an API
     receives is byte-for-byte what it received before these keys existed."""
     out = []
+    seen = set()
     for decl in decls:
+        name = decl.get("name") if isinstance(decl, dict) else getattr(decl, "name", None)
+        if name:
+            if name in seen:
+                continue
+            seen.add(name)
         if isinstance(decl, dict) and any(k in decl for k in META_KEYS):
             out.append({k: v for k, v in decl.items() if k not in META_KEYS})
         else:

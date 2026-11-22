@@ -360,11 +360,20 @@ class JarvisLive(LiveAudioMixin, LiveMonitorsMixin, LiveVoiceMixin):
         # the host, the capability list from the registries that were just
         # discovered. Rename the assistant, add a plugin or move to another OS
         # and this follows without anyone editing a prompt.
-        _all_decls = (
+        _raw_decls = (
             TOOL_DECLARATIONS
             + self._action_registry.get_tool_declarations()
             + self._plugin_registry.get_tool_declarations()
         )
+        _seen_decl_names = set()
+        _all_decls = []
+        for d in _raw_decls:
+            n = d.get("name") if isinstance(d, dict) else getattr(d, "name", None)
+            if n:
+                if n in _seen_decl_names:
+                    continue
+                _seen_decl_names.add(n)
+            _all_decls.append(d)
 
         # An engine that cannot do something is not offered the tool for it.
         #
@@ -873,7 +882,7 @@ class JarvisLive(LiveAudioMixin, LiveMonitorsMixin, LiveVoiceMixin):
                     continue
 
                 # Invalid API key — stop hammering the API, prompt re-configuration
-                if "API key not valid" in err_str or "1007" in err_str:
+                if any(k in err_str for k in ("API key not valid", "API_KEY_INVALID", "API key expired", "INVALID_ARGUMENT: API key")):
                     self.ui.write_log("ERR: API key invalid — please re-enter your key.")
                     self.ui.set_state("SLEEPING")
                     self.ui.prompt_reconfig()
