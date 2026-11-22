@@ -1377,3 +1377,16 @@ def save_browser_profile_dir(path: str | Path) -> None:
     if not valid:
         raise ValueError(err)
     _save_flag("browser_profile_dir", str(p))
+
+
+def get_confirmation_tiers() -> dict:
+    """Return user-configured action risk tier overrides."""
+    return load_api_keys().get("confirmation_tiers", {})
+
+
+def save_confirmation_tiers(tiers: dict) -> None:
+    """Persist user-configured action risk tier overrides."""
+    if not isinstance(tiers, dict):
+        raise ValueError("confirmation_tiers must be a dictionary")
+    _save_flag("confirmation_tiers", tiers)
+

@@ -293,6 +293,23 @@ Return ONLY a valid JSON array of step objects:
         t0 = time.monotonic()
         act_res: Optional[outcome.ActionResult] = None
 
+        # Security Guard: Block synthetic actions attempting to interact with active confirmation dialog
+        if action in ("click_element", "click_here", "click_cursor_position", "uia_click", "click"):
+            target_str = str(params.get("name") or params.get("target") or thought or "").lower()
+            try:
+                from core import confirm
+
+                if confirm.ConfirmationManager.has_active_pending() and (
+                    any(w in target_str for w in ("confirm", "shield-exclamation"))
+                ):
+                    return outcome.failed(
+                        action,
+                        "Synthetic click on confirmation dialog is blocked for security. "
+                        "The user must click physically or speak confirmation.",
+                    )
+            except Exception:
+                pass
+
         try:
             # Prefer registry execution
             if self.registry.has(action):

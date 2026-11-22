@@ -211,55 +211,24 @@ class ActionPermissionManager:
         return False
 
     @classmethod
-    def get_risk_level(cls, action_name: str, parameters: dict | None = None) -> ActionRiskLevel:
+    def get_risk_level(cls, action_name: str, parameters: dict | None = None, context: dict | None = None) -> ActionRiskLevel:
         """Determine the exact risk level for an action according to the permission matrix."""
         act = str(action_name or "").lower().strip()
         params = parameters or {}
-        sub_act = str(params.get("action") or "").lower().strip()
-        target = str(
-            params.get("target")
-            or params.get("device")
-            or params.get("name")
-            or params.get("ssid")
-            or params.get("path")
-            or ""
-        ).lower()
 
         # 0. Check FORBIDDEN (Drive Formatting)
         if cls.is_drive_format_attempt(act, params):
             return ActionRiskLevel.FORBIDDEN
 
-        # Status/read/list/check calls NEVER require confirmation
-        READ_STATUS_LIST_ACTIONS = (
-            "read", "status", "list", "get_status", "check", "inspect", "observe",
-            "get_elements", "get_text", "read_chat", "read_latest", "summarize",
-            "list_tasks", "list_monitors", "list_routines", "list_networks",
-            "list_devices", "list_apps", "list_running_apps", "list_displays",
-            "get_wifi_status", "wifi_status", "get_bluetooth_status", "bluetooth_status",
-            "get_power_status", "battery_status", "volume_status", "get_audio_status",
-            "show_tasks", "get_tasks", "task_status", "show", "view", "display",
-        )
-        if act in READ_STATUS_LIST_ACTIONS or sub_act in READ_STATUS_LIST_ACTIONS:
+        from core.risk_tiers import RiskTier, get_action_tier
+        tier = get_action_tier(act, params, context=context)
+        if tier == RiskTier.LOW:
             return ActionRiskLevel.IMMEDIATE
-        if any(act.startswith(p) for p in ("list_", "get_", "check_")) or any(sub_act.startswith(p) for p in ("list_", "get_", "check_")):
-            if not any(destructive in act or destructive in sub_act for destructive in ("delete", "kill", "remove", "format", "shutdown", "destroy", "wipe")):
-                return ActionRiskLevel.IMMEDIATE
-
-        # 1. JARVIS Shutdown vs Window Controls & Adjustments
-        # Only shutdown/closing of JARVIS itself asks for user confirmation!
-        if (
-            act in ("shutdown_jarvis", "kill_jarvis")
-            or (sub_act in ("shutdown_jarvis", "close_jarvis", "kill_jarvis", "exit_jarvis", "quit_jarvis"))
-            or (
-                sub_act in ("close_app", "kill", "quit", "exit", "close")
-                and any(k in target for k in ("jarvis", "assistant", "ai"))
-            )
-        ):
+        elif tier == RiskTier.MEDIUM:
+            return ActionRiskLevel.CONFIRMATION_REQUIRED
+        else:
             return ActionRiskLevel.HIGH_IMPACT
 
-        # Window controls for adjusting JARVIS display window, displays, or desktop windows NEVER need permissions
-        if act == "display_window":
-            return ActionRiskLevel.IMMEDIATE
 
         WINDOW_ADJUST_ACTIONS = (
             "minimize_jarvis",
@@ -1064,8 +1033,18 @@ class ActionExecutionGuard:
                 log_action_audit(name, clean_params, "authorized", res.status, res.verified, res.error)
                 return res
 
-        # 3. Check Risk Level from Authoritative Permission Manager
-        risk_level = ActionPermissionManager.get_risk_level(name, params)
+        # 3. Check Risk Level from Authoritative Risk Tiers
+        from core.risk_tiers import RiskTier, get_action_tier
+        risk_tier = get_action_tier(name, params, context=ctx)
+        risk_level = (
+            ActionRiskLevel.IMMEDIATE
+            if risk_tier == RiskTier.LOW
+            else (
+                ActionRiskLevel.CONFIRMATION_REQUIRED
+                if risk_tier == RiskTier.MEDIUM
+                else ActionRiskLevel.HIGH_IMPACT
+            )
+        )
 
         if risk_level == ActionRiskLevel.IMMEDIATE:
             # Level 1: Immediate execution
@@ -1073,7 +1052,7 @@ class ActionExecutionGuard:
                 raw = _call_handler_safe(handler, params, ctx)
                 dur = (time.monotonic() - start_time) * 1000
                 res = outcome.normalize_result(raw, action_name=name, duration_ms=dur)
-                log_action_audit(name, params, str(risk_level.value), res.status, res.verified, res.error)
+                log_action_audit(name, params, str(risk_tier.value), res.status, res.verified, res.error)
                 return res
             except Exception as e:
                 dur = (time.monotonic() - start_time) * 1000
@@ -1088,10 +1067,10 @@ class ActionExecutionGuard:
                     error=str(e),
                     duration_ms=dur,
                 )
-                log_action_audit(name, params, str(risk_level.value), res.status, res.verified, res.error)
+                log_action_audit(name, params, str(risk_tier.value), res.status, res.verified, res.error)
                 return res
 
-        # Level 2 or 3: Confirmation Required
+        # Level 2 (MEDIUM) or Level 3 (HIGH): Confirmation Required
         title, detail, payment_info = ActionPermissionManager.get_confirmation_details(name, params)
 
         from core import confirm
@@ -1102,7 +1081,7 @@ class ActionExecutionGuard:
             try:
                 raw = _call_handler_safe(handler, auth_params, ctx)
                 res = outcome.normalize_result(raw, action_name=name)
-                log_action_audit(name, params, str(risk_level.value), res.status, res.verified, res.error)
+                log_action_audit(name, params, str(risk_tier.value), res.status, res.verified, res.error)
                 # Output to UI log if player available
                 player = ctx.get("player")
                 if player:
@@ -1110,7 +1089,7 @@ class ActionExecutionGuard:
                         player.write_log(f"SYS: Confirmed {title} executed. {res.message or 'Done.'}")
                 return res.message or "Done."
             except Exception as err:
-                log_action_audit(name, params, str(risk_level.value), "failed", False, error=str(err))
+                log_action_audit(name, params, str(risk_tier.value), "failed", False, error=str(err))
                 return f"Failed: {err}"
 
         # Park behind confirmation gate with PendingAction store
@@ -1121,19 +1100,21 @@ class ActionExecutionGuard:
             expires_in=60.0,
             title=title,
             detail=detail,
-            risk_level=str(risk_level.value),
+            risk_level=str(risk_tier.value),
             payment_details=payment_info,
+            tier=risk_tier,
         )
 
         prompt_msg = confirm.request_action(
             action=name,
             parameters=params,
-            risk_level=str(risk_level.value),
+            risk_level=str(risk_tier.value),
             title=title,
             detail=detail,
             run=_confirmed_runner,
             payment_details=payment_info,
             action_id=pending.id,
+            tier=risk_tier,
         )
 
         dur = (time.monotonic() - start_time) * 1000

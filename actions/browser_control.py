@@ -59,11 +59,11 @@ def browser_control(parameters: Optional[Dict[str, Any]] = None, **kwargs: Any) 
         if not ok:
             return outcome.failed("browser_control", err_msg)
 
-        # ── Guard: WhatsApp Web Confirmation Bypass Prevention ────────────────
-        active_url = _get_active_url() or ""
-        if "web.whatsapp.com" in active_url.lower():
-            is_authorized = bool(params.get("_execution_authorized") or params.get("confirmed"))
-            if not is_authorized:
+        # ── Guard: Messaging & Web Composer Confirmation Bypass Prevention ─────
+        active_url = (_get_active_url() or "").lower()
+        is_authorized = bool(params.get("_execution_authorized") or params.get("confirmed"))
+        if not is_authorized:
+            if "web.whatsapp.com" in active_url:
                 if action in ("type", "input", "smart_type", "fill_form"):
                     return outcome.failed(
                         "browser_control",
@@ -83,6 +83,29 @@ def browser_control(parameters: Optional[Dict[str, Any]] = None, **kwargs: Any) 
                             "browser_control",
                             "Clicking send on WhatsApp Web is blocked by the confirmation gate. Use 'whatsapp_send' instead.",
                         )
+
+            # Guard against typing or submitting into AI chat / web composers (e.g. ChatGPT, Claude, Gemini, Telegram)
+            ai_chat_domains = ("chatgpt.com", "chat.openai.com", "claude.ai", "gemini.google.com", "web.telegram.org")
+            if any(dom in active_url for dom in ai_chat_domains):
+                if action in ("type", "input", "smart_type", "fill_form"):
+                    return outcome.failed(
+                        "browser_control",
+                        "Direct typing into web chat / AI composer requires confirmation. "
+                        "Submit prompts via explicit action instructions.",
+                    )
+                if action in ("press", "press_key") and str(params.get("key", "")).lower() == "enter":
+                    return outcome.failed(
+                        "browser_control",
+                        "Submitting prompts to web chat via Enter is blocked by the confirmation gate.",
+                    )
+                if action in ("click", "smart_click", "hint_click"):
+                    target_text = str(params.get("text", "") or params.get("description", "")).lower()
+                    if any(w in target_text for w in ("send", "submit", "ask", "generate")):
+                        return outcome.failed(
+                            "browser_control",
+                            "Submitting prompts via Send button is blocked by the confirmation gate.",
+                        )
+
 
         # ── Setup / First-Run Sign-In ─────────────────────────────────────────
         if action in ("setup", "setup_browser", "first_run", "signin"):

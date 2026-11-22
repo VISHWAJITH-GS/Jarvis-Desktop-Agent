@@ -726,6 +726,23 @@ def click_element(
         if elem is None:
             return {"status": "failed", "reason": "No valid element provided to click."}
 
+        # Security Guard: Block synthetic clicks targeting JARVIS confirmation dialogs
+        target_name = str(element_or_name or name or "").strip().lower()
+        if any(tok in target_name for tok in ("confirm", "shield-exclamation")):
+            try:
+                from core import confirm
+
+                if confirm.ConfirmationManager.has_active_pending():
+                    return {
+                        "status": "failed",
+                        "reason": (
+                            "Synthetic click on confirmation dialog is blocked for security. "
+                            "The user must click physically or speak confirmation."
+                        ),
+                    }
+            except Exception:
+                pass
+
         # Check if element is disabled
         if hasattr(elem, "is_enabled"):
             try:

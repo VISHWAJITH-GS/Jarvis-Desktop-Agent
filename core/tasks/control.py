@@ -70,10 +70,10 @@ def cancel_task(task_id: str, finish: bool = False, store: Optional[TaskStore] =
 
 
 def resolve_confirmation(task_id: str, confirmed: bool, store: Optional[TaskStore] = None) -> bool:
-    """Resolve a pending confirmation for a task paused in 'needs_confirmation'."""
+    """Resolve a pending confirmation for a task paused in 'needs_confirmation' or 'waiting_confirmation'."""
     s = store or get_default_store()
     task = s.get_task(task_id)
-    if not task or task.state != "needs_confirmation":
+    if not task or task.state not in ("needs_confirmation", "waiting_confirmation"):
         return False
 
     if confirmed:

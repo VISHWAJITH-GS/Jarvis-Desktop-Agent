@@ -343,7 +343,7 @@ class TaskEngine:
                     pending_info = round_result.get("pending_info")
                     self.store.atomic_checkpoint(
                         task_id=current.id,
-                        state="needs_confirmation",
+                        state="waiting_confirmation",
                         round_count=current.round_count,
                         elapsed_sec=new_elapsed,
                         checkpoint=current.checkpoint,
@@ -352,7 +352,7 @@ class TaskEngine:
                     notify_task_event(
                         current.id,
                         current.title,
-                        "needs_confirmation",
+                        "waiting_confirmation",
                         f"Action '{pending_info.get('action')}' requires user confirmation.",
                     )
                     break

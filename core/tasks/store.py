@@ -245,7 +245,7 @@ class TaskStore:
             all_records = [self._row_to_record(r).to_dict() for r in cur.fetchall()]
             active = [
                 r for r in all_records
-                if r["state"] in ("queued", "scheduled", "running", "waiting_quota", "needs_confirmation")
+                if r["state"] in ("queued", "scheduled", "running", "waiting_quota", "needs_confirmation", "waiting_confirmation")
             ]
             history = [
                 r for r in all_records
@@ -332,7 +332,7 @@ class TaskStore:
             cur = conn.execute(
                 """SELECT * FROM background_tasks 
                    WHERE idempotency_key = ? 
-                   AND state IN ('queued', 'scheduled', 'running', 'waiting_quota', 'needs_confirmation')
+                   AND state IN ('queued', 'scheduled', 'running', 'waiting_quota', 'needs_confirmation', 'waiting_confirmation')
                    ORDER BY priority ASC, updated_at DESC LIMIT 1""",
                 (idempotency_key,),
             )
