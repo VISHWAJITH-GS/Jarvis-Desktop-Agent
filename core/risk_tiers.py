@@ -160,6 +160,8 @@ def _classify_default_tier(tool_name: str, params: Dict[str, Any]) -> RiskTier:
         "whatsapp_reader",
         "whatsapp_read",
         "whatsapp_list_unread",
+        "copy_page_text_to_clipboard",
+        "page_to_file",
     }
     if tool in READ_ONLY_TOOLS:
         return RiskTier.LOW

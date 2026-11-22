@@ -79,6 +79,8 @@ ACTION_PERMISSIONS: dict[str, str] = {
     "leetcode_assistant": READ_ONLY,
     "screen_process": READ_ONLY,
     "verify_outcome": READ_ONLY,
+    "copy_page_text_to_clipboard": READ_ONLY,
+    "page_to_file": NORMAL,
     # Normal operational tools (Immediate)
     "open_app": NORMAL,
     "spotify_control": NORMAL,
