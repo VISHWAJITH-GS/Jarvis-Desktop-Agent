@@ -295,5 +295,135 @@ class TestAntigravityFiles(unittest.TestCase):
             self.assertFalse(target_folder.exists())
 
 
+class TestAntigravityCDP(unittest.TestCase):
+    def test_panel_status_parsing(self):
+        from actions.antigravity_cdp import AntigravitySessionManager
+
+        mgr = AntigravitySessionManager(port=9333)
+
+        mock_page = MagicMock()
+        mock_frame = MagicMock()
+
+        # Model element
+        mock_model_el = MagicMock()
+        mock_model_el.inner_text.return_value = "Gemini 2.5 Pro"
+
+        # Stop button (running)
+        mock_stop_btn = MagicMock()
+        mock_stop_btn.is_visible.return_value = True
+
+        # Changed files
+        mock_file1 = MagicMock()
+        mock_file2 = MagicMock()
+
+        # Approval element
+        mock_appr_el = MagicMock()
+        mock_appr_el.is_visible.return_value = True
+        mock_cmd_el = MagicMock()
+        mock_cmd_el.inner_text.return_value = "pytest tests/"
+
+        # Query selector side-effects
+        def fake_query(selector):
+            if "selected-model" in selector or "model-selector" in selector:
+                return mock_model_el
+            if "Stop" in selector:
+                return mock_stop_btn
+            if "terminal-approval" in selector or "Allow" in selector:
+                return mock_appr_el
+            if "command-text" in selector or "command-preview" in selector:
+                return mock_cmd_el
+            return None
+
+        mock_frame.query_selector.side_effect = fake_query
+        mock_frame.query_selector_all.side_effect = lambda sel: [mock_file1, mock_file2] if "changed-file" in sel else []
+
+        with (
+            patch.object(mgr, "get_workbench_page", return_value=mock_page),
+            patch.object(mgr, "is_panel_visible", return_value=True),
+            patch.object(mgr, "get_agent_panel_frame", return_value=mock_frame),
+        ):
+            status = mgr.panel_status()
+            self.assertTrue(status["visible"])
+            self.assertEqual(status["model"], "Gemini 2.5 Pro")
+            self.assertTrue(status["running"])
+            self.assertEqual(status["pending_files"], 2)
+            self.assertTrue(status["approval_waiting"])
+            self.assertEqual(status["approval_command"], "pytest tests/")
+
+    def test_open_agent_panel_toggle(self):
+        from actions.antigravity_cdp import AntigravitySessionManager
+
+        mgr = AntigravitySessionManager(port=9333)
+        mock_page = MagicMock()
+        mock_toggle_btn = MagicMock()
+        mock_page.query_selector.return_value = mock_toggle_btn
+
+        # First not visible, then visible after toggle
+        with (
+            patch.object(mgr, "get_workbench_page", return_value=mock_page),
+            patch.object(mgr, "is_panel_visible", side_effect=[False, True]),
+        ):
+            res = mgr.open_agent_panel()
+            self.assertEqual(res.status, outcome.STATUS_DONE)
+            mock_toggle_btn.click.assert_called_once()
+
+    def test_select_model_fuzzy_and_ambiguity(self):
+        from actions.antigravity_cdp import AntigravitySessionManager
+
+        mgr = AntigravitySessionManager(port=9333)
+        known_models = ["Gemini 2.5 Pro", "Gemini 2.5 Flash", "Claude 3.7 Sonnet"]
+
+        with (
+            patch.object(mgr, "list_models", return_value=(known_models, "Gemini 2.5 Pro")),
+            patch.object(mgr, "_apply_model_selection") as mock_apply,
+        ):
+            mock_apply.return_value = outcome.ActionResult(
+                status=outcome.STATUS_DONE, action="select_model", success=True, verified=True, message="Selected"
+            )
+
+            # Exact match
+            res_exact = mgr.select_model("Claude 3.7 Sonnet")
+            mock_apply.assert_called_with("Claude 3.7 Sonnet")
+
+            # Fuzzy / partial unique match ("sonnet" -> "Claude 3.7 Sonnet")
+            res_partial = mgr.select_model("sonnet")
+            mock_apply.assert_called_with("Claude 3.7 Sonnet")
+
+            # Ambiguous match ("Gemini" matches both Pro and Flash)
+            res_ambig = mgr.select_model("Gemini")
+            self.assertEqual(res_ambig.status, outcome.STATUS_FAILED)
+            self.assertIn("Ambiguous", res_ambig.message)
+            self.assertIn("candidates", res_ambig.data)
+            self.assertEqual(len(res_ambig.data["candidates"]), 2)
+
+            # Not found
+            res_missing = mgr.select_model("GPT-4o")
+            self.assertEqual(res_missing.status, outcome.STATUS_FAILED)
+            self.assertIn("not found", res_missing.message)
+
+    def test_new_conversation_and_stop_agent(self):
+        from actions.antigravity_cdp import AntigravitySessionManager
+
+        mgr = AntigravitySessionManager(port=9333)
+        mock_page = MagicMock()
+        mock_frame = MagicMock()
+        mock_btn = MagicMock()
+        mock_frame.query_selector.return_value = mock_btn
+        mock_btn.is_visible.return_value = True
+
+        with (
+            patch.object(mgr, "get_workbench_page", return_value=mock_page),
+            patch.object(mgr, "get_agent_panel_frame", return_value=mock_frame),
+        ):
+            res_new = mgr.new_conversation()
+            self.assertEqual(res_new.status, outcome.STATUS_DONE)
+            mock_btn.click.assert_called()
+
+            mock_btn.reset_mock()
+            res_stop = mgr.stop_agent()
+            self.assertEqual(res_stop.status, outcome.STATUS_DONE)
+            mock_btn.click.assert_called()
+
+
 if __name__ == "__main__":
     unittest.main()
