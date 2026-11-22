@@ -343,6 +343,15 @@ def _cooling(model: str) -> bool:
         return False
 
 
+def is_cooling(model_or_tier: str = SMART) -> bool:
+    """Return True if the specified model, or all models in a ladder tier, are currently cooling."""
+    ladder = _LADDERS.get(model_or_tier)
+    if ladder:
+        non_live = [m for m in ladder if m != LIVE]
+        return bool(non_live and all(_cooling(m) for m in non_live))
+    return _cooling(model_or_tier)
+
+
 def api_key(refresh: bool = False) -> str:
     """The Gemini key from keyring / config. Cached; never raises."""
     global _cached_key
