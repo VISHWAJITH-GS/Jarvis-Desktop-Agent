@@ -22,64 +22,7 @@ from memory import config_manager, memory_manager
 logger = logging.getLogger("whatsapp_web")
 
 
-@dataclass(frozen=True)
-class WhatsAppSelectors:
-    """Isolated, centralized DOM selectors for web.whatsapp.com.
-
-    Prefer semantic attributes (data-testid, aria-label, role, contenteditable).
-    If WhatsApp Web alters its DOM structure, updates are contained strictly here.
-    """
-
-    # Authentication / QR Code
-    qr_canvas: str = 'canvas[aria-label*="Scan"], canvas[aria-label*="código QR"], canvas[role="img"]'
-    qr_container: str = 'div[data-ref], [data-testid="qrcode"], div[data-testid="intro-title"]'
-    intro_screen: str = 'div[data-testid="intro-title"], span:has-text("To use WhatsApp on your computer")'
-
-    # Syncing / Startup Progress
-    startup_progress: str = 'progress, [data-testid="startup-progress"], div[role="progressbar"]'
-    syncing_spinner: str = 'span[data-testid="syncing-spinner"], div:has-text("Loading your chats"), div:has-text("Connecting")'
-
-    # Main Panels & Chat List
-    chat_list_panel: str = '#side, [data-testid="chat-list"], div[id="pane-side"]'
-    main_chat_panel: str = '#main, [data-testid="conversation-panel-wrapper"]'
-
-    # Search Box
-    search_input: str = (
-        '#side [aria-label*="Search"], #side [placeholder*="Search"], '
-        '#side [role="textbox"][data-tab="3"], #side input[type="text"], '
-        '[data-testid="chat-list-search"], div[contenteditable="true"][data-tab="3"], '
-        'div[title="Search input textbox"]'
-    )
-    search_results_container: str = 'div[data-testid="search-results"], div[aria-label="Search results."], #side'
-    search_result_item: str = 'div[data-testid="cell-frame-container"], div[role="listitem"], div[role="row"]'
-    search_cancel_btn: str = 'button[aria-label="Cancel search"], [data-testid="search-cancel"], button[aria-label="Close search"]'
-
-    # Active Conversation Header
-    chat_header: str = 'header[data-testid="conversation-header"], header'
-    chat_header_title: str = 'header span[dir="auto"], header span[title], [data-testid="conversation-info-header-chat-title"]'
-
-    # Message Composer
-    compose_box: str = (
-        'footer div[contenteditable="true"], [data-testid="conversation-compose-box-input"], '
-        'footer [role="textbox"][contenteditable="true"], footer div[role="textbox"]'
-    )
-    send_button: str = 'button[aria-label="Send"], span[data-icon="send"], [data-testid="send"]'
-
-    # Outgoing Message Delivery Ticks
-    message_outgoing: str = 'div.message-out, [data-testid="msg-container"]:has(span[data-icon*="check"]), [data-testid="msg-container"]:has(span[data-icon="status-time"])'
-    tick_pending_clock: str = 'span[data-icon="status-time"], [data-testid="status-time"]'
-    tick_sent_single: str = 'span[data-icon="check"], [data-testid="msg-check"], span[data-icon="msg-check"]'
-    tick_delivered_double: str = 'span[data-icon="msg-dblcheck"], [data-testid="msg-dblcheck"]'
-    tick_read_blue: str = 'span[data-icon="msg-dblcheck-ack"], [data-testid="msg-dblcheck-ack"]'
-
-    # Incoming / Outgoing Messages Inspection
-    message_container: str = '[data-testid="msg-container"], div.message-in, div.message-out'
-    message_text: str = 'span.selectable-text, div.copyable-text'
-    message_author: str = 'span[data-testid="author"], div[data-pre-plain-text]'
-    message_time: str = 'div[data-pre-plain-text], span[dir="auto"]'
-
-
-SELECTORS = WhatsAppSelectors()
+from plugins._whatsapp_selectors import WhatsAppSelectors, SELECTORS
 
 
 class WhatsAppWebDriver:
