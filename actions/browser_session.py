@@ -634,11 +634,35 @@ class BrowserSessionManager:
 
     async def _open_tab(self, url: str) -> TabInfo:
         await self._ensure_attached()
-        new_page = await self._context.new_page()
         clean_url = url.strip()
+        if clean_url and "://" not in clean_url:
+            clean_url = "https://" + clean_url
+
+        # Reuse existing tab if one already has matching origin/path
+        if clean_url and self._context:
+            import urllib.parse
+            try:
+                target_parts = urllib.parse.urlparse(clean_url)
+                target_norm = f"{target_parts.scheme}://{target_parts.netloc}{target_parts.path}".rstrip("/")
+                pages = self._context.pages
+                for i, p in enumerate(pages):
+                    if p.is_closed():
+                        continue
+                    p_url = p.url or ""
+                    p_parts = urllib.parse.urlparse(p_url)
+                    p_norm = f"{p_parts.scheme}://{p_parts.netloc}{p_parts.path}".rstrip("/")
+                    if p_norm and p_norm == target_norm:
+                        await p.bring_to_front()
+                        self._active_page = p
+                        self._cdp_session = None
+                        title = await p.title()
+                        logger.info(f"Reused existing tab #{i} matching '{target_norm}'")
+                        return TabInfo(index=i, title=title, url=p.url, is_active=True)
+            except Exception as e:
+                logger.debug(f"Tab reuse check skipped: {e}")
+
+        new_page = await self._context.new_page()
         if clean_url:
-            if "://" not in clean_url:
-                clean_url = "https://" + clean_url
             await new_page.goto(clean_url, wait_until="domcontentloaded", timeout=30000)
         self._active_page = new_page
         self._cdp_session = None

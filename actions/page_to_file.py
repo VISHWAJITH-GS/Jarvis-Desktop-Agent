@@ -70,8 +70,34 @@ def page_to_file(parameters: Optional[Dict[str, Any]] = None, player=None, **kwa
     if not page or page.is_closed():
         return outcome.failed("page_to_file", "No active browser tab found")
 
+    active_url = (getattr(page, "url", "") or "").lower()
+    is_chatgpt_active = "chatgpt.com" in active_url or "chat.openai.com" in active_url
+    goal_mentions_chatgpt = any(w in goal_text for w in ("chatgpt", "openai", "gpt"))
+
+    if goal_mentions_chatgpt and not is_chatgpt_active:
+        tabs = session_mgr.list_tabs()
+        chatgpt_tab = next(
+            (t for t in tabs if "chatgpt.com" in (t.url or "").lower() or "chat.openai.com" in (t.url or "").lower()),
+            None,
+        )
+        if chatgpt_tab:
+            logger.info(f"Switching to existing ChatGPT tab [{chatgpt_tab.index}] '{chatgpt_tab.title}'")
+            session_mgr.switch_tab(chatgpt_tab.index)
+            page = session_mgr.active_page
+            is_chatgpt_active = True
+        else:
+            logger.info("ChatGPT not open in any tab. Opening https://chatgpt.com")
+            session_mgr.open_tab("https://chatgpt.com")
+            return outcome.ask(
+                "page_to_file",
+                "Opened ChatGPT in a new tab. Which chat would you like me to export?",
+            )
+
     try:
-        title = session_mgr.run_coroutine(page.title(), timeout=5.0) or "Page Export"
+        raw_title = session_mgr.run_coroutine(page.title(), timeout=5.0)
+        title = str(raw_title or "Page Export")
+        if not isinstance(raw_title, str):
+            title = "Page Export"
     except Exception:
         title = "Page Export"
 
@@ -86,6 +112,11 @@ def page_to_file(parameters: Optional[Dict[str, Any]] = None, player=None, **kwa
         return outcome.failed("page_to_file", f"Error extracting page text: {e}", verdict="not_done")
 
     if not messages:
+        if is_chatgpt_active:
+            return outcome.ask(
+                "page_to_file",
+                "ChatGPT is open, but no active chat messages were found. Please select or open the conversation you would like me to export.",
+            )
         return outcome.failed(
             "page_to_file",
             "No conversation messages or readable article content found on the active page.",

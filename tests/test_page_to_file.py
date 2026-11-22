@@ -169,3 +169,153 @@ def test_page_to_file_tier_and_permission():
 
     assert ACTION_PERMISSIONS.get("page_to_file") == NORMAL
     assert ACTION_PERMISSIONS.get("copy_page_text_to_clipboard") == READ_ONLY
+
+
+def test_page_to_file_switches_to_existing_chatgpt_tab(tmp_path):
+    mock_mgr = MagicMock()
+    mock_mgr.check_connection.return_value = (True, "Connected")
+
+    # Current tab is generic/other
+    tab0 = MagicMock()
+    tab0.is_closed.return_value = False
+    tab0.url = "https://google.com"
+
+    tab1 = MagicMock()
+    tab1.is_closed.return_value = False
+    tab1.url = "https://chatgpt.com/c/123"
+
+    mock_mgr.active_page = tab0
+
+    from actions.browser_session import TabInfo
+    mock_mgr.list_tabs.return_value = [
+        TabInfo(index=0, title="Google", url="https://google.com", is_active=True),
+        TabInfo(index=1, title="ChatGPT Discussion", url="https://chatgpt.com/c/123", is_active=False),
+    ]
+
+    def mock_switch(idx):
+        mock_mgr.active_page = tab1
+        return TabInfo(index=1, title="ChatGPT Discussion", url="https://chatgpt.com/c/123", is_active=True)
+
+    mock_mgr.switch_tab.side_effect = mock_switch
+
+    messages = [
+        {"role": "user", "author": "You", "text": "What is Python?"},
+        {"role": "assistant", "author": "ChatGPT", "text": "Python is a programming language."},
+    ]
+
+    def mock_run_coro(coro, timeout=30.0):
+        if hasattr(coro, "close"):
+            coro.close()
+        return "ChatGPT Discussion"
+
+    # Separate mock for extract_messages_from_page
+    with patch("actions.page_to_file.extract_messages_from_page", return_value=None):
+        pass
+
+    def mock_run_coro_smart(coro, timeout=30.0):
+        if hasattr(coro, "close"):
+            coro.close()
+        # If it's a coroutine from title() -> string, if extract_messages -> list
+        if getattr(coro, "__name__", "") == "extract_messages_from_page" or "extract" in str(coro):
+            return messages
+        if isinstance(coro, str):
+            return coro
+        return messages
+
+    mock_mgr.run_coroutine.side_effect = mock_run_coro_smart
+
+    dest_folder = str(tmp_path / "chats")
+    with patch("actions.page_to_file.get_browser_session_manager", return_value=mock_mgr):
+        res = page_to_file({
+            "goal": "copy this chatgpt conversation into a file",
+            "folder": dest_folder,
+        })
+
+    # Assert switched to tab 1
+    mock_mgr.switch_tab.assert_called_with(1)
+    assert "status=done" in res
+    assert "verdict=verified" in res
+
+
+def test_page_to_file_opens_chatgpt_and_asks_when_not_open():
+    mock_mgr = MagicMock()
+    mock_mgr.check_connection.return_value = (True, "Connected")
+
+    page = MagicMock()
+    page.is_closed.return_value = False
+    page.url = "https://github.com"
+    mock_mgr.active_page = page
+
+    from actions.browser_session import TabInfo
+    mock_mgr.list_tabs.return_value = [
+        TabInfo(index=0, title="GitHub", url="https://github.com", is_active=True),
+    ]
+
+    with patch("actions.page_to_file.get_browser_session_manager", return_value=mock_mgr):
+        res = page_to_file({
+            "goal": "save this chatgpt chat to file",
+        })
+
+    mock_mgr.open_tab.assert_called_with("https://chatgpt.com")
+    assert "status=ask" in res
+    assert "Which chat would you like me to export?" in res
+
+
+def test_browser_open_tab_reuses_existing_tab():
+    import asyncio
+    from actions.browser_session import BrowserSessionManager, TabInfo
+
+    async def _run():
+        mgr = BrowserSessionManager.__new__(BrowserSessionManager)
+        mgr._ensure_attached = MagicMock()
+
+        async def mock_ensure():
+            pass
+        mgr._ensure_attached.side_effect = mock_ensure
+
+        p1 = MagicMock()
+        p1.is_closed.return_value = False
+        p1.url = "https://chatgpt.com/c/my-topic"
+        async def bring(): pass
+        async def p1_title(): return "My Topic"
+        p1.bring_to_front.side_effect = bring
+        p1.title.side_effect = p1_title
+
+        mock_context = MagicMock()
+        mock_context.pages = [p1]
+        mgr._context = mock_context
+        mgr._active_page = None
+        mgr._cdp_session = None
+
+        # Calling _open_tab with the same origin/path should reuse p1
+        tab = await mgr._open_tab("https://chatgpt.com/c/my-topic")
+        assert tab.index == 0
+        assert tab.url == "https://chatgpt.com/c/my-topic"
+        assert mgr._active_page == p1
+        mock_context.new_page.assert_not_called()
+
+    asyncio.run(_run())
+
+
+def test_browser_control_open_link_in_new_tab():
+    from actions.browser_control import browser_control
+    from actions.browser_session import TabInfo
+
+    mock_mgr = MagicMock()
+    mock_mgr.check_connection.return_value = (True, "Connected")
+    mock_executor = MagicMock()
+
+    def mock_run_coro(coro, timeout=30.0):
+        if hasattr(coro, "close"):
+            coro.close()
+        return "Opened link in tab [1] 'ChatGPT' (https://chatgpt.com/c/456)."
+
+    mock_mgr.run_coroutine.side_effect = mock_run_coro
+
+    with patch("actions.browser_control.get_browser_session_manager", return_value=mock_mgr), \
+         patch("actions.browser_control.get_action_executor", return_value=mock_executor):
+        res = browser_control({"action": "open_link_in_new_tab", "index": 4})
+
+    assert "status=done" in res
+    assert "open_link_in_new_tab" in res
+    assert "index=4" in res

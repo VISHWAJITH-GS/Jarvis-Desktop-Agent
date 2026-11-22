@@ -237,12 +237,26 @@ def browser_control(parameters: Optional[Dict[str, Any]] = None, **kwargs: Any) 
             return outcome.done("browser_control", message=msg, action="press", key=key)
 
         # ── Tab Management ────────────────────────────────────────────────────
+        elif action in ("open_link_in_new_tab", "open_in_new_tab", "open_link"):
+            idx = int(params.get("index", params.get("element_index", 0)))
+            msg = session_mgr.run_coroutine(executor.open_link_in_new_tab(idx))
+            if "[Error]" in msg:
+                return outcome.failed("browser_control", msg)
+            return outcome.done("browser_control", message=msg, action="open_link_in_new_tab", index=idx)
+
         elif action in ("new_tab", "open_tab"):
+            if ("index" in params or "element_index" in params) and "url" not in params:
+                idx = int(params.get("index", params.get("element_index", 0)))
+                msg = session_mgr.run_coroutine(executor.open_link_in_new_tab(idx))
+                if "[Error]" in msg:
+                    return outcome.failed("browser_control", msg)
+                return outcome.done("browser_control", message=msg, action="open_link_in_new_tab", index=idx)
+
             url = str(params.get("url", "https://google.com"))
             tab_info = session_mgr.open_tab(url)
             return outcome.done(
                 "browser_control",
-                message=f"Opened new tab [{tab_info.index}] '{tab_info.title}' ({tab_info.url}).",
+                message=f"Opened tab [{tab_info.index}] '{tab_info.title}' ({tab_info.url}).",
                 action="new_tab",
                 tab_index=tab_info.index,
             )

@@ -353,6 +353,43 @@ class ActionExecutor:
         header, obs = await self._post_action_refresh(page, cdp, delay=0.6)
         return f"Navigated to {clean_url}.\n{header}\nUpdated Elements:\n{obs}"
 
+    async def open_link_in_new_tab(self, index: int) -> str:
+        """
+        Resolves href from element (or its closest anchor) and opens it in a new tab.
+        Reuses an existing tab if that origin/path is already open.
+        """
+        elem = self.distiller.get_element_by_index(index)
+        if not elem:
+            return f"[Error] Element index [{index}] not found in latest observation. Call observe_page to refresh."
+
+        page = self.session_mgr.active_page
+        href = getattr(elem, "href", "") or ""
+
+        if not href and page:
+            try:
+                x, y = elem.bounding_box.center
+                href = await page.evaluate(
+                    """([x, y]) => {
+                        const el = document.elementFromPoint(x, y);
+                        if (!el) return '';
+                        const a = el.closest('a') || el.querySelector('a');
+                        return a ? (a.getAttribute('href') || a.href || '') : '';
+                    }""",
+                    [x, y],
+                )
+            except Exception as e:
+                logger.debug(f"Failed to query href via DOM: {e}")
+
+        if not href:
+            return f"[Error] Element [{index}] <{elem.tag}> does not have an href attribute to open in a new tab."
+
+        import urllib.parse
+        base_url = page.url if page else ""
+        target_url = urllib.parse.urljoin(base_url, href)
+
+        tab_info = self.session_mgr.open_tab(target_url)
+        return f"Opened link in tab [{tab_info.index}] '{tab_info.title}' ({tab_info.url})."
+
     async def switch_tab(self, tab_index: int) -> str:
         """
         Switches focus to an open Edge tab by index.
@@ -498,6 +535,17 @@ def tool_switch_tab(parameters: dict, **kwargs) -> str:
         return str(ce)
     except Exception as e:
         return f"switch_tab failed: {e}"
+
+
+def tool_open_link_in_new_tab(parameters: dict, **kwargs) -> str:
+    executor = get_action_executor()
+    idx = int((parameters or {}).get("index", 0))
+    try:
+        return executor.session_mgr.run_coroutine(executor.open_link_in_new_tab(idx))
+    except CDPConnectionError as ce:
+        return str(ce)
+    except Exception as e:
+        return f"open_link_in_new_tab failed: {e}"
 
 
 def tool_go_back(parameters: dict = None, **kwargs) -> str:
