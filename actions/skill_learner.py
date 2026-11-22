@@ -168,6 +168,7 @@ def skill_learner(
             parameters=params_dict,
             player=player,
             session_memory=session_memory,
+            utterance=p.get("utterance") or goal or "",
         )
 
     elif act in ("delete_skill", "delete", "remove_skill"):

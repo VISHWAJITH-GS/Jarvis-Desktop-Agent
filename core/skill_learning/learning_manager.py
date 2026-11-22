@@ -384,6 +384,7 @@ class LearningManager:
         parameters: Optional[dict] = None,
         player=None,
         session_memory=None,
+        utterance: str = "",
     ) -> ActionResult:
         """Run an approved skill with automatic semantic matching and session fallback."""
         skill = self.registry.get_skill(skill_id)
@@ -412,6 +413,7 @@ class LearningManager:
             player=player,
             session_memory=session_memory,
             allow_unapproved=True,
+            utterance=utterance,
         )
 
 

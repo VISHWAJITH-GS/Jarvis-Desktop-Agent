@@ -47,6 +47,10 @@ class TaskApprovalScope:
         t = now if now is not None else time.monotonic()
         return (t - self.created_at) > self.expires_in
 
+    def deactivate(self) -> None:
+        """Mark scope inactive."""
+        self.active = False
+
     def is_step_cap_reached(self) -> bool:
         return self.steps_executed >= self.step_cap
 
@@ -131,6 +135,15 @@ class TaskApprovalStore:
     _lock = threading.RLock()
     _active_scope: Optional[TaskApprovalScope] = None
     _scopes: Dict[str, TaskApprovalScope] = {}
+
+    @classmethod
+    def get_instance(cls):
+        return cls
+
+    @classmethod
+    def get_all_active_scopes(cls) -> List[TaskApprovalScope]:
+        with cls._lock:
+            return [s for s in cls._scopes.values() if s.is_valid()]
 
     @classmethod
     def create_scope(
