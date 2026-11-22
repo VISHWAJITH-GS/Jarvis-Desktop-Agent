@@ -498,5 +498,144 @@ class TestAntigravityCDP(unittest.TestCase):
             self.assertEqual(kwargs.get("cwd"), "D:\\Projects")
 
 
+class TestAntigravityReview(unittest.TestCase):
+    def test_review_changes_read_only(self):
+        from actions import antigravity_review
+        from actions.antigravity_cdp import AntigravitySessionManager
+
+        mgr = AntigravitySessionManager(port=9333)
+        mock_page = MagicMock()
+        mock_frame = MagicMock()
+        mock_item1 = MagicMock()
+        mock_item1.inner_text.return_value = "main.py"
+        mock_item2 = MagicMock()
+        mock_item2.inner_text.return_value = "ui.py"
+        mock_frame.query_selector_all.return_value = [mock_item1, mock_item2]
+
+        with (
+            patch("actions.antigravity_review.get_antigravity_cdp_manager", return_value=mgr),
+            patch.object(mgr, "get_workbench_page", return_value=mock_page),
+            patch.object(mgr, "get_agent_panel_frame", return_value=mock_frame),
+            patch("actions.antigravity_review.get_git_diff_summary", return_value=("2 files changed", ["main.py", "ui.py"])),
+        ):
+            res = antigravity_review.review_changes()
+            self.assertEqual(res.status, outcome.STATUS_DONE)
+            self.assertEqual(res.data["count"], 2)
+            self.assertIn("main.py", res.data["files"])
+            self.assertIn("ui.py", res.data["files"])
+
+    def test_accept_all_creates_checkpoint_and_verifies_zero(self):
+        from actions import antigravity_review
+        from actions.antigravity_cdp import AntigravitySessionManager
+
+        mgr = AntigravitySessionManager(port=9333)
+        mock_page = MagicMock()
+        mock_frame = MagicMock()
+        mock_btn = MagicMock()
+        mock_frame.query_selector.return_value = mock_btn
+
+        with (
+            patch("actions.antigravity_review.get_antigravity_cdp_manager", return_value=mgr),
+            patch.object(mgr, "get_workbench_page", return_value=mock_page),
+            patch.object(mgr, "get_agent_panel_frame", return_value=mock_frame),
+            patch("actions.antigravity_review.review_changes", return_value=outcome.ActionResult(
+                status=outcome.STATUS_DONE, action="review_changes", success=True, verified=True,
+                data={"count": 2, "files": ["main.py", "ui.py"]}
+            )),
+            patch("actions.antigravity_review.create_git_checkpoint", return_value=(True, "Checkpoint ok")),
+            # First status check returns pending=0 (verified)
+            patch.object(mgr, "panel_status", return_value={"pending_files": 0}),
+        ):
+            res = antigravity_review.accept_all()
+            self.assertEqual(res.status, outcome.STATUS_DONE)
+            self.assertTrue(res.verified)
+            mock_btn.click.assert_called_once()
+            self.assertIn("Checkpoint ok", res.message)
+
+    def test_accept_all_unverified_if_pending_remains(self):
+        from actions import antigravity_review
+        from actions.antigravity_cdp import AntigravitySessionManager
+
+        mgr = AntigravitySessionManager(port=9333)
+        mock_page = MagicMock()
+        mock_frame = MagicMock()
+        mock_btn = MagicMock()
+        mock_frame.query_selector.return_value = mock_btn
+
+        with (
+            patch("actions.antigravity_review.get_antigravity_cdp_manager", return_value=mgr),
+            patch.object(mgr, "get_workbench_page", return_value=mock_page),
+            patch.object(mgr, "get_agent_panel_frame", return_value=mock_frame),
+            patch("actions.antigravity_review.review_changes", return_value=outcome.ActionResult(
+                status=outcome.STATUS_DONE, action="review_changes", success=True, verified=True,
+                data={"count": 2, "files": ["main.py"]}
+            )),
+            patch("actions.antigravity_review.create_git_checkpoint", return_value=(True, "Checkpoint ok")),
+            # Status check still shows pending files > 0
+            patch.object(mgr, "panel_status", return_value={"pending_files": 1}),
+        ):
+            res = antigravity_review.accept_all()
+            self.assertEqual(res.status, outcome.STATUS_UNVERIFIED)
+            self.assertFalse(res.verified)
+
+    def test_reject_all(self):
+        from actions import antigravity_review
+        from actions.antigravity_cdp import AntigravitySessionManager
+
+        mgr = AntigravitySessionManager(port=9333)
+        mock_page = MagicMock()
+        mock_frame = MagicMock()
+        mock_btn = MagicMock()
+        mock_frame.query_selector.return_value = mock_btn
+
+        with (
+            patch("actions.antigravity_review.get_antigravity_cdp_manager", return_value=mgr),
+            patch.object(mgr, "get_workbench_page", return_value=mock_page),
+            patch.object(mgr, "get_agent_panel_frame", return_value=mock_frame),
+            patch.object(mgr, "panel_status", return_value={"pending_files": 0}),
+        ):
+            res = antigravity_review.reject_all()
+            self.assertEqual(res.status, outcome.STATUS_DONE)
+            mock_btn.click.assert_called_once()
+
+    def test_accept_and_reject_single_file(self):
+        from actions import antigravity_review
+        from actions.antigravity_cdp import AntigravitySessionManager
+
+        mgr = AntigravitySessionManager(port=9333)
+        mock_page = MagicMock()
+        mock_frame = MagicMock()
+
+        mock_item = MagicMock()
+        mock_item.inner_text.return_value = "core/utils.py"
+        mock_accept_btn = MagicMock()
+        mock_reject_btn = MagicMock()
+
+        def fake_query(selector):
+            if "Accept" in selector:
+                return mock_accept_btn
+            if "Reject" in selector:
+                return mock_reject_btn
+            return None
+
+        mock_item.query_selector.side_effect = fake_query
+        mock_frame.query_selector_all.return_value = [mock_item]
+
+        with (
+            patch("actions.antigravity_review.get_antigravity_cdp_manager", return_value=mgr),
+            patch.object(mgr, "get_workbench_page", return_value=mock_page),
+            patch.object(mgr, "get_agent_panel_frame", return_value=mock_frame),
+        ):
+            # Accept single file
+            res_accept = antigravity_review.accept_file("utils.py")
+            self.assertEqual(res_accept.status, outcome.STATUS_DONE)
+            mock_accept_btn.click.assert_called_once()
+
+            # Reject single file
+            res_reject = antigravity_review.reject_file("utils.py")
+            self.assertEqual(res_reject.status, outcome.STATUS_DONE)
+            mock_reject_btn.click.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()
