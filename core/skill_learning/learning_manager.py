@@ -262,6 +262,43 @@ class LearningManager:
             logger.exception("Error generating skill from demonstration")
             return {"success": False, "message": f"Failed to generate skill: {e}"}
 
+    def learn_from_description(self, name: str, description: str, player=None) -> dict:
+        """Create a validated SkillDefinition directly from natural language description without demonstration."""
+        if player and hasattr(player, "write_log"):
+            player.write_log(f"⚙ Learning skill '{name}' from description...")
+
+        try:
+            skill = self.generator.generate_from_description(goal=name, description=description)
+            val_report = self.validator.validate_full(skill)
+            save_skill(skill)
+            self.registry.save_and_register(skill)
+
+            msg = (
+                f"Generated skill '{skill.name}' (ID: {skill.id}) with {len(skill.steps)} steps from description. "
+                "Validation completed."
+            )
+            if player and hasattr(player, "show_content"):
+                player.show_content(
+                    "SKILL CREATED FROM DESCRIPTION",
+                    f"{msg}\n\nSteps:\n" + "\n".join(f"{s.step_id}. {s.thought} ({s.tool})" for s in skill.steps)
+                )
+            if player and hasattr(player, "write_log"):
+                player.write_log(f"✔ {msg}")
+
+            return {
+                "success": True,
+                "skill_id": skill.id,
+                "name": skill.name,
+                "description": skill.description,
+                "steps": [s.to_dict() for s in skill.steps],
+                "parameters": [p.to_dict() for p in skill.parameters],
+                "validation": val_report,
+                "message": msg,
+            }
+        except Exception as e:
+            logger.error("Error generating skill from description: %s", e, exc_info=True)
+            return {"success": False, "message": f"Failed to generate skill from description: {e}"}
+
     def test_skill(
         self,
         skill_id: str,

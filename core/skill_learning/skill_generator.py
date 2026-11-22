@@ -67,3 +67,17 @@ class SkillGenerator:
         )
         session.generated_skill = skill
         return skill
+
+    def generate_from_description(
+        self,
+        goal: str,
+        description: str,
+        author: str = "user_description",
+    ) -> SkillDefinition:
+        """Construct a declarative SkillDefinition directly from natural language description."""
+        logger.info("Analyzing skill description for goal: '%s'", goal)
+        analysis = self.analyzer.analyze_description(goal=goal, description=description)
+        skill = self.builder.build_skill_definition(analysis, author=author)
+        print("[Generator] Skill generated from description.")
+        logger.info("[Generator] Skill generated from description. (ID: %s, steps: %d)", skill.id, len(skill.steps))
+        return skill

@@ -285,7 +285,7 @@ def _classify_default_tier(tool_name: str, params: Dict[str, Any]) -> RiskTier:
             return RiskTier.LOW
         if action in ("delete_skill", "delete", "remove_skill"):
             return RiskTier.HIGH
-        if action in ("approve_skill", "save_skill", "save", "approve", "create_skill", "generate_skill", "edit_skill", "rename_skill"):
+        if action in ("approve_skill", "save_skill", "save", "approve", "create_skill", "generate_skill", "learn_from_description", "teach_skill", "create_from_description", "edit_skill", "rename_skill"):
             return RiskTier.MEDIUM
         if action in ("execute_skill", "run_skill", "execute", "run"):
             return RiskTier.MEDIUM

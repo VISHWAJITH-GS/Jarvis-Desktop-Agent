@@ -104,13 +104,16 @@ class ParameterDefinition:
     required: bool = True
     default: Any = None
     example: Any = None
+    is_credential: bool = False
 
     def to_dict(self) -> dict:
         return asdict(self)
 
     @classmethod
     def from_dict(cls, data: dict) -> ParameterDefinition:
-        return cls(**data)
+        import dataclasses
+        valid = {f.name for f in dataclasses.fields(cls)}
+        return cls(**{k: v for k, v in data.items() if k in valid})
 
 
 @dataclass
@@ -127,7 +130,9 @@ class VerificationCondition:
 
     @classmethod
     def from_dict(cls, data: dict) -> VerificationCondition:
-        return cls(**data)
+        import dataclasses
+        valid = {f.name for f in dataclasses.fields(cls)}
+        return cls(**{k: v for k, v in data.items() if k in valid})
 
 
 @dataclass
@@ -143,6 +148,7 @@ class StepDefinition:
     selector: Optional[dict] = None
     verification: Optional[VerificationCondition] = None
     recovery: Optional[dict] = None  # e.g. {"retry_count": 2, "alternative_action": ...}
+    expected_outcome: Optional[str] = None
     is_sensitive: bool = False
 
     def to_dict(self) -> dict:
@@ -156,7 +162,9 @@ class StepDefinition:
         d = dict(data)
         if d.get("verification") and isinstance(d["verification"], dict):
             d["verification"] = VerificationCondition.from_dict(d["verification"])
-        return cls(**d)
+        import dataclasses
+        valid = {f.name for f in dataclasses.fields(cls)}
+        return cls(**{k: v for k, v in d.items() if k in valid})
 
 
 @dataclass
@@ -173,6 +181,7 @@ class SkillDefinition:
     parameters: list[ParameterDefinition] = field(default_factory=list)
     preconditions: list[str] = field(default_factory=list)
     steps: list[StepDefinition] = field(default_factory=list)
+    postconditions: list[str] = field(default_factory=list)
     tool_dependencies: list[str] = field(default_factory=list)
     permissions: str = RiskLevel.NORMAL.value
     status: str = SkillStatus.DRAFT.value

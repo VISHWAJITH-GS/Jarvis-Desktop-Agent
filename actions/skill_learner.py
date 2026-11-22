@@ -50,7 +50,17 @@ def skill_learner(
 
     manager = get_default_learning_manager()
 
-    if act in ("start_learning", "start", "learn"):
+    if act in ("learn_from_description", "teach_skill", "create_from_description"):
+        desc = p.get("description") or goal or ""
+        name = p.get("name") or goal or "New Skill"
+        if not desc:
+            return outcome.failed("skill_learner", "A description of the workflow is required to learn from description.")
+        res = manager.learn_from_description(name=name, description=desc, player=player)
+        if not res.get("success"):
+            return outcome.failed("skill_learner", res.get("message", "Failed to learn from description."))
+        return outcome.done("skill_learner", message=res["message"], data=res)
+
+    elif act in ("start_learning", "start", "learn"):
         if not goal:
             return outcome.failed("skill_learner", "A 'goal' describing the workflow to learn is required.")
         msg = manager.start_learning(goal=goal, player=player)
@@ -188,12 +198,16 @@ TOOL = {
                 "description": (
                     "Exact action: start_learning | pause_learning | resume_learning | "
                     "stop_learning | cancel_learning | review_demonstration | generate_skill | "
-                    "test_skill | approve_skill | list_skills | execute_skill | delete_skill"
+                    "learn_from_description | test_skill | approve_skill | list_skills | execute_skill | delete_skill"
                 ),
             },
             "goal": {
                 "type": "STRING",
                 "description": "User intent or workflow goal description (for start_learning). E.g. 'Learn how to use Claude'",
+            },
+            "description": {
+                "type": "STRING",
+                "description": "Natural language step-by-step description for teach_skill / learn_from_description mode.",
             },
             "skill_id": {
                 "type": "STRING",

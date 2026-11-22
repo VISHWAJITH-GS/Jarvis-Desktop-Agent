@@ -81,6 +81,7 @@ class WorkflowBuilder:
                     selector=s.get("selector"),
                     verification=v_cond,
                     recovery=recovery,
+                    expected_outcome=s.get("expected_outcome"),
                     is_sensitive=bool(s.get("is_sensitive", False)),
                 )
             )
@@ -99,6 +100,7 @@ class WorkflowBuilder:
             parameters=params,
             preconditions=analysis_data.get("preconditions", []),
             steps=steps,
+            postconditions=analysis_data.get("postconditions", []),
             tool_dependencies=sorted(list(tool_deps)),
             permissions=risk.value,
             status=SkillStatus.DRAFT.value,
