@@ -187,5 +187,113 @@ window [1] (● appidentity.py - Mark-LVI-main - Antigravity IDE)
             self.assertEqual(args[0], ["C:\\fake\\antigravity-ide.cmd", "-a", str(folder.resolve())])
 
 
+class TestAntigravityFiles(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.base_path = Path(self.temp_dir.name)
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def test_create_file_atomic_and_undo(self):
+        from actions import antigravity_files
+        from core import undo
+
+        target_file = self.base_path / "hello.py"
+        test_content = "print('Hello world!')\n"
+
+        with (
+            patch("actions.antigravity_files.is_allowed_root", return_value=True),
+            patch("actions.antigravity_files.open_file") as mock_open,
+        ):
+            # Create file
+            res = antigravity_files.create_file(str(target_file), test_content, open_in_ide_after=True)
+            self.assertEqual(res.status, outcome.STATUS_DONE)
+            self.assertTrue(target_file.exists())
+            self.assertEqual(target_file.read_text(encoding="utf-8"), test_content)
+            mock_open.assert_called_once()
+
+            # Attempt to create existing file fails
+            res_exists = antigravity_files.create_file(str(target_file), "another")
+            self.assertEqual(res_exists.status, outcome.STATUS_FAILED)
+
+            # Test undo reverses creation
+            undo_msg = undo.undo_last()
+            self.assertIn("Undone", undo_msg)
+            self.assertFalse(target_file.exists())
+
+    def test_write_file_overwrite_and_undo(self):
+        from actions import antigravity_files
+        from core import undo
+
+        target_file = self.base_path / "script.py"
+        target_file.write_text("v1_content", encoding="utf-8")
+
+        with (
+            patch("actions.antigravity_files.is_allowed_root", return_value=True),
+            patch("actions.antigravity_files.get_window_status", return_value={"is_running": False}),
+            patch("actions.antigravity_files.open_file"),
+        ):
+            res = antigravity_files.write_file(str(target_file), "v2_content", mode="overwrite")
+            self.assertEqual(res.status, outcome.STATUS_DONE)
+            self.assertEqual(target_file.read_text(encoding="utf-8"), "v2_content")
+
+            # Undo restores v1_content
+            undo_msg = undo.undo_last()
+            self.assertIn("Undone", undo_msg)
+            self.assertEqual(target_file.read_text(encoding="utf-8"), "v1_content")
+
+    def test_write_file_append(self):
+        from actions import antigravity_files
+
+        target_file = self.base_path / "log.txt"
+        target_file.write_text("line1\n", encoding="utf-8")
+
+        with (
+            patch("actions.antigravity_files.is_allowed_root", return_value=True),
+            patch("actions.antigravity_files.get_window_status", return_value={"is_running": False}),
+            patch("actions.antigravity_files.open_file"),
+        ):
+            res = antigravity_files.write_file(str(target_file), "line2\n", mode="append")
+            self.assertEqual(res.status, outcome.STATUS_DONE)
+            self.assertEqual(target_file.read_text(encoding="utf-8"), "line1\nline2\n")
+
+    def test_write_file_unsaved_dirty_guard(self):
+        from actions import antigravity_files
+
+        target_file = self.base_path / "appidentity.py"
+        target_file.write_text("original", encoding="utf-8")
+
+        with (
+            patch("actions.antigravity_files.is_allowed_root", return_value=True),
+            patch("actions.antigravity_files.get_window_status", return_value={
+                "is_running": True,
+                "has_unsaved_changes": True,
+                "active_file": "appidentity.py",
+            }),
+        ):
+            res = antigravity_files.write_file(str(target_file), "new_edits")
+            self.assertEqual(res.status, outcome.STATUS_NEEDS_CONFIRMATION)
+            self.assertIn("unsaved changes", res.message)
+            # Content remains unchanged on disk
+            self.assertEqual(target_file.read_text(encoding="utf-8"), "original")
+
+    def test_create_folder_and_undo(self):
+        from actions import antigravity_files
+        from core import undo
+
+        target_folder = self.base_path / "subfolder"
+        with patch("actions.antigravity_files.is_allowed_root", return_value=True):
+            res = antigravity_files.create_folder(str(target_folder))
+            self.assertEqual(res.status, outcome.STATUS_DONE)
+            self.assertTrue(target_folder.is_dir())
+
+            # Undo removes empty folder
+            undo_msg = undo.undo_last()
+            self.assertIn("Undone", undo_msg)
+            self.assertFalse(target_folder.exists())
+
+
 if __name__ == "__main__":
     unittest.main()
