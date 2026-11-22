@@ -99,3 +99,41 @@ def _capture_screen() -> tuple[bytes, str]:
         png = mss.tools.to_png(shot.rgb, shot.size)
 
     return _compress(png, "PNG")
+
+
+def screen_process(parameters: dict, player=None) -> str:
+    """Action handler for screen_process: captures display and triggers glow."""
+    text = (parameters or {}).get("text", "What do you see on my screen?")
+    try:
+        img_bytes, mime_type = _capture_screen()
+        return (
+            f"[VISION_ACTIVE] Captured screen ({len(img_bytes)} bytes, {mime_type}) for query: '{text}'. "
+            "Visual observation attached."
+        )
+    except Exception as e:
+        return f"Failed to capture screen: {e}"
+
+
+TOOL = {
+    "name": "screen_process",
+    "description": (
+        "Captures the computer screen image and lets you describe or analyze it visually. "
+        "MUST be called when the user explicitly asks what is on screen, analyze my screen, "
+        "or describe what is visible on screen. "
+        "Webcam/camera capture is disabled and unavailable."
+    ),
+    "brief": "Capture and visually analyze the active computer screen.",
+    "tier": "core",
+    "permission": "read_only",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "text": {
+                "type": "STRING",
+                "description": "The question or instruction about the captured screen image.",
+            }
+        },
+        "required": ["text"],
+    },
+    "handler": screen_process,
+}
