@@ -14,36 +14,7 @@ import threading
 import time
 from pathlib import Path
 from gui.base import *
-from gui.base import (
-    _WIN_HIDE,
-    _base_dir,
-    BASE_DIR,
-    CONFIG_DIR,
-    API_FILE,
-    _read_full_config,
-    _DEFAULT_W,
-    _DEFAULT_H,
-    _MIN_W,
-    _MIN_H,
-    _LEFT_W,
-    _RIGHT_W,
-    _OS,
-    _ResizeEdge,
-    _detect_resize_edge,
-    _cursor_for_edge,
-    _FramelessWindowResizeMixin,
-    _SysMetrics,
-    _metrics,
-    _nvml_gpu_windows,
-    _load_app_fonts,
-    keena_font,
-    HAVE_VIDEO,
-    HoloAvatar,
-    get_uicon,
-    QGraphicsVideoItem,
-    QAudioOutput,
-    QMediaPlayer,
-)
+from gui.base import _WIN_HIDE, _base_dir, BASE_DIR, CONFIG_DIR, API_FILE, _read_full_config, _DEFAULT_W, _DEFAULT_H, _MIN_W, _MIN_H, _LEFT_W, _RIGHT_W, _OS, _ResizeEdge, _detect_resize_edge, _cursor_for_edge, _FramelessWindowResizeMixin, _SysMetrics, _metrics, _nvml_gpu_windows, _load_app_fonts, keena_font, HAVE_VIDEO, HoloAvatar, get_uicon, QGraphicsVideoItem, QAudioOutput, QMediaPlayer
 from gui.theme import *
 from gui.theme import _RESIZE_MARGIN, _NO_SCROLLBAR_STYLE, _HUE_LINKED, _PALETTE_DEFAULTS, _lerp_color
 
@@ -57,20 +28,16 @@ from gui.docks import *
 from gui.display_windows import *
 from gui.telemetry_and_displays import *
 
-
 class WindowControlsMixin:
     """Settings, PTT, wake word, overlays, and system controls for MainWindow."""
-
     def _build_footer(self) -> QWidget:
         w = QWidget()
         w.setFixedHeight(22)
         w.setStyleSheet(f"background: {C.DARK}; border-top: 1px solid {C.BORDER};")
-        lay = QHBoxLayout(w)
-        lay.setContentsMargins(14, 0, 14, 0)
+        lay = QHBoxLayout(w); lay.setContentsMargins(14, 0, 14, 0)
 
         def _fl(txt, color=C.TEXT_MED):
-            l = QLabel(txt)
-            l.setFont(QFont("Montserrat", 7))
+            l = QLabel(txt); l.setFont(QFont("Montserrat", 7))
             l.setStyleSheet(f"color: {color}; background: transparent;")
             return l
 
@@ -85,14 +52,14 @@ class WindowControlsMixin:
 
     def _on_file_selected(self, path: str):
         self._current_file = path
-        p = Path(path)
-        cat = _file_category(p)
+        p    = Path(path)
+        cat  = _file_category(p)
         icon, _ = _FILE_ICONS.get(cat, _FILE_ICONS["unknown"])
         if cat == "folder":
             n = self._drop_zone._folder_files
             self._file_hint.setText(
-                f"{icon}  {p.name}  ·  {n} files  ·  Tell {self._assistant_name} what to change in it"
-            )
+                f"{icon}  {p.name}  ·  {n} files  ·  Tell {self._assistant_name} "
+                f"what to change in it")
             self._log.append_log(f"FOLDER: {p.name} ({n} files) loaded")
             if self.on_text_command:
                 msg = (
@@ -103,7 +70,8 @@ class WindowControlsMixin:
                     f"dev_agent with mode='improve' and their request as the "
                     f"description."
                 )
-                threading.Thread(target=self.on_text_command, args=(msg,), daemon=True).start()
+                threading.Thread(target=self.on_text_command, args=(msg,),
+                                 daemon=True).start()
             return
         size = _fmt_size(p.stat().st_size)
         self._file_hint.setText(f"{icon}  {p.name}  ·  {size}  ·  Tell {self._assistant_name} what to do with it")
@@ -129,26 +97,25 @@ class WindowControlsMixin:
         if not result:
             self._log.append_log("SYS: Could not generate remote key.")
             return
-        url = result[0]
-        key = result[1]
-        auto = result[2] if len(result) >= 3 else ""
+        url    = result[0]
+        key    = result[1]
+        auto   = result[2] if len(result) >= 3 else ""
         manual = result[3] if len(result) >= 4 else url
-        berr = result[4] if len(result) >= 5 else ""
+        berr   = result[4] if len(result) >= 5 else ""
         if self._remote_overlay:
             self._remote_overlay._do_close()
-        cw = self.centralWidget()
+        cw  = self.centralWidget()
         ow, oh = RemoteKeyOverlay._OW, RemoteKeyOverlay._OH
-        ov = RemoteKeyOverlay(
-            url, key, auto_login_url=auto, manual_url=manual, expiry_secs=600, parent=cw, bind_error=berr
-        )
+        ov  = RemoteKeyOverlay(url, key, auto_login_url=auto, manual_url=manual,
+                               expiry_secs=600, parent=cw,
+                               bind_error=berr)
         ov.set_new_key_callback(self.on_remote_clicked)
         ov.setGeometry(
-            (cw.width() - ow) // 2,
+            (cw.width()  - ow) // 2,
             (cw.height() - oh) // 2,
-            ow,
-            oh,
+            ow, oh,
         )
-        ov.closed.connect(lambda: setattr(self, "_remote_overlay", None))
+        ov.closed.connect(lambda: setattr(self, '_remote_overlay', None))
         ov.show()
         self._remote_overlay = ov
         self._log.append_log(f"SYS: Remote key generated — manual: {manual or url}")
@@ -160,10 +127,8 @@ class WindowControlsMixin:
         try:
             if _OS == "Windows":
                 import winreg
-
-                key = winreg.OpenKey(
-                    winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_READ
-                )
+                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                    r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_READ)
                 try:
                     winreg.QueryValueEx(key, "JARVIS_AI")
                     return True
@@ -172,7 +137,8 @@ class WindowControlsMixin:
                 finally:
                     winreg.CloseKey(key)
             elif _OS == "Darwin":
-                return (Path.home() / "Library" / "LaunchAgents" / "com.jarvis.assistant.plist").exists()
+                return (Path.home() / "Library" / "LaunchAgents"
+                        / "com.jarvis.assistant.plist").exists()
             else:
                 return (Path.home() / ".config" / "autostart" / "jarvis.desktop").exists()
         except Exception:
@@ -184,16 +150,15 @@ class WindowControlsMixin:
             script = str(BASE_DIR / "main.py")
             if _OS == "Windows":
                 import winreg
-
-                reg = winreg.OpenKey(
-                    winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_ALL_ACCESS
-                )
+                reg = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                    r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_ALL_ACCESS)
                 if currently_on:
                     winreg.DeleteValue(reg, "JARVIS_AI")
                 else:
                     pythonw = Path(sys.executable).parent / "pythonw.exe"
                     exe = str(pythonw if pythonw.exists() else sys.executable)
-                    winreg.SetValueEx(reg, "JARVIS_AI", 0, winreg.REG_SZ, f'"{exe}" "{script}"')
+                    winreg.SetValueEx(reg, "JARVIS_AI", 0, winreg.REG_SZ,
+                                      f'"{exe}" "{script}"')
                 winreg.CloseKey(reg)
             elif _OS == "Darwin":
                 plist_dir = Path.home() / "Library" / "LaunchAgents"
@@ -207,13 +172,13 @@ class WindowControlsMixin:
                         '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" '
                         '"http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
                         '<plist version="1.0"><dict>\n'
-                        "  <key>Label</key><string>com.jarvis.assistant</string>\n"
-                        "  <key>ProgramArguments</key><array>\n"
-                        f"    <string>{sys.executable}</string>\n"
-                        f"    <string>{script}</string>\n"
-                        "  </array>\n"
-                        "  <key>RunAtLoad</key><true/>\n"
-                        "</dict></plist>\n"
+                        '  <key>Label</key><string>com.jarvis.assistant</string>\n'
+                        '  <key>ProgramArguments</key><array>\n'
+                        f'    <string>{sys.executable}</string>\n'
+                        f'    <string>{script}</string>\n'
+                        '  </array>\n'
+                        '  <key>RunAtLoad</key><true/>\n'
+                        '</dict></plist>\n'
                     )
             else:
                 desk_dir = Path.home() / ".config" / "autostart"
@@ -231,12 +196,13 @@ class WindowControlsMixin:
                     )
             enabled = not currently_on
             self._update_autostart_btn(enabled)
-            self._log.append_log(f"SYS: Auto-start {'enabled' if enabled else 'disabled'}.")
+            self._log.append_log(
+                f"SYS: Auto-start {'enabled' if enabled else 'disabled'}.")
         except Exception as e:
             self._log.append_log(f"ERR: Auto-start failed — {e}")
 
     def _update_autostart_btn(self, enabled: bool):
-        if not hasattr(self, "_autostart_btn"):
+        if not hasattr(self, '_autostart_btn'):
             return
         if enabled:
             self._autostart_btn.setText("◉  AUTO-START: ON")
@@ -259,7 +225,6 @@ class WindowControlsMixin:
 
     def _toggle_brief(self):
         from memory.config_manager import get_brief_enabled, save_brief_enabled
-
         new_val = not get_brief_enabled()
         save_brief_enabled(new_val)
         self._update_brief_btn(new_val)
@@ -273,7 +238,9 @@ class WindowControlsMixin:
         if self.wake_get_state:
             try:
                 s = self.wake_get_state()
-                return {"ready": bool(s.get("ready")), "enabled": bool(s.get("enabled")), "awake": bool(s.get("awake"))}
+                return {"ready": bool(s.get("ready")),
+                        "enabled": bool(s.get("enabled")),
+                        "awake": bool(s.get("awake"))}
             except Exception:
                 pass
         # Before JarvisLive has wired its callback (drawer built at startup).
@@ -281,14 +248,13 @@ class WindowControlsMixin:
         try:
             from core.wake_word import is_ready
             from memory.config_manager import get_wake_word_enabled
-
             ready, enabled = is_ready(), get_wake_word_enabled()
         except Exception:
             pass
         return {"ready": ready, "enabled": enabled, "awake": True}
 
     def _refresh_wake_btns(self):
-        if not hasattr(self, "_wake_btn"):
+        if not hasattr(self, '_wake_btn'):
             return
         st = self._wake_state()
         _on = f"""
@@ -362,13 +328,9 @@ class WindowControlsMixin:
 
     def _cycle_routing_mode(self):
         from memory.config_manager import (
-            get_audio_routing_mode,
-            save_audio_routing_mode,
-            ROUTING_MODE_AUTO_HYBRID,
-            ROUTING_MODE_BUILTIN_ONLY,
-            ROUTING_MODE_BLUETOOTH_ONLY,
+            get_audio_routing_mode, save_audio_routing_mode,
+            ROUTING_MODE_AUTO_HYBRID, ROUTING_MODE_BUILTIN_ONLY, ROUTING_MODE_BLUETOOTH_ONLY,
         )
-
         curr = get_audio_routing_mode()
         if curr == ROUTING_MODE_AUTO_HYBRID:
             nxt = ROUTING_MODE_BUILTIN_ONLY
@@ -395,11 +357,8 @@ class WindowControlsMixin:
             return
         from memory.config_manager import (
             get_audio_routing_mode,
-            ROUTING_MODE_AUTO_HYBRID,
-            ROUTING_MODE_BUILTIN_ONLY,
-            ROUTING_MODE_BLUETOOTH_ONLY,
+            ROUTING_MODE_AUTO_HYBRID, ROUTING_MODE_BUILTIN_ONLY, ROUTING_MODE_BLUETOOTH_ONLY,
         )
-
         curr = get_audio_routing_mode()
         _on = f"""
             QPushButton {{ background: #001a14; color: {C.PRI};
@@ -427,7 +386,6 @@ class WindowControlsMixin:
             return
         from core.hotkey import chord_label
         from memory.config_manager import get_push_to_talk_enabled
-
         _on = f"""
             QPushButton {{ background: #001a08; color: {C.GREEN};
                 border: 1px solid {C.GREEN_D}; border-radius: 3px;
@@ -440,17 +398,17 @@ class WindowControlsMixin:
             QPushButton:hover {{ color: {C.TEXT}; border: 1px solid {C.BORDER_B}; }}"""
 
         ptt = get_push_to_talk_enabled()
-        self._ptt_btn.setText(f"🎚  PUSH-TO-TALK: {chord_label()}" if ptt else "🎚  PUSH-TO-TALK: OFF")
+        self._ptt_btn.setText(f"🎚  PUSH-TO-TALK: {chord_label()}" if ptt
+                              else "🎚  PUSH-TO-TALK: OFF")
         self._ptt_btn.setStyleSheet(_on if ptt else _off)
         self._ptt_btn.setToolTip(
-            "Microphone stays closed until you hold the key — nothing is sent while you are not holding it."
-            if ptt
-            else "Hold a key to talk instead of streaming the mic continuously."
-        )
+            "Microphone stays closed until you hold the key — nothing is sent "
+            "while you are not holding it." if ptt
+            else "Hold a key to talk instead of streaming the mic continuously.")
+
 
     def _refresh_hud_btn(self):
         from memory.config_manager import get_hud_style
-
         face = get_hud_style() == "face"
         # Neither state is "off", so both read as active — this is a choice
         # between two things, not a switch with a disabled side.
@@ -459,20 +417,20 @@ class WindowControlsMixin:
                 border: 1px solid {C.BORDER_A}; border-radius: 3px;
                 text-align: left; padding: 0 8px; }}
             QPushButton:hover {{ color: {C.WHITE}; border: 1px solid {C.BORDER_B}; }}"""
-        self._hud_btn.setText("🧑  HUD: ANIMATED FACE" if face else "◉  HUD: REACTOR CORE")
+        self._hud_btn.setText("🧑  HUD: ANIMATED FACE" if face
+                              else "◉  HUD: REACTOR CORE")
         self._hud_btn.setStyleSheet(style)
         self._hud_btn.setToolTip(
-            "An animated head that speaks your words and shows what JARVIS is doing. Tap to switch to the reactor core."
-            if face
-            else "A reactor core that turns with the state and moves with your voice. "
-            "Tap to switch to the animated head."
-        )
+            "An animated head that speaks your words and shows what JARVIS is "
+            "doing. Tap to switch to the reactor core."
+            if face else
+            "A reactor core that turns with the state and moves with your voice. "
+            "Tap to switch to the animated head.")
 
     def _toggle_hud_style(self):
         """Swap the centrepiece. Both objects stay in memory, so the change is
         instant and switching back costs nothing."""
         from memory.config_manager import get_hud_style, save_hud_style
-
         want = "core" if get_hud_style() == "face" else "face"
         save_hud_style(want)
         try:
@@ -482,12 +440,12 @@ class WindowControlsMixin:
             pass
         self._refresh_hud_btn()
         self._log.append_log(
-            "SYS: HUD switched to the animated face." if want == "face" else "SYS: HUD switched to the reactor core."
-        )
+            "SYS: HUD switched to the animated face." if want == "face"
+            else "SYS: HUD switched to the reactor core.")
 
     def _toggle_ptt(self):
-        from memory.config_manager import get_push_to_talk_enabled, save_push_to_talk_enabled
-
+        from memory.config_manager import (get_push_to_talk_enabled,
+                                           save_push_to_talk_enabled)
         want = not get_push_to_talk_enabled()
         save_push_to_talk_enabled(want)
         scope = None
@@ -551,21 +509,19 @@ class WindowControlsMixin:
             # First time: download openwakeword + model in a worker thread.
             self._wake_btn.setText("⬇  DOWNLOADING… (one-time)")
             self._wake_btn.setEnabled(False)
-
             def _work():
                 try:
                     from core.wake_word import install_and_download
-
-                    ok, msg = install_and_download(logger=lambda m: self._log_sig.emit(f"SYS: {m}"))
+                    ok, msg = install_and_download(
+                        logger=lambda m: self._log_sig.emit(f"SYS: {m}"))
                 except Exception as e:
                     ok, msg = False, str(e)
                 if ok and self.on_wake_toggle:
                     try:
-                        self.on_wake_toggle(True)  # auto-enable after a successful download
+                        self.on_wake_toggle(True)   # auto-enable after a successful download
                     except Exception:
                         pass
                 self._wake_dl_sig.emit(ok, msg)
-
             threading.Thread(target=_work, daemon=True).start()
             return
         # Already downloaded → just flip enabled/disabled through JarvisLive.
@@ -589,7 +545,7 @@ class WindowControlsMixin:
         self._refresh_wake_btns()
 
     def _update_brief_btn(self, enabled: bool):
-        if not hasattr(self, "_brief_btn"):
+        if not hasattr(self, '_brief_btn'):
             return
         if enabled:
             self._brief_btn.setText("  MORNING BRIEF: ON")
@@ -633,10 +589,9 @@ class WindowControlsMixin:
         ow, oh = CustomizeOverlay._OW, CustomizeOverlay._OH
         oh = min(oh, cw.height() - 16)
         ov.setGeometry(
-            (cw.width() - ow) // 2,
+            (cw.width()  - ow) // 2,
             (cw.height() - oh) // 2,
-            ow,
-            oh,
+            ow, oh,
         )
         ov.on_preview = self._preview_ui_color
         ov.saved.connect(self._apply_name_update)
@@ -649,7 +604,8 @@ class WindowControlsMixin:
         if apply_ui_accent(hex_color):
             retheme_all_widgets(old, current_palette())
 
-    def _apply_name_update(self, name: str, user_name: str, ui_color: str = "", voice: str = ""):
+    def _apply_name_update(self, name: str, user_name: str, ui_color: str = "",
+                           voice: str = ""):
         """Update all name/theme-dependent UI elements and persist to config."""
         self._assistant_name = name.strip() or "JARVIS"
         display = self._assistant_name.upper()
@@ -675,7 +631,6 @@ class WindowControlsMixin:
         voice_changed = False
         if voice:
             from memory.config_manager import get_voice, save_voice
-
             if voice != get_voice():
                 save_voice(voice)
                 voice_changed = True
@@ -703,10 +658,9 @@ class WindowControlsMixin:
         cw = self.centralWidget()
         ov.adjustSize()
         ov.setGeometry(
-            max(0, (cw.width() - ov.width()) // 2),
+            max(0, (cw.width()  - ov.width())  // 2),
             max(0, (cw.height() - ov.height()) // 2),
-            ov.width(),
-            ov.height(),
+            ov.width(), ov.height(),
         )
         ov.show()
         ov.raise_()
@@ -717,7 +671,7 @@ class WindowControlsMixin:
         ov = AudioDeviceOverlay(parent=self.centralWidget())
         ov.picked.connect(self._on_audio_devices_applied)
         self._centre_overlay(ov)
-        self._audio_overlay = ov  # keep a reference so it isn't GC'd
+        self._audio_overlay = ov            # keep a reference so it isn't GC'd
 
     def _on_audio_devices_applied(self):
         self._log.append_log("SYS: Audio devices updated.")
@@ -823,14 +777,13 @@ class WindowControlsMixin:
         ov = PluginManagerOverlay(plugins, parent=cw)
         ov.adjustSize()
         ov.setGeometry(
-            (cw.width() - ov.width()) // 2,
+            (cw.width()  - ov.width())  // 2,
             (cw.height() - ov.height()) // 2,
-            ov.width(),
-            ov.height(),
+            ov.width(), ov.height(),
         )
         ov.show()
         ov.raise_()
-        self._plugin_manager_overlay = ov  # keep a reference so it isn't GC'd
+        self._plugin_manager_overlay = ov   # keep a reference so it isn't GC'd
 
     def _open_confirmation_tiers(self):
         cw = self.centralWidget()
@@ -854,14 +807,13 @@ class WindowControlsMixin:
         ow = PluginSettingsOverlay._OW
         oh = min(560, cw.height() - 16)
         ov.setGeometry(
-            (cw.width() - ow) // 2,
+            (cw.width()  - ow) // 2,
             (cw.height() - oh) // 2,
-            ow,
-            oh,
+            ow, oh,
         )
         ov.show()
         ov.raise_()
-        self._plugin_settings_overlay = ov  # keep a reference so it isn't GC'd
+        self._plugin_settings_overlay = ov   # keep a reference so it isn't GC'd
 
     # ── Clipboard intelligence (triggers removed) ───────────────────────────────
 
@@ -972,8 +924,7 @@ class WindowControlsMixin:
 
     def _send(self):
         txt = self._input.text().strip()
-        if not txt:
-            return
+        if not txt: return
         self._input.clear()
         self._log.append_log(f"You: {txt}")
         self.hud.set_user_text(txt)
@@ -981,8 +932,8 @@ class WindowControlsMixin:
             threading.Thread(target=self.on_text_command, args=(txt,), daemon=True).start()
 
     def _apply_state(self, state: str):
-        self.hud.state = state
-        self.hud.speaking = str(state or "").upper() == "SPEAKING"
+        self.hud.state    = state
+        self.hud.speaking = (str(state or "").upper() == "SPEAKING")
         if hasattr(self.hud, "on_state_changed"):
             self.hud.on_state_changed(state)
         self.hud.update()
@@ -990,13 +941,11 @@ class WindowControlsMixin:
     def _check_config(self) -> bool:
         try:
             from memory.config_manager import is_configured
-
             if is_configured():
                 return True
         except Exception:
             pass
-        if not API_FILE.exists():
-            return False
+        if not API_FILE.exists(): return False
         try:
             d = json.loads(API_FILE.read_text(encoding="utf-8"))
             return bool(d.get("gemini_api_key")) and bool(d.get("os_system"))
@@ -1008,10 +957,9 @@ class WindowControlsMixin:
         cw = self.centralWidget()
         ow, oh = 460, 390
         ov.setGeometry(
-            (cw.width() - ow) // 2,
+            (cw.width()  - ow) // 2,
             (cw.height() - oh) // 2,
-            ow,
-            oh,
+            ow, oh,
         )
         ov.done.connect(self._on_setup_done)
         ov.show()
@@ -1030,3 +978,5 @@ class WindowControlsMixin:
         self._apply_state("LISTENING")
         self._assistant_name = _read_full_config().get("assistant_name", "JARVIS") or "JARVIS"
         self._log.append_log(f"SYS: Initialised. OS={os_name.upper()}. {self._assistant_name} online.")
+
+
