@@ -678,3 +678,279 @@ class RemoteKeyOverlay(QWidget):
         self._ctimer.stop()
         self.hide()
         self.closed.emit()
+
+
+class ConfirmationTiersOverlay(QWidget):
+    """Floating overlay — configure action confirmation risk tiers (LOW, MEDIUM, HIGH)."""
+
+    _OW = 540
+
+    CONFIGURABLE_ITEMS = [
+        (
+            "COMMUNICATION & MESSAGING",
+            [
+                ("whatsapp_send", "WhatsApp Send Message", "Sending messages via WhatsApp Web", "MEDIUM", False),
+                ("send_message", "General Messaging", "Sending messages via Telegram, SMS, or Email", "MEDIUM", False),
+                ("browser_control:chatgpt", "Web AI Chatbots", "Typing/submitting prompts to ChatGPT or web LLMs", "MEDIUM", False),
+                ("browser_control:whatsapp", "WhatsApp Web Composer", "Submitting via web WhatsApp composer directly", "MEDIUM", False),
+            ],
+        ),
+        (
+            "WINDOW & APPLICATION MANAGEMENT",
+            [
+                ("close_app", "Close External Application", "Terminating external running application processes", "MEDIUM", False),
+                ("close_display", "Close Jarvis Display", "Closing an active Jarvis display window", "MEDIUM", False),
+                ("close_all_displays", "Close All Displays", "Closing all open Jarvis extra display windows", "MEDIUM", False),
+                ("shutdown_jarvis", "Shutdown Jarvis", "Orderly exit of Jarvis assistant background session", "MEDIUM", False),
+                ("jarvis_control:mute", "Mute Audio / Microphone", "Muting speaker or microphone", "LOW", False),
+                ("jarvis_control:sleep", "Sleep Standby", "Putting Jarvis into standby (wake word only)", "LOW", False),
+            ],
+        ),
+        (
+            "FILES & SYSTEM STORAGE",
+            [
+                ("create_file", "Create / Write Files", "Writing new files or updating code on disk", "MEDIUM", False),
+                ("download_file", "Download Files", "Downloading files from the web", "MEDIUM", False),
+                ("delete_file", "Delete Files & Folders", "Permanently deleting files, folders or emptying trash", "HIGH", True),
+            ],
+        ),
+        (
+            "CRITICAL / SYSTEM SECURITY",
+            [
+                ("shutdown_pc", "Shut Down / Reboot PC", "Powering down, rebooting, or locking the operating system", "HIGH", True),
+                ("make_payment", "Payments & Purchases", "Online checkout, transactions, or orders", "HIGH", True),
+                ("shell_exec", "Execute Shell / Code", "Running terminal commands or scripts", "HIGH", True),
+                ("accept_all", "IDE Accept / Reject All", "Accepting or discarding all code edits in workspace", "HIGH", True),
+            ],
+        ),
+    ]
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet(f"""
+            ConfirmationTiersOverlay {{
+                background: rgba(0, 6, 10, 248);
+                border: 1px solid {C.BORDER_B};
+                border-radius: 6px;
+            }}
+        """)
+        self._combos: dict[str, QComboBox] = {}
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(22, 16, 22, 16)
+        root.setSpacing(8)
+
+        # Header
+        hdr = QHBoxLayout()
+        hdr.setSpacing(8)
+        title_lbl = QLabel("◈  ACTION CONFIRMATION TIERS")
+        title_lbl.setFont(QFont("Montserrat", 11, QFont.Weight.Bold))
+        title_lbl.setStyleSheet(f"color: {C.PRI}; background: transparent;")
+        hdr.addWidget(title_lbl)
+        hdr.addStretch()
+        close_x = QPushButton("✕")
+        close_x.setFixedSize(20, 20)
+        close_x.setFont(QFont("Montserrat", 9))
+        close_x.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent; border: none;")
+        close_x.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_x.clicked.connect(self.hide)
+        hdr.addWidget(close_x)
+        root.addLayout(hdr)
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet(f"color: {C.BORDER}; margin: 2px 0;")
+        root.addWidget(sep)
+
+        desc = QLabel(
+            "Configure confirmation requirements for Jarvis actions:\n"
+            "• LOW: Executes immediately without confirmation.\n"
+            "• MEDIUM: Requires spoken voice confirmation (yes / confirm).\n"
+            "• HIGH: Dual confirmation required (both voice AND on-screen button).\n"
+            "Protected destructive operations cannot be downgraded to LOW."
+        )
+        desc.setFont(QFont("Montserrat", 8))
+        desc.setStyleSheet(f"color: {C.TEXT_MED}; background: transparent; line-height: 130%;")
+        desc.setWordWrap(True)
+        root.addWidget(desc)
+
+        # Scroll area for items
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setStyleSheet("QScrollArea { background: transparent; }")
+
+        inner = QWidget()
+        inner.setStyleSheet("background: transparent;")
+        form = QVBoxLayout(inner)
+        form.setContentsMargins(0, 4, 8, 4)
+        form.setSpacing(6)
+
+        from memory.config_manager import get_confirmation_tiers
+        configured = get_confirmation_tiers() or {}
+
+        for category, items in self.CONFIGURABLE_ITEMS:
+            cat_lbl = QLabel(f"━  {category}")
+            cat_lbl.setFont(QFont("Montserrat", 8, QFont.Weight.Bold))
+            cat_lbl.setStyleSheet(f"color: {C.ACC2}; background: transparent; margin-top: 8px; margin-bottom: 2px;")
+            form.addWidget(cat_lbl)
+
+            for key, label, note, default_tier, is_protected in items:
+                row_widget = QWidget()
+                row_widget.setStyleSheet(f"""
+                    QWidget {{
+                        background: {C.PANEL2};
+                        border: 1px solid {C.BORDER};
+                        border-radius: 4px;
+                    }}
+                """)
+                row_lay = QHBoxLayout(row_widget)
+                row_lay.setContentsMargins(8, 4, 8, 4)
+                row_lay.setSpacing(8)
+
+                info_lay = QVBoxLayout()
+                info_lay.setSpacing(1)
+
+                name_lbl = QLabel(label)
+                name_lbl.setFont(QFont("Montserrat", 9, QFont.Weight.Bold))
+                name_lbl.setStyleSheet(f"color: {C.TEXT}; background: transparent;")
+                info_lay.addWidget(name_lbl)
+
+                note_lbl = QLabel(note)
+                note_lbl.setFont(QFont("Montserrat", 7))
+                note_lbl.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
+                info_lay.addWidget(note_lbl)
+
+                row_lay.addLayout(info_lay, stretch=1)
+
+                if is_protected:
+                    prot_lbl = QLabel("[PROTECTED]")
+                    prot_lbl.setFont(QFont("Montserrat", 7, QFont.Weight.Bold))
+                    prot_lbl.setStyleSheet(f"color: {C.ACC}; background: transparent; margin-right: 4px;")
+                    row_lay.addWidget(prot_lbl)
+
+                cb = QComboBox()
+                if is_protected:
+                    cb.addItems(["HIGH", "MEDIUM"])
+                else:
+                    cb.addItems(["LOW", "MEDIUM", "HIGH"])
+
+                cb.setFont(QFont("Montserrat", 8, QFont.Weight.Bold))
+                cb.setFixedWidth(90)
+                cb.setFixedHeight(26)
+                cb.setStyleSheet(f"""
+                    QComboBox {{
+                        background: #000d12;
+                        color: {C.TEXT};
+                        border: 1px solid {C.BORDER_B};
+                        border-radius: 3px;
+                        padding: 1px 6px;
+                    }}
+                    QComboBox QAbstractItemView {{
+                        background: #000d12;
+                        color: {C.TEXT};
+                        selection-background-color: {C.PRI_GHO};
+                    }}
+                """)
+
+                # Set current value
+                curr_tier = str(configured.get(key, default_tier)).upper()
+                if is_protected and curr_tier == "LOW":
+                    curr_tier = "HIGH"
+                idx = cb.findText(curr_tier)
+                if idx >= 0:
+                    cb.setCurrentIndex(idx)
+                else:
+                    cb.setCurrentText(default_tier)
+
+                self._combos[key] = cb
+                row_lay.addWidget(cb)
+                form.addWidget(row_widget)
+
+        form.addStretch(1)
+        scroll.setWidget(inner)
+        root.addWidget(scroll, 1)
+
+        # Status label
+        self._status_lbl = QLabel("")
+        self._status_lbl.setFont(QFont("Montserrat", 8))
+        self._status_lbl.setStyleSheet(f"color: {C.GREEN}; background: transparent;")
+        root.addWidget(self._status_lbl)
+
+        # Bottom buttons
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
+
+        save_btn = QPushButton("▸  SAVE CHANGES")
+        save_btn.setFixedHeight(32)
+        save_btn.setFont(QFont("Montserrat", 8, QFont.Weight.Bold))
+        save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        save_btn.setStyleSheet(f"""
+            QPushButton {{ background: transparent; color: {C.PRI};
+                border: 1px solid {C.PRI_DIM}; border-radius: 3px; padding: 0 12px; }}
+            QPushButton:hover {{ background: {C.PRI_GHO}; border: 1px solid {C.PRI}; }}
+        """)
+        save_btn.clicked.connect(self._save_tiers)
+        btn_row.addWidget(save_btn)
+
+        reset_btn = QPushButton("RESET DEFAULTS")
+        reset_btn.setFixedHeight(32)
+        reset_btn.setFont(QFont("Montserrat", 8))
+        reset_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        reset_btn.setStyleSheet(f"""
+            QPushButton {{ background: transparent; color: {C.TEXT_MED};
+                border: 1px solid {C.BORDER}; border-radius: 3px; padding: 0 10px; }}
+            QPushButton:hover {{ color: {C.TEXT}; border-color: {C.BORDER_B}; }}
+        """)
+        reset_btn.clicked.connect(self._reset_defaults)
+        btn_row.addWidget(reset_btn)
+
+        btn_row.addStretch()
+
+        close_btn = QPushButton("CLOSE")
+        close_btn.setFixedHeight(32)
+        close_btn.setFont(QFont("Montserrat", 8))
+        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn.setStyleSheet(f"""
+            QPushButton {{ background: transparent; color: {C.TEXT_MED};
+                border: 1px solid {C.BORDER}; border-radius: 3px; padding: 0 12px; }}
+            QPushButton:hover {{ color: {C.TEXT}; border-color: {C.BORDER_B}; }}
+        """)
+        close_btn.clicked.connect(self.hide)
+        btn_row.addWidget(close_btn)
+
+        root.addLayout(btn_row)
+
+    def _save_tiers(self):
+        from memory.config_manager import save_confirmation_tiers
+        tiers = {}
+        for key, cb in self._combos.items():
+            val = cb.currentText().strip().upper()
+            tiers[key] = val
+        try:
+            save_confirmation_tiers(tiers)
+            self._status_lbl.setText("✓ Confirmation tier preferences saved.")
+            self._status_lbl.setStyleSheet(f"color: {C.GREEN}; background: transparent;")
+        except Exception as exc:
+            self._status_lbl.setText(f"Error saving: {exc}")
+            self._status_lbl.setStyleSheet(f"color: {C.ACC}; background: transparent;")
+
+    def _reset_defaults(self):
+        from memory.config_manager import save_confirmation_tiers
+        try:
+            save_confirmation_tiers({})
+            for category, items in self.CONFIGURABLE_ITEMS:
+                for key, label, note, default_tier, is_protected in items:
+                    cb = self._combos.get(key)
+                    if cb:
+                        idx = cb.findText(default_tier)
+                        if idx >= 0:
+                            cb.setCurrentIndex(idx)
+            self._status_lbl.setText("✓ Reset to factory confirmation tiers.")
+            self._status_lbl.setStyleSheet(f"color: {C.GREEN}; background: transparent;")
+        except Exception as exc:
+            self._status_lbl.setText(f"Error resetting: {exc}")
+            self._status_lbl.setStyleSheet(f"color: {C.ACC}; background: transparent;")

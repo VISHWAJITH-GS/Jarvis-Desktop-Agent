@@ -194,6 +194,15 @@ class JarvisUI:
         except (RuntimeError, AttributeError):
             pass
 
+    def open_confirmation_tiers(self) -> None:
+        """Thread-safe: open the Confirmation Tiers overlay."""
+        try:
+            if self._is_alive():
+                from PyQt6.QtCore import QTimer
+                QTimer.singleShot(0, self._win._open_confirmation_tiers)
+        except (RuntimeError, AttributeError):
+            pass
+
     def sync_mute_state(self, muted: bool, hud_state: str = "") -> None:
         """Thread-safe: atomically update mute indicator and exact HUD state
         (e.g. MUTED, SLEEPING, LISTENING)."""

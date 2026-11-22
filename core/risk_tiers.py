@@ -136,6 +136,9 @@ def _classify_default_tier(tool_name: str, params: Dict[str, Any]) -> RiskTier:
         or ""
     ).strip().lower()
 
+    if is_destructive_protected(tool, action):
+        return RiskTier.HIGH
+
     # 1. Status / read / inspect / list actions -> strictly LOW
     READ_ONLY_TOOLS = {
         "web_search",
@@ -217,7 +220,7 @@ def _classify_default_tier(tool_name: str, params: Dict[str, Any]) -> RiskTier:
             return RiskTier.LOW
 
     # 2. Undo
-    if tool == "undo":
+    if tool in ("undo", "undo_last_action", "undo_action") or action in ("undo", "undo_last_action"):
         return RiskTier.LOW
 
     # 3. JARVIS Self-Control Actions
@@ -228,6 +231,10 @@ def _classify_default_tier(tool_name: str, params: Dict[str, Any]) -> RiskTier:
             return RiskTier.LOW
         if action in ("minimize", "restore", "minimize_jarvis", "restore_jarvis", "back_to_normal"):
             return RiskTier.LOW
+        if action in ("list_displays", "minimize_display", "restore_display"):
+            return RiskTier.LOW
+        if action in ("close_display", "close_all_displays", "close_all"):
+            return RiskTier.MEDIUM
         if action in ("shutdown_jarvis", "close_jarvis", "exit_jarvis", "quit_jarvis"):
             return RiskTier.MEDIUM
         if action in ("close_app", "kill", "quit", "exit") and any(k in target for k in ("jarvis", "assistant", "ai")):
@@ -243,9 +250,13 @@ def _classify_default_tier(tool_name: str, params: Dict[str, Any]) -> RiskTier:
             "list_displays",
             "list",
             "focus_display",
+            "focus",
             "minimize_display",
+            "minimize",
             "restore_display",
+            "restore",
             "maximize_display",
+            "maximize",
         ):
             return RiskTier.LOW
         if action in ("close_display", "close_all_displays", "close_all", "close"):
@@ -454,8 +465,10 @@ def get_action_tier(
     if (
         "<<<UNTRUSTED>>>" in text_content
         or ctx.get("untrusted") is True
+        or ctx.get("untrusted_content") is True
         or ctx.get("from_untrusted_source") is True
         or params.get("untrusted") is True
+        or params.get("untrusted_content") is True
     ):
         tier = elevate_tier(tier, RiskTier.HIGH)
 
@@ -473,7 +486,12 @@ def get_action_tier(
 
     # Context Rule D: Closing display with unsaved content -> HIGH
     if (tool == "display_window" or tool == "jarvis_control") and action in ("close_display", "close"):
-        if params.get("unsaved") is True or ctx.get("unsaved_content") is True or params.get("has_unsaved_content") is True:
+        if (
+            params.get("unsaved") is True
+            or ctx.get("unsaved_content") is True
+            or ctx.get("has_unsaved_content") is True
+            or params.get("has_unsaved_content") is True
+        ):
             tier = elevate_tier(tier, RiskTier.HIGH)
 
     # Context Rule E: First message to a new contact -> at least MEDIUM

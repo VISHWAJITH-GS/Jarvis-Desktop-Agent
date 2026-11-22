@@ -43,6 +43,10 @@ class DisplayEntry:
         self.is_minimized = bool(is_minimized)
         self.created_at = created_at if created_at is not None else time.monotonic()
 
+    @property
+    def display_id(self) -> int:
+        return self.id
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "id": self.id,
@@ -69,6 +73,8 @@ class DisplayRegistry:
         """Reset registry state (primarily for tests)."""
         with cls._lock:
             cls._displays.clear()
+
+    clear = reset
 
     @classmethod
     def register(
@@ -120,6 +126,13 @@ class DisplayRegistry:
     def get(cls, id: int) -> Optional[DisplayEntry]:
         with cls._lock:
             return cls._displays.get(int(id))
+
+    get_display = get
+
+    @classmethod
+    def has_display(cls, id: int) -> bool:
+        with cls._lock:
+            return int(id) in cls._displays
 
     @classmethod
     def list_displays(cls) -> List[Dict[str, Any]]:
@@ -330,3 +343,7 @@ def close_display(name_or_id: Any, player=None, force: bool = False) -> str:
 
 def close_all_displays(player=None) -> str:
     return DisplayRegistry.close_all_displays(player=player)
+
+
+clear = DisplayRegistry.clear
+reset = DisplayRegistry.reset

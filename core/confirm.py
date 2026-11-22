@@ -1079,7 +1079,7 @@ class ConfirmationManager:
 
             # For HIGH risk actions, check if button was also confirmed
             if p.is_dual_confirmation_required() and not p.button_confirmed:
-                wait_msg = f"Spoken confirmation received. Please click CONFIRM on the screen to execute {p.title}."
+                wait_msg = f"Spoken confirmation received. Please click CONFIRM button on the screen to execute {p.title}."
                 _log(f"SYS: {wait_msg}")
                 if player and hasattr(player, "_confirm_overlay") and player._confirm_overlay:
                     try:

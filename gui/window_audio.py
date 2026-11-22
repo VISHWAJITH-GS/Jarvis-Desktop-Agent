@@ -885,6 +885,7 @@ class WindowAudioMixin:
             _action_btn("OPEN MEMORY & ACTIONS PLATFORM", lambda: self._show_memory_actions("memory"), "database")
         )
         lay.addWidget(_action_btn("CONFIGURE GEMINI API KEY", self._show_setup, "settings"))
+        lay.addWidget(_action_btn("ACTION CONFIRMATION TIERS", self._open_confirmation_tiers, "shield"))
         lay.addWidget(_action_btn("OPEN PLUGIN MANAGER", self._open_plugin_manager))
         lay.addWidget(_action_btn("CUSTOMIZE APPEARANCE & IDENTITY", self._open_customize))
         lay.addWidget(_action_btn("PAIR PHONE WEB DASHBOARD", self._open_remote))

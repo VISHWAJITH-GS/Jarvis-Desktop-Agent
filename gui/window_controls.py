@@ -832,6 +832,21 @@ class WindowControlsMixin:
         ov.raise_()
         self._plugin_manager_overlay = ov  # keep a reference so it isn't GC'd
 
+    def _open_confirmation_tiers(self):
+        cw = self.centralWidget()
+        ov = ConfirmationTiersOverlay(parent=cw)
+        ow = getattr(ConfirmationTiersOverlay, "_OW", 540)
+        oh = min(620, cw.height() - 16)
+        ov.setGeometry(
+            (cw.width() - ow) // 2,
+            (cw.height() - oh) // 2,
+            ow,
+            oh,
+        )
+        ov.show()
+        ov.raise_()
+        self._confirmation_tiers_overlay = ov  # keep reference
+
     def _open_plugin_settings(self):
         sections = self.get_plugin_settings() if self.get_plugin_settings else []
         cw = self.centralWidget()
