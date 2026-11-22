@@ -204,3 +204,62 @@ def test_confirmation_tiers_overlay():
     assert "LOW" in items_wp
     assert "MEDIUM" in items_wp
     assert "HIGH" in items_wp
+
+
+def test_ui_primitives_are_low_tier():
+    # Keyboard shortcuts like Ctrl+A, Ctrl+C, Ctrl+V
+    assert get_action_tier("computer_control", {"action": "hotkey", "keys": ["ctrl", "a"]}) == RiskTier.LOW
+    assert get_action_tier("computer_control", {"action": "hotkey", "keys": ["ctrl", "c"]}) == RiskTier.LOW
+    assert get_action_tier("computer_control", {"action": "hotkey", "keys": ["ctrl", "v"]}) == RiskTier.LOW
+    assert get_action_tier("computer_control", {"action": "click", "x": 100, "y": 200}) == RiskTier.LOW
+    assert get_action_tier("computer_control", {"action": "scroll", "clicks": -5}) == RiskTier.LOW
+    assert get_action_tier("windows_uia", {"action": "click", "name": "Copy"}) == RiskTier.LOW
+    assert get_action_tier("browser_control", {"action": "scroll_page"}) == RiskTier.LOW
+    assert get_action_tier("copy_page_text_to_clipboard") == RiskTier.LOW
+    assert get_action_tier("page_to_file", {"filename": "chat.txt"}) == RiskTier.LOW
+
+
+def test_file_creation_new_file_low_overwrite_medium(tmp_path):
+    # Non-existing file -> LOW
+    new_file = tmp_path / "brand_new_chat.txt"
+    assert get_action_tier("file_controller", {"action": "create_file", "path": str(new_file)}) == RiskTier.LOW
+    assert get_action_tier("file_controller", {"action": "write", "path": str(new_file)}) == RiskTier.LOW
+
+    # Existing file (overwrite) -> MEDIUM
+    existing_file = tmp_path / "existing.txt"
+    existing_file.write_text("prior content", encoding="utf-8")
+    assert get_action_tier("file_controller", {"action": "create_file", "path": str(existing_file)}) == RiskTier.MEDIUM
+    assert get_action_tier("file_controller", {"action": "create_file", "path": str(new_file), "overwrite": True}) == RiskTier.MEDIUM
+
+
+def test_task_approval_scope(tmp_path):
+    from core.task_approval import TaskApprovalStore
+
+    TaskApprovalStore.reset()
+    target_folder = tmp_path / "ChatLogs"
+    target_folder.mkdir(parents=True, exist_ok=True)
+
+    scope = TaskApprovalStore.create_scope(
+        goal="Copy ChatGPT conversation to Desktop",
+        allowed_tools={"takeover_desktop", "browser_control", "file_controller", "computer_control"},
+        allowed_folders=[target_folder],
+        step_cap=10,
+    )
+
+    # In-scope actions match and do not prompt
+    assert scope.matches_action("computer_control", {"action": "hotkey", "keys": ["ctrl", "c"]}) is True
+    assert scope.matches_action("file_controller", {"action": "create_file", "path": str(target_folder / "chat.txt")}) is True
+
+    # Destructive operations NEVER match scope (require explicit confirmation)
+    assert scope.matches_action("file_controller", {"action": "delete_file", "path": str(target_folder / "chat.txt")}) is False
+    assert scope.matches_action("make_payment", {"amount": 10}) is False
+
+    # Out of scope folder
+    outside_file = tmp_path / "Secret" / "other.txt"
+    assert scope.matches_action("file_controller", {"action": "create_file", "path": str(outside_file)}) is False
+
+    # Out of scope messaging
+    assert scope.matches_action("whatsapp_send", {"contact": "Bob", "text": "Hi"}) is False
+
+    TaskApprovalStore.reset()
+

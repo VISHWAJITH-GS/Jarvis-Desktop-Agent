@@ -1033,6 +1033,32 @@ class ActionExecutionGuard:
                 log_action_audit(name, clean_params, "authorized", res.status, res.verified, res.error)
                 return res
 
+        # 2.5. Check active Task Approval Scope (multi-step tasks approved by user)
+        from core.task_approval import TaskApprovalStore
+        active_scope = TaskApprovalStore.get_active_scope()
+        if active_scope and active_scope.matches_action(name, params, context=ctx):
+            TaskApprovalStore.record_step()
+            clean_params = {k: v for k, v in params.items() if k != "_execution_authorized"}
+            try:
+                raw = _call_handler_safe(handler, clean_params, ctx)
+                dur = (time.monotonic() - start_time) * 1000
+                res = outcome.normalize_result(raw, action_name=name, duration_ms=dur)
+                log_action_audit(name, clean_params, f"task_scope_{active_scope.scope_id}", res.status, res.verified, res.error)
+                return res
+            except Exception as e:
+                dur = (time.monotonic() - start_time) * 1000
+                res = outcome.ActionResult(
+                    status=outcome.STATUS_FAILED,
+                    action=name,
+                    success=False,
+                    verified=False,
+                    message=f"Action '{name}' failed in task scope: {e}",
+                    error=str(e),
+                    duration_ms=dur,
+                )
+                log_action_audit(name, clean_params, f"task_scope_{active_scope.scope_id}", res.status, res.verified, res.error)
+                return res
+
         # 3. Check Risk Level from Authoritative Risk Tiers
         from core.risk_tiers import RiskTier, get_action_tier
         risk_tier = get_action_tier(name, params, context=ctx)

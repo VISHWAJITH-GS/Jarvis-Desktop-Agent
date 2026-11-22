@@ -285,7 +285,7 @@ def _classify_default_tier(tool_name: str, params: Dict[str, Any]) -> RiskTier:
         if any(k in target for k in financial_keywords):
             return RiskTier.HIGH
 
-        if action in ("switch_tab", "new_tab", "back", "wait", "scroll", "navigate", "go_to", "open"):
+        if action in ("switch_tab", "new_tab", "close_tab", "back", "wait", "scroll", "scroll_page", "scroll_element", "navigate", "go_to", "open"):
             return RiskTier.LOW
 
         if action in ("type", "input", "smart_type", "fill_form", "press", "press_key", "click", "smart_click"):
@@ -327,13 +327,48 @@ def _classify_default_tier(tool_name: str, params: Dict[str, Any]) -> RiskTier:
         return RiskTier.MEDIUM
 
     # 9. Files & Folders
-    if tool in ("file_controller", "file_processor", "dev_agent"):
-        if action in ("create_file", "write", "create_folder", "edit_file", "rename", "copy", "move", "organize_desktop"):
+    if tool in ("file_controller", "file_processor", "dev_agent", "create_file", "write_file", "page_to_file", "copy_page_text_to_clipboard"):
+        if tool == "copy_page_text_to_clipboard" or action in ("copy_page_text_to_clipboard", "copy_to_clipboard"):
+            return RiskTier.LOW
+        if tool == "page_to_file" or action in ("page_to_file", "create_file", "write", "create_folder", "create", "write_file", "save_file"):
+            file_path_str = str(params.get("path") or params.get("filepath") or params.get("filename") or params.get("destination") or "")
+            folder_str = str(params.get("folder") or "")
+            is_overwrite = bool(params.get("overwrite", False))
+            if file_path_str:
+                try:
+                    from pathlib import Path
+                    p = Path(file_path_str).expanduser()
+                    if folder_str and not p.is_absolute():
+                        p = Path(folder_str).expanduser() / p
+                    if p.exists() or is_overwrite:
+                        return RiskTier.MEDIUM
+                    return RiskTier.LOW
+                except Exception:
+                    pass
+            if not is_overwrite:
+                return RiskTier.LOW
+            return RiskTier.MEDIUM
+        if action in ("edit_file", "rename", "move", "organize_desktop"):
             return RiskTier.MEDIUM
         if action in ("delete", "delete_file", "delete_folder", "remove", "empty_recycle_bin", "empty_trash"):
             return RiskTier.HIGH
         if action in ("download", "download_file"):
             return RiskTier.MEDIUM
+
+    # 9b. UI Primitives & Keyboard Shortcuts (Ctrl+A, Ctrl+C, Ctrl+V, clicking, scrolling, focus)
+    UI_PRIMITIVE_ACTIONS = {
+        "hotkey", "press", "press_key", "key", "key_combination", "shortcut",
+        "click", "double_click", "right_click", "middle_click", "mouse_down", "mouse_up",
+        "move", "mouse_move", "scroll", "scroll_page", "scroll_element",
+        "type", "write", "paste", "copy", "select_all", "drag", "wait", "sleep",
+        "screenshot", "get_cursor_pos", "find_elements", "open_file_explorer_item",
+        "type_text", "focus", "select", "inspect", "get_text", "read", "uia_open",
+    }
+    if tool in ("computer_control", "windows_uia", "click_element", "input_text", "scroll_page", "scroll_element", "press_key"):
+        if action in ("cmd", "shell", "run", "terminal", "execute", "run_command", "powershell", "execute_code", "execute_script"):
+            return RiskTier.HIGH
+        if action in UI_PRIMITIVE_ACTIONS or not action:
+            return RiskTier.LOW
 
     # 10. System Power / PC Control -> HIGH
     if action in (
