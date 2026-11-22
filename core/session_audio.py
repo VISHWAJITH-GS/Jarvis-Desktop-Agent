@@ -320,7 +320,16 @@ class LiveAudioMixin:
                                 continue
 
                             full_in = " ".join(in_buf).strip()
+                            in_buf = []
                             if full_in:
+                                from core.speech_filter import should_drop_transcript
+                                is_speaking = self._tail_active() or (
+                                    hasattr(self, "voice_state") and self.voice_state.is_speaking
+                                )
+                                drop, drop_reason = should_drop_transcript(full_in, is_speaking_or_tail=is_speaking)
+                                if drop:
+                                    continue
+
                                 self._last_out_logged = ""  # new exchange
                                 self.ui.write_log(f"You: {full_in}")
                                 self._session_log.append(f"User: {full_in}")

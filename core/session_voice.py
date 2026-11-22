@@ -570,8 +570,19 @@ class LiveVoiceMixin:
         # this object — it only ever sees what this callback returns.
         return (url, key, f"{url}/auto-login?key={key}", manual, getattr(self._dashboard, "_bind_error", "") or "")
 
+    def filter_incoming_transcript(self, text: str) -> tuple[bool, str]:
+        """Check whether incoming user speech transcript is an audio artifact or noise."""
+        from core.speech_filter import should_drop_transcript
+        is_speaking = self._tail_active() or (
+            hasattr(self, "voice_state") and self.voice_state.is_speaking
+        )
+        return should_drop_transcript(text, is_speaking_or_tail=is_speaking)
+
     def _on_text_command(self, text: str):
         if not self._loop or not self.session:
+            return
+        drop, _ = self.filter_incoming_transcript(text)
+        if drop:
             return
         # Respect sleep mode: a typed command must not be answered while asleep.
         is_sleeping = (

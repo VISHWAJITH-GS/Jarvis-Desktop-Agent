@@ -369,7 +369,7 @@ def _classify_default_tier(tool_name: str, params: Dict[str, Any]) -> RiskTier:
     if tool in ("computer_control", "windows_uia", "click_element", "input_text", "scroll_page", "scroll_element", "press_key"):
         if action in ("cmd", "shell", "run", "terminal", "execute", "run_command", "powershell", "execute_code", "execute_script"):
             return RiskTier.HIGH
-        if action in UI_PRIMITIVE_ACTIONS or not action:
+        if action in UI_PRIMITIVE_ACTIONS:
             return RiskTier.LOW
 
     # 10. System Power / PC Control -> HIGH

@@ -1234,6 +1234,18 @@ def requires_confirmation(action_name: str, parameters: dict | None = None, from
     )
 
     act = (action_name or "").lower().strip()
+    perm = ACTION_PERMISSIONS.get(act)
+    trust = get_trust_level()
+
+    # Under STRICT trust: SENSITIVE and DESTRUCTIVE always require confirmation when checked at tool level
+    if trust == TRUST_LEVEL_STRICT and not parameters:
+        if perm in (SENSITIVE, DESTRUCTIVE):
+            return True
+
+    # DESTRUCTIVE permissions always require confirmation even under TRUSTED
+    if perm == DESTRUCTIVE and not parameters:
+        return True
+
     risk = ActionPermissionManager.get_risk_level(act, parameters)
 
     untrusted_origin = _untrusted_context if from_untrusted is None else bool(from_untrusted)

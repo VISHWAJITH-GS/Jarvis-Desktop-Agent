@@ -241,7 +241,8 @@ class ToolDispatcher:
 
             # Automatic visual outcome verification for side-effect actions
             try:
-                from actions import visual_verifier
+                import importlib
+                visual_verifier = importlib.import_module("actions.visual_verifier")
                 if visual_verifier.should_auto_verify(name, args):
                     verif = await loop.run_in_executor(
                         None, lambda: visual_verifier.auto_verify_action(name, args, result, player=live.ui)

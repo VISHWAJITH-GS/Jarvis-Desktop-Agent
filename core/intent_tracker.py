@@ -15,7 +15,7 @@ import time
 from typing import Any, Dict, Optional, Tuple
 
 from core import undo
-from actions.verify_outcome import (
+from core.outcome import (
     VERDICT_VERIFIED,
     VERDICT_MISMATCH,
     VERDICT_MISINTERPRETED,

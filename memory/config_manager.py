@@ -1390,3 +1390,21 @@ def save_confirmation_tiers(tiers: dict) -> None:
         raise ValueError("confirmation_tiers must be a dictionary")
     _save_flag("confirmation_tiers", tiers)
 
+
+def get_stt_languages() -> list[str]:
+    """Return user-configured STT languages (default: ['en'])."""
+    raw = load_api_keys().get("stt_languages")
+    if isinstance(raw, list) and raw:
+        cleaned = [str(l).strip().lower() for l in raw if str(l).strip()]
+        if cleaned:
+            return cleaned
+    return ["en"]
+
+
+def save_stt_languages(languages: list[str]) -> None:
+    """Persist user-configured STT languages."""
+    if not isinstance(languages, list):
+        raise ValueError("stt_languages must be a list of language codes")
+    cleaned = [str(l).strip().lower() for l in languages if str(l).strip()]
+    _save_flag("stt_languages", cleaned or ["en"])
+

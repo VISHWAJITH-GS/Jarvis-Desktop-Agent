@@ -35,36 +35,75 @@ TIMEOUT_SECONDS = 60.0
 
 # ── Multilingual Confirmation & Cancellation Lexicons ─────────────────────────
 
-CONFIRM_WORDS = {
+CONFIRM_WORDS_BY_LANG: dict[str, set[str]] = {
     # English
-    "confirm", "confirmed", "yes", "yeah", "yep", "yup", "sure", "send", "send it",
-    "go ahead", "do it", "proceed", "approved", "approve", "okay", "ok", "please do",
-    "execute", "alright", "fine", "positive",
+    "en": {
+        "confirm", "confirmed", "yes", "yeah", "yep", "yup", "sure", "send", "send it",
+        "go ahead", "do it", "proceed", "approved", "approve", "okay", "ok", "please do",
+        "execute", "alright", "fine", "positive",
+    },
     # Spanish
-    "confirmar", "confirmado", "sí", "si", "adelante", "hazlo", "proceder", "enviar",
-    "claro", "dale", "de acuerdo",
+    "es": {
+        "confirmar", "confirmado", "sí", "si", "adelante", "hazlo", "proceder", "enviar",
+        "claro", "dale", "de acuerdo",
+    },
     # French
-    "confirmer", "confirmé", "oui", "ouais", "envoyer", "envoie", "vas-y", "allez-y",
-    "d'accord", "bien sur",
+    "fr": {
+        "confirmer", "confirmé", "oui", "ouais", "envoyer", "envoie", "vas-y", "allez-y",
+        "d'accord", "bien sur",
+    },
     # German
-    "bestätigen", "bestätigt", "ja", "senden", "schicken", "mach das", "mach es",
-    "weiter", "in ordnung",
+    "de": {
+        "bestätigen", "bestätigt", "ja", "senden", "schicken", "mach das", "mach es",
+        "weiter", "in ordnung",
+    },
     # Italian
-    "conferma", "confermato", "sì", "si", "invia", "procedi", "fallo", "va bene",
+    "it": {
+        "conferma", "confermato", "sì", "si", "invia", "procedi", "fallo", "va bene",
+    },
     # Portuguese
-    "confirmar", "confirmado", "sim", "enviar", "mande", "pode enviar", "prossiga",
-    "faz", "com certeza",
+    "pt": {
+        "confirmar", "confirmado", "sim", "enviar", "mande", "pode enviar", "prossiga",
+        "faz", "com certeza",
+    },
     # Russian
-    "подтверждаю", "подтвердить", "да", "отправь", "отправить", "давай", "вперед",
+    "ru": {
+        "подтверждаю", "подтвердить", "да", "отправь", "отправить", "давай", "вперед",
+    },
     # Hindi / Hinglish
-    "haan", "ha", "han", "bhejo", "bhej do", "sahi hai", "karo", "kar do", "theek hai",
+    "hi": {
+        "haan", "ha", "han", "bhejo", "bhej do", "sahi hai", "karo", "kar do", "theek hai",
+    },
     # Tamil
-    "aam", "sari", "anupu", "anupunga", "pannu",
+    "ta": {
+        "aam", "sari", "anupu", "anupunga", "pannu",
+    },
     # Chinese
-    "确认", "是的", "发送", "好", "行", "执行",
+    "zh": {
+        "确认", "是的", "发送", "好", "行", "执行",
+    },
     # Japanese
-    "確認", "はい", "送信", "送って", "やって", "お願い",
+    "ja": {
+        "確認", "はい", "送信", "送って", "やって", "お願い",
+    },
 }
+
+CONFIRM_WORDS: set[str] = set().union(*CONFIRM_WORDS_BY_LANG.values())
+
+def get_allowed_confirm_words(allowed_langs: Optional[list[str]] = None) -> set[str]:
+    """Return confirmation keywords filtered to configured languages (English is always included)."""
+    if allowed_langs is None:
+        try:
+            from memory import config_manager
+            allowed_langs = config_manager.get_stt_languages()
+        except Exception:
+            allowed_langs = ["en"]
+    words = set(CONFIRM_WORDS_BY_LANG.get("en", set()))
+    for l in (allowed_langs or ["en"]):
+        code = str(l).strip().lower().split("-")[0].split("_")[0]
+        if code in CONFIRM_WORDS_BY_LANG:
+            words.update(CONFIRM_WORDS_BY_LANG[code])
+    return words
 
 EXPLICIT_CONFIRM_TOKENS = {
     "confirm", "confirmed", "please confirm", "confirm it", "confirm please",
@@ -72,31 +111,70 @@ EXPLICIT_CONFIRM_TOKENS = {
     "conferma", "confermato", "確認", "确认", "подтверждаю", "подтвердить",
 }
 
-CANCEL_WORDS = {
+CANCEL_WORDS_BY_LANG: dict[str, set[str]] = {
     # English
-    "cancel", "cancelled", "no", "nope", "stop", "don't", "dont", "abort",
-    "never mind", "negative", "reject", "decline", "discard", "halt",
+    "en": {
+        "cancel", "cancelled", "no", "nope", "stop", "don't", "dont", "abort",
+        "never mind", "negative", "reject", "decline", "discard", "halt",
+    },
     # Spanish
-    "no", "cancelar", "cancela", "parar", "alto", "abortar",
+    "es": {
+        "no", "cancelar", "cancela", "parar", "alto", "abortar",
+    },
     # French
-    "non", "annuler", "annule", "stop", "arrêter",
+    "fr": {
+        "non", "annuler", "annule", "stop", "arrêter",
+    },
     # German
-    "nein", "abbrechen", "stopp", "halt", "nicht",
+    "de": {
+        "nein", "abbrechen", "stopp", "halt", "nicht",
+    },
     # Italian
-    "no", "annulla", "stop", "fermati",
+    "it": {
+        "no", "annulla", "stop", "fermati",
+    },
     # Portuguese
-    "não", "nao", "cancelar", "pare", "parar", "abortar",
+    "pt": {
+        "não", "nao", "cancelar", "pare", "parar", "abortar",
+    },
     # Russian
-    "нет", "отмена", "отменить", "стой", "стоп",
+    "ru": {
+        "нет", "отмена", "отменить", "стой", "стоп",
+    },
     # Hindi / Hinglish
-    "nahi", "mat bhejo", "ruko", "roko", "band karo",
+    "hi": {
+        "nahi", "mat bhejo", "ruko", "roko", "band karo",
+    },
     # Tamil
-    "vendam", "venaam", "nillu",
+    "ta": {
+        "vendam", "venaam", "nillu",
+    },
     # Chinese
-    "取消", "不", "不要", "停止",
+    "zh": {
+        "取消", "不", "不要", "停止",
+    },
     # Japanese
-    "キャンセル", "いいえ", "やめて", "止めて",
+    "ja": {
+        "キャンセル", "いいえ", "やめて", "止めて",
+    },
 }
+
+CANCEL_WORDS: set[str] = set().union(*CANCEL_WORDS_BY_LANG.values())
+
+def get_allowed_cancel_words(allowed_langs: Optional[list[str]] = None) -> set[str]:
+    """Return cancellation keywords filtered to configured languages (English is always included)."""
+    if allowed_langs is None:
+        try:
+            from memory import config_manager
+            allowed_langs = config_manager.get_stt_languages()
+        except Exception:
+            allowed_langs = ["en"]
+    words = set(CANCEL_WORDS_BY_LANG.get("en", set()))
+    for l in (allowed_langs or ["en"]):
+        code = str(l).strip().lower().split("-")[0].split("_")[0]
+        if code in CANCEL_WORDS_BY_LANG:
+            words.update(CANCEL_WORDS_BY_LANG[code])
+    return words
 
 
 def _normalize_text(text: str) -> str:
@@ -165,14 +243,16 @@ def is_explicit_confirm(utterance: str) -> bool:
     return False
 
 
-def matches_confirm(utterance: str) -> bool:
-    """True if utterance expresses confirmation in any supported language."""
+def matches_confirm(utterance: str, allowed_langs: Optional[list[str]] = None) -> bool:
+    """True if utterance expresses confirmation in any configured language."""
     norm = _normalize_text(utterance)
     if not norm:
         return False
     if _is_command_or_action_utterance(norm):
         return False
-    if norm in CONFIRM_WORDS:
+
+    active_confirm_words = get_allowed_confirm_words(allowed_langs)
+    if norm in active_confirm_words:
         return True
     # Multi-word phrase matching
     confirm_phrases = (
@@ -183,27 +263,30 @@ def matches_confirm(utterance: str) -> bool:
     )
     for phrase in confirm_phrases:
         if norm == phrase or norm.startswith(phrase + " ") or norm.endswith(" " + phrase):
-            return True
+            tokens = phrase.split()
+            if any(t in active_confirm_words for t in tokens):
+                return True
 
     words = norm.split()
     # A voice confirmation token is short (at most 4 words)
     if len(words) <= 4:
         first = words[0]
-        if first in ("yes", "yeah", "yep", "yup", "sure", "ok", "okay", "please", "haan", "ha", "si", "sí", "oui", "ja"):
+        if first in active_confirm_words or first in ("yes", "yeah", "yep", "yup", "sure", "ok", "okay"):
             safe_fillers = {"please", "jarvis", "that", "it", "ahead", "do", "now", "go", "proceed", "send", "confirm"}
-            if all(w in CONFIRM_WORDS or w in safe_fillers for w in words):
+            if all(w in active_confirm_words or w in safe_fillers for w in words):
                 return True
     return False
 
 
-def matches_cancel(utterance: str) -> bool:
-    """True if utterance expresses cancellation in any supported language."""
+def matches_cancel(utterance: str, allowed_langs: Optional[list[str]] = None) -> bool:
+    """True if utterance expresses cancellation in any configured language."""
     norm = _normalize_text(utterance)
     if not norm:
         return False
     if _is_command_or_action_utterance(norm):
         return False
-    if norm in CANCEL_WORDS:
+    active_cancel_words = get_allowed_cancel_words(allowed_langs)
+    if norm in active_cancel_words:
         return True
     cancel_phrases = (
         "never mind", "don't do it", "dont do it", "mat bhejo", "band karo",
