@@ -113,10 +113,84 @@ def is_sensitive_control(control_info: dict) -> bool:
     return False
 
 
+_API_KEY_PATTERNS = [
+    re.compile(r"sk-[a-zA-Z0-9_-]{20,}", re.IGNORECASE),
+    re.compile(r"ghp_[a-zA-Z0-9]{20,}", re.IGNORECASE),
+    re.compile(r"xoxb-[a-zA-Z0-9_-]{20,}", re.IGNORECASE),
+    re.compile(r"eyJ[a-zA-Z0-9_-]+\.eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+"),  # JWT
+    re.compile(r"bearer\s+[a-zA-Z0-9_.-]{20,}", re.IGNORECASE),
+]
+
+_PRIVACY_RISK_KEYWORDS = {
+    "1password", "bitwarden", "keepass", "keepassxc", "lastpass", "dashlane",
+    "enpass", "roboform", "credential manager", "password manager",
+    "chase", "wells fargo", "bank of america", "citi", "paypal", "capital one",
+    "barclays", "hsbc", "stripe checkout", "netbanking", "payment gateway",
+    "windows security", "lockapp", "logonui", "user account control",
+}
+
+
+def redact_secret_with_length(control_info: Optional[dict], text_value: str) -> tuple[str, bool, int]:
+    """
+    Sanitize text input and redact secrets with placeholder including length.
+    Returns:
+        (sanitized_text, is_secret, secret_length)
+    """
+    if not text_value:
+        return "", False, 0
+
+    # 1. Check if control is flagged sensitive
+    if control_info and is_sensitive_control(control_info):
+        return f"[SECRET:length={len(text_value)}]", True, len(text_value)
+
+    # 2. Check for token/key regex patterns
+    for pat in _API_KEY_PATTERNS:
+        if pat.search(text_value):
+            return f"[SECRET:length={len(text_value)}]", True, len(text_value)
+
+    # 3. Check for configured secrets
+    try:
+        from memory.config_manager import redact_secret
+        clean = redact_secret(text_value)
+        if clean != text_value:
+            return f"[SECRET:length={len(text_value)}]", True, len(text_value)
+    except Exception:
+        pass
+
+    return text_value, False, 0
+
+
+def is_privacy_risk_window(
+    title: str = "",
+    app_name: str = "",
+    process_name: str = "",
+    url: Optional[str] = None,
+) -> tuple[bool, str]:
+    """Check if the active window/app/url belongs to a sensitive domain (password manager, banking, lock screen)."""
+    combined = f"{title} {app_name} {process_name} {url or ''}".lower()
+
+    # 1. Lock screen / OS Security
+    for kw in ("windows security", "lockapp", "logonui", "user account control", "credential prompt"):
+        if kw in combined:
+            return True, "lock_screen"
+
+    # 2. Password managers
+    for kw in ("1password", "bitwarden", "keepass", "lastpass", "dashlane", "enpass", "roboform", "credential manager", "password manager"):
+        if kw in combined:
+            return True, "password_manager"
+
+    # 3. Banking & financial
+    for kw in ("chase", "wells fargo", "bank of america", "paypal", "capital one", "barclays", "hsbc", "netbanking", "checkout/pay"):
+        if re.search(rf"\b{re.escape(kw)}\b", combined):
+            return True, "banking"
+
+    return False, ""
+
+
 def sanitize_input_value(control_info: dict, text_value: str) -> str:
     """Mask or redact input value if control is sensitive."""
     if is_sensitive_control(control_info):
-        return "[REDACTED_SENSITIVE_CREDENTIAL]"
+        return SENSITIVE_INPUT_PLACEHOLDER
     from memory.config_manager import redact_secret
 
     return redact_secret(text_value)

@@ -691,6 +691,16 @@ class ConfirmationManager:
         """Park an action behind the confirmation gate."""
         parsed_tier = parse_tier(tier) or parse_tier(risk_level) or RiskTier.MEDIUM
 
+        # Learning mode safeguard: Keep Jarvis purely observant during learning (no execution, no confirmations)
+        try:
+            from core.skill_learning.learning_manager import LearningManager
+            lm = LearningManager.get_instance()
+            if lm and lm.is_learning_active():
+                _log(f"SYS: Suppressed confirmation for '{action}' because learning mode is active.")
+                return f"Learning mode is active. Jarvis is purely observant and will not execute '{action}' or request confirmations."
+        except Exception:
+            pass
+
         # Safeguard: status checks and read-only actions must never be parked for confirmation
         try:
             from core.permissions import ActionPermissionManager, ActionRiskLevel

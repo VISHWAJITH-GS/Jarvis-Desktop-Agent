@@ -36,7 +36,7 @@ class UIEvent:
     """Captured user action during demonstration."""
 
     timestamp: float
-    event_type: str  # click | double_click | type_text | hotkey | window_activate | browser_navigate | file_dialog | state_change
+    event_type: str  # click | double_click | type_text | hotkey | window_activate | navigation | tab_switch | file_dialog | clipboard | narration | state_change
     app_name: str
     window_title: str
     element_name: str = ""
@@ -45,17 +45,27 @@ class UIEvent:
     role: str = ""
     selector: dict = field(default_factory=dict)
     action: str = ""
-    input_value: str = ""  # NEVER passwords or credentials
+    input_value: str = ""  # NEVER plaintext passwords or credentials
     bounding_box: Optional[dict] = None
     before_state: Optional[dict] = None
     after_state: Optional[dict] = None
+    url: Optional[str] = None
+    shortcut: Optional[str] = None
+    char_count: Optional[int] = None
+    file_path: Optional[str] = None
+    filename: Optional[str] = None
+    is_secret: bool = False
+    secret_length: Optional[int] = None
 
     def to_dict(self) -> dict:
         return asdict(self)
 
     @classmethod
     def from_dict(cls, data: dict) -> UIEvent:
-        return cls(**data)
+        import dataclasses
+        valid_fields = {f.name for f in dataclasses.fields(cls)}
+        filtered = {k: v for k, v in data.items() if k in valid_fields}
+        return cls(**filtered)
 
 
 @dataclass
@@ -70,13 +80,18 @@ class UIState:
     focused_element: Optional[dict] = None
     is_browser: bool = False
     url: Optional[str] = None
+    is_privacy_risk: bool = False
+    privacy_risk_type: str = ""
 
     def to_dict(self) -> dict:
         return asdict(self)
 
     @classmethod
     def from_dict(cls, data: dict) -> UIState:
-        return cls(**data)
+        import dataclasses
+        valid_fields = {f.name for f in dataclasses.fields(cls)}
+        filtered = {k: v for k, v in data.items() if k in valid_fields}
+        return cls(**filtered)
 
 
 @dataclass

@@ -791,5 +791,12 @@ try:
         return mgr.open_tab(url)
 
     platform_hooks.register_hook("browser_navigate", _browser_nav)
+
+    def _get_active_tab():
+        mgr = get_browser_session_manager()
+        tab = mgr.get_active_tab()
+        return {"url": tab.url, "title": tab.title} if tab else None
+
+    platform_hooks.register_hook("get_active_browser_tab", _get_active_tab)
 except Exception:
     pass

@@ -292,6 +292,13 @@ class LiveAudioMixin:
                             if txt:
                                 in_buf.append(txt)
                                 self._record_activity()
+                                try:
+                                    from core.skill_learning.learning_manager import LearningManager
+                                    lm = LearningManager.get_instance()
+                                    if lm and lm.is_learning_active():
+                                        lm.record_narration(txt)
+                                except Exception:
+                                    pass
                                 if hasattr(self, "voice_state"):
                                     self.voice_state.start_processing()
                                 if hasattr(self, "ui") and self.ui:

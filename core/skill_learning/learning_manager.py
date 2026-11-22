@@ -91,12 +91,31 @@ class LearningManager:
             f"Learning mode started for: '{goal}'. "
             "Please perform the workflow on your desktop. Say 'Stop learning' when finished."
         )
+        if player and hasattr(player, "show_content"):
+            player.show_content(
+                "SKILL LEARNING ACTIVE",
+                f"Observing demonstration for: '{goal}'\n\n"
+                "• Jarvis is purely observant (no execution, no confirmations)\n"
+                "• Capturing clicks, shortcuts, typing, navigation, file dialogs\n"
+                "• Passwords & secrets are redacted\n"
+                "• Spoken narration is aligned as intent clues\n\n"
+                "Perform actions on screen. Say 'Stop learning' when finished."
+            )
         if player and hasattr(player, "write_log"):
             player.write_log(f"🔴 [LEARNING MODE] {msg}")
 
         print("[Learning] Session started.")
         logger.info("[Learning] Session started. (session_id=%s, goal=%s)", session_id, goal)
         return msg
+
+    def record_narration(self, text: str, timestamp: Optional[float] = None) -> Optional[UIEvent]:
+        """Record spoken user narration aligned by timestamp to demonstration events."""
+        if not self.is_learning_active():
+            return None
+        evt = self.observation_engine.recorder.record_narration(text, timestamp)
+        if evt and self.current_session:
+            self.current_session.events.append(evt)
+        return evt
 
     def pause_learning(self, player=None) -> str:
         """Temporarily pause event capture."""

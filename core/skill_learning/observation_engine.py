@@ -58,8 +58,8 @@ class ObservationEngine:
         """
         Clean and consolidate raw events:
         - Drops immediate duplicate window activations
-        - Merges sequential keystrokes on the same element
-        - Eliminates jitter
+        - Merges sequential keystrokes on the same element (unless secrets)
+        - Preserves semantic events (hotkeys, file dialogs, clipboard, narration, navigations)
         """
         if not raw_events:
             return []
@@ -77,39 +77,69 @@ class ObservationEngine:
                 if evt.window_title == last.window_title and evt.app_name == last.app_name:
                     continue
 
-            # Merge sequential text input into the same control
+            # Merge sequential text input into the same control (if not secret)
             if evt.event_type == "type_text" and last.event_type == "type_text":
-                if (
-                    evt.app_name == last.app_name
-                    and evt.element_name == last.element_name
-                    and evt.selector == last.selector
-                    and (evt.timestamp - last.timestamp) < 3.0
-                ):
-                    # Concatenate or replace typed input
-                    last.input_value = (
-                        evt.input_value
-                        if evt.input_value.startswith(last.input_value)
-                        else f"{last.input_value} {evt.input_value}".strip()
-                    )
-                    last.timestamp = evt.timestamp
-                    continue
+                if not evt.is_secret and not last.is_secret:
+                    if (
+                        evt.app_name == last.app_name
+                        and evt.element_name == last.element_name
+                        and evt.selector == last.selector
+                        and (evt.timestamp - last.timestamp) < 3.0
+                    ):
+                        last.input_value = (
+                            evt.input_value
+                            if evt.input_value.startswith(last.input_value)
+                            else f"{last.input_value} {evt.input_value}".strip()
+                        )
+                        last.timestamp = evt.timestamp
+                        continue
 
             consolidated.append(evt)
 
         return consolidated
 
     def format_trace_for_analysis(self, events: list[UIEvent]) -> str:
-        """Format event trace as clean readable YAML/markdown for Gemini interpretation."""
+        """Format event trace as clean readable semantic summary for Gemini interpretation."""
         lines = []
+        t0 = events[0].timestamp if events else 0.0
         for idx, e in enumerate(events, 1):
-            ts_str = f"+{e.timestamp - events[0].timestamp:.1f}s" if events else "0.0s"
-            desc = f"Step {idx} [{ts_str}]: Event='{e.event_type}' on App='{e.app_name}' (Window='{e.window_title}')"
-            if e.element_name:
-                desc += f" -> Element='{e.element_name}' [Type='{e.control_type}']"
-            if e.input_value:
-                desc += f" -> Typed='{e.input_value}'"
-            if e.selector:
-                desc += f" (Selector: {e.selector})"
+            ts_str = f"+{e.timestamp - t0:.1f}s" if events else "0.0s"
+            
+            if e.event_type == "narration":
+                desc = f"Step {idx} [{ts_str}]: User Narration (Intent Clue): \"{e.input_value}\""
+            elif e.event_type == "hotkey":
+                desc = f"Step {idx} [{ts_str}]: Keyboard Shortcut '{e.shortcut or e.input_value}' in App='{e.app_name}' (Window='{e.window_title}')"
+            elif e.event_type == "clipboard":
+                desc = f"Step {idx} [{ts_str}]: Clipboard {e.action.upper()} ({e.char_count or 0} chars) in App='{e.app_name}'"
+            elif e.event_type == "file_dialog":
+                desc = f"Step {idx} [{ts_str}]: File Dialog {e.action.upper()} -> Selected='{e.file_path}' (filename='{e.filename}') in App='{e.app_name}'"
+            elif e.event_type == "navigation":
+                desc = f"Step {idx} [{ts_str}]: Navigation {e.action} -> URL='{e.url or e.input_value}' in App='{e.app_name}'"
+            elif e.event_type in ("click", "double_click"):
+                role_label = e.role or e.control_type or "control"
+                desc = f"Step {idx} [{ts_str}]: Click on [{role_label}] '{e.element_name}' in App='{e.app_name}' (Window='{e.window_title}')"
+                if e.url:
+                    desc += f" (URL='{e.url}')"
+                if e.automation_id:
+                    desc += f" (AutomationID='{e.automation_id}')"
+                if e.selector:
+                    desc += f" (Selector={e.selector})"
+            elif e.event_type == "type_text":
+                role_label = e.role or e.control_type or "Edit"
+                desc = f"Step {idx} [{ts_str}]: Type text into [{role_label}] '{e.element_name}': '{e.input_value}' in App='{e.app_name}'"
+                if e.is_secret:
+                    desc += f" (SECRET PROTECTED, length={e.secret_length})"
+                if e.selector:
+                    desc += f" (Selector={e.selector})"
+            else:
+                desc = f"Step {idx} [{ts_str}]: Event='{e.event_type}' on App='{e.app_name}' (Window='{e.window_title}')"
+                if e.element_name:
+                    desc += f" -> Element='{e.element_name}'"
+                if e.input_value:
+                    desc += f" -> Input='{e.input_value}'"
+                if e.selector:
+                    desc += f" (Selector: {e.selector})"
+
             lines.append(desc)
         return "\n".join(lines)
 

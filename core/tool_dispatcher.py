@@ -45,6 +45,25 @@ class ToolDispatcher:
         if live.ui:
             live.ui.set_state("THINKING")
 
+        # Safeguard: Keep Jarvis purely observant during learning (no execution, no confirmations)
+        if name != "skill_learner":
+            try:
+                from core.skill_learning.learning_manager import LearningManager
+                lm = LearningManager.get_instance()
+                if lm and lm.is_learning_active():
+                    return types.FunctionResponse(
+                        id=fc.id,
+                        name=name,
+                        response={
+                            "result": (
+                                f"Learning mode is active. Jarvis is purely observant and observing your demonstration. "
+                                f"Action '{name}' will not be executed until learning is stopped."
+                            )
+                        },
+                    )
+            except Exception:
+                pass
+
         if name == "save_memory":
             category = args.get("category", "notes")
             key = args.get("key", "")

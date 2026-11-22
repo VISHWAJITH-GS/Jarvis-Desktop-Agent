@@ -16,9 +16,37 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from core.skill_learning.models import UIState
-from core.skill_learning.skill_security import is_sensitive_control
+from core.skill_learning.skill_security import is_privacy_risk_window, is_sensitive_control
 
 _IS_WINDOWS = platform.system() == "Windows"
+
+_ROLE_MAP = {
+    "button": "button",
+    "pushbutton": "button",
+    "tabitem": "tab",
+    "tab": "tab",
+    "hyperlink": "link",
+    "link": "link",
+    "menuitem": "menu_item",
+    "menu": "menu_item",
+    "edit": "edit",
+    "textbox": "edit",
+    "checkbox": "checkbox",
+    "radiobutton": "radio_button",
+    "combobox": "combobox",
+    "listitem": "list_item",
+    "treeitem": "tree_item",
+}
+
+
+def normalize_semantic_role(control_type: str, class_name: str = "") -> str:
+    """Normalize raw UIA control type or class name to standard semantic role."""
+    ct = str(control_type or "").strip().lower()
+    cn = str(class_name or "").strip().lower()
+    for key, role in _ROLE_MAP.items():
+        if key in ct or key in cn:
+            return role
+    return ct or "control"
 
 
 def get_current_ui_state(max_elements: int = 25) -> UIState:
@@ -51,6 +79,22 @@ def get_current_ui_state(max_elements: int = 25) -> UIState:
             # Detect if browser
             if any(b in p_lower for b in ("chrome", "msedge", "edge", "firefox", "brave", "opera")):
                 state.is_browser = True
+                try:
+                    tab_info = platform_hooks.call_hook("get_active_browser_tab", default=None)
+                    if tab_info and isinstance(tab_info, dict) and tab_info.get("url"):
+                        state.url = tab_info["url"]
+                except Exception:
+                    pass
+
+            # Privacy risk assessment
+            is_risk, risk_type = is_privacy_risk_window(
+                title=state.window_title,
+                app_name=state.app_name,
+                process_name=state.process_name,
+                url=state.url,
+            )
+            state.is_privacy_risk = is_risk
+            state.privacy_risk_type = risk_type
 
         # Inspect actionable controls
         ins = platform_hooks.call_hook(
@@ -61,10 +105,12 @@ def get_current_ui_state(max_elements: int = 25) -> UIState:
             for e in ins.get("elements", []):
                 # Flag sensitive controls
                 is_sens = is_sensitive_control(e)
+                role = normalize_semantic_role(e.get("control_type", ""), e.get("class_name", ""))
                 clean_elems.append(
                     {
                         "name": "[PROTECTED]" if is_sens else e.get("name", ""),
                         "control_type": e.get("control_type", ""),
+                        "role": role,
                         "automation_id": e.get("automation_id", ""),
                         "class_name": e.get("class_name", ""),
                         "bounding_rectangle": e.get("bounding_rectangle"),
@@ -93,6 +139,7 @@ def capture_element_at_point(x: int, y: int) -> Optional[dict]:
             if is_sens:
                 info["name"] = "[PROTECTED_PASSWORD_FIELD]"
                 info["is_sensitive"] = True
+            info["role"] = normalize_semantic_role(info.get("control_type", ""), info.get("class_name", ""))
             return info
     except Exception as e:
         print(f"[UIStateCapture] Point inspect error ({x}, {y}): {e}")
