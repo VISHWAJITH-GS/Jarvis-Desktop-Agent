@@ -138,11 +138,51 @@ def skill_learner(
                 "application": s.application,
                 "steps": len(s.steps),
                 "permissions": s.permissions,
+                "usage_count": s.usage_count,
+                "success_rate": s.success_rate,
+                "risk_tier": s.risk_tier,
+                "needs_relearning": s.needs_relearning,
             }
             for s in skills
         ]
         msg = f"Found {len(skills)} learned skills in library."
         return outcome.done("skill_learner", message=msg, data={"skills": summaries})
+
+    elif act in ("show_skill", "view_skill", "get_skill"):
+        target_id = skill_id or p.get("name") or goal or ""
+        if not target_id:
+            return outcome.failed("skill_learner", "skill_id or name is required to view a skill.")
+        info = manager.show_skill(target_id)
+        if not info:
+            return outcome.failed("skill_learner", f"Skill '{target_id}' not found.")
+        return outcome.done("skill_learner", message=f"Skill '{info.get('name')}' ({info.get('id')}): {info.get('description')}", data=info)
+
+    elif act in ("rename_skill", "rename"):
+        target_id = skill_id or p.get("old_name") or goal or ""
+        new_name = p.get("new_name") or p.get("name") or ""
+        if not target_id or not new_name:
+            return outcome.failed("skill_learner", "Both skill_id and new_name are required to rename a skill.")
+        return manager.rename_skill(target_id, new_name)
+
+    elif act in ("edit_skill", "edit"):
+        target_id = skill_id or p.get("name") or ""
+        field_name = p.get("field") or p.get("param") or ""
+        value = p.get("value")
+        if not target_id or not field_name:
+            return outcome.failed("skill_learner", "skill_id, field, and value are required to edit a skill.")
+        return manager.edit_skill(target_id, field_name, value)
+
+    elif act in ("disable_skill", "disable"):
+        target_id = skill_id or p.get("name") or goal or ""
+        if not target_id:
+            return outcome.failed("skill_learner", "skill_id or name is required to disable a skill.")
+        return manager.disable_skill(target_id)
+
+    elif act in ("restore_skill", "restore"):
+        target_id = skill_id or p.get("name") or goal or ""
+        if not target_id:
+            return outcome.failed("skill_learner", "skill_id or name is required to restore a skill.")
+        return manager.restore_skill(target_id)
 
     elif act in ("execute_skill", "run_skill", "execute", "run"):
         target_id = skill_id or p.get("goal")
@@ -188,9 +228,10 @@ TOOL = {
         "manage user approval gates, and autonomously execute learned skills. "
         "Actions: start_learning, pause_learning, resume_learning, stop_learning, "
         "cancel_learning, review_demonstration, generate_skill, test_skill, approve_skill, "
-        "list_skills, execute_skill, delete_skill."
+        "list_skills, show_skill, rename_skill, edit_skill, disable_skill, restore_skill, "
+        "execute_skill, delete_skill."
     ),
-    "brief": "Demonstration-based skill learning, testing, approval, and execution.",
+    "brief": "Demonstration-based skill learning, testing, approval, lifecycle, and execution.",
     "parameters": {
         "type": "OBJECT",
         "properties": {
@@ -199,7 +240,8 @@ TOOL = {
                 "description": (
                     "Exact action: start_learning | pause_learning | resume_learning | "
                     "stop_learning | cancel_learning | review_demonstration | generate_skill | "
-                    "learn_from_description | test_skill | approve_skill | list_skills | execute_skill | delete_skill"
+                    "learn_from_description | test_skill | approve_skill | list_skills | show_skill | "
+                    "rename_skill | edit_skill | disable_skill | restore_skill | execute_skill | delete_skill"
                 ),
             },
             "goal": {
@@ -212,7 +254,22 @@ TOOL = {
             },
             "skill_id": {
                 "type": "STRING",
-                "description": "The unique ID of the skill to test, approve, execute, or delete.",
+                "description": "The unique ID or name of the skill to inspect, test, approve, execute, rename, edit, disable, restore, or delete.",
+            },
+            "name": {
+                "type": "STRING",
+                "description": "Skill name or target identifier.",
+            },
+            "new_name": {
+                "type": "STRING",
+                "description": "New skill name when renaming.",
+            },
+            "field": {
+                "type": "STRING",
+                "description": "Field name when editing a skill (description, application, category, risk_tier).",
+            },
+            "value": {
+                "description": "New value when editing a skill field.",
             },
             "parameters": {
                 "type": "OBJECT",

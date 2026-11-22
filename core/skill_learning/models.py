@@ -189,21 +189,39 @@ class SkillDefinition:
     last_validated_at: Optional[str] = None
     last_used_at: Optional[str] = None
     author: str = "user_demonstration"
+    source: str = "demonstration"  # demonstration | description | manual
+    risk_tier: str = "LOW"  # LOW | MEDIUM | HIGH
+    usage_count: int = 0
+    success_count: int = 0
+    failure_count: int = 0
+    failure_history: list[dict] = field(default_factory=list)
+    consecutive_failures: int = 0
+    needs_relearning: bool = False
+
+    @property
+    def success_rate(self) -> float:
+        if self.usage_count <= 0:
+            return 1.0
+        return round(self.success_count / self.usage_count, 2)
 
     def to_dict(self) -> dict:
         d = asdict(self)
         d["parameters"] = [p.to_dict() for p in self.parameters]
         d["steps"] = [s.to_dict() for s in self.steps]
+        d["success_rate"] = self.success_rate
         return d
 
     @classmethod
     def from_dict(cls, data: dict) -> SkillDefinition:
         d = dict(data)
+        d.pop("success_rate", None)
         if d.get("parameters"):
             d["parameters"] = [ParameterDefinition.from_dict(p) if isinstance(p, dict) else p for p in d["parameters"]]
         if d.get("steps"):
             d["steps"] = [StepDefinition.from_dict(s) if isinstance(s, dict) else s for s in d["steps"]]
-        return cls(**d)
+        import dataclasses
+        valid = {f.name for f in dataclasses.fields(cls)}
+        return cls(**{k: v for k, v in d.items() if k in valid})
 
 
 @dataclass

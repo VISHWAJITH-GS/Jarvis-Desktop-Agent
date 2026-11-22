@@ -367,6 +367,125 @@ def backup_skill(skill_id: str) -> Optional[Path]:
     return backup_path
 
 
+def find_near_duplicate(skill: SkillDefinition, threshold: float = 0.75) -> Optional[SkillDefinition]:
+    """Find an existing near-duplicate skill based on same application and name/intent similarity."""
+    import difflib
+    existing_skills = list_skills()
+    name_clean = skill.name.strip().lower()
+    app_clean = (skill.application or "").strip().lower()
+
+    for existing in existing_skills:
+        if existing.id == skill.id:
+            continue
+        ex_app = (existing.application or "").strip().lower()
+        # If applications are specified and differ, skip
+        if app_clean and ex_app and app_clean != ex_app:
+            continue
+
+        ex_name = existing.name.strip().lower()
+        # 1. Direct name similarity
+        ratio = difflib.SequenceMatcher(None, name_clean, ex_name).ratio()
+        if ratio >= threshold:
+            return existing
+
+        # 2. Intent examples similarity
+        for my_intent in skill.intent_examples:
+            for ex_intent in existing.intent_examples:
+                intent_ratio = difflib.SequenceMatcher(None, my_intent.strip().lower(), ex_intent.strip().lower()).ratio()
+                if intent_ratio >= threshold:
+                    return existing
+
+    return None
+
+
+def restore_skill(skill_id_or_name: str) -> Optional[SkillDefinition]:
+    """Restore a disabled skill or resurrect a deleted skill from backups."""
+    _ensure_directories()
+    # 1. Search existing loaded skills
+    target = load_skill(skill_id_or_name)
+    if not target:
+        for s in list_skills():
+            if s.id.lower() == skill_id_or_name.lower() or s.name.lower() == skill_id_or_name.lower():
+                target = s
+                break
+
+    if target:
+        target.status = SkillStatus.APPROVED.value
+        save_skill(target)
+        return target
+
+    # 2. Look in backups
+    backups_dir = SKILLS_DIR / ".backups"
+    if backups_dir.exists():
+        matching_dirs = [d for d in backups_dir.iterdir() if d.is_dir() and (d.name.lower() == skill_id_or_name.lower() or skill_id_or_name.lower() in d.name.lower())]
+        for b_dir in matching_dirs:
+            backup_files = sorted(b_dir.glob("*.json"), key=lambda f: f.stat().st_mtime, reverse=True)
+            if backup_files:
+                try:
+                    data = json.loads(backup_files[0].read_text(encoding="utf-8"))
+                    restored = SkillDefinition.from_dict(data)
+                    restored.status = SkillStatus.APPROVED.value
+                    save_skill(restored)
+                    return restored
+                except Exception as e:
+                    print(f"[SkillStorage] Error restoring backup from {backup_files[0]}: {e}")
+
+    return None
+
+
+def rename_skill(skill_id_or_name: str, new_name: str) -> Optional[SkillDefinition]:
+    """Rename an existing skill in storage."""
+    target = load_skill(skill_id_or_name)
+    if not target:
+        for s in list_skills():
+            if s.id.lower() == skill_id_or_name.lower() or s.name.lower() == skill_id_or_name.lower():
+                target = s
+                break
+    if not target:
+        return None
+
+    target.name = new_name.strip()
+    save_skill(target)
+    return target
+
+
+def edit_skill(skill_id_or_name: str, param: str, value: Any) -> Optional[SkillDefinition]:
+    """Edit a parameter, description, or field of an existing skill in storage."""
+    target = load_skill(skill_id_or_name)
+    if not target:
+        for s in list_skills():
+            if s.id.lower() == skill_id_or_name.lower() or s.name.lower() == skill_id_or_name.lower():
+                target = s
+                break
+    if not target:
+        return None
+
+    p_clean = param.strip().lower()
+    if p_clean in ("description", "desc"):
+        target.description = str(value)
+    elif p_clean in ("application", "app"):
+        target.application = str(value)
+    elif p_clean in ("category", "cat"):
+        target.category = str(value)
+    elif p_clean in ("risk_tier", "tier"):
+        target.risk_tier = str(value).upper()
+    elif p_clean in ("version", "ver"):
+        target.version = str(value)
+    elif p_clean in ("permissions", "permission"):
+        target.permissions = str(value)
+    elif p_clean in ("status",):
+        target.status = str(value).lower()
+    else:
+        # Check if updating a skill parameter default or example
+        for p in target.parameters:
+            if p.name.lower() == p_clean:
+                p.default = value
+                break
+
+    save_skill(target)
+    return target
+
+
 class SkillStorage:
     """Object-oriented wrapper around functional skill storage APIs."""
 
@@ -376,3 +495,7 @@ class SkillStorage:
     delete_skill = staticmethod(delete_skill)
     update_skill_status = staticmethod(update_skill_status)
     backup_skill = staticmethod(backup_skill)
+    find_near_duplicate = staticmethod(find_near_duplicate)
+    restore_skill = staticmethod(restore_skill)
+    rename_skill = staticmethod(rename_skill)
+    edit_skill = staticmethod(edit_skill)

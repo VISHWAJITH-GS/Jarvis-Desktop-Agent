@@ -16,24 +16,29 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 def test_lazy_action_discovery_imports_no_action_modules():
     """Verify that discovering actions does not eagerly import action modules."""
-    # Discover actions
-    actions_dir = REPO_ROOT / "actions"
-    registry = discover_actions(actions_dir, logger=lambda _: None)
-
-    # Actions discovered
-    decls = registry.get_tool_declarations()
-    assert len(decls) >= 49
-
-    # Verify that heavy action modules like computer_control, screen_processor,
-    # browser_control are NOT loaded into sys.modules
-    for mod_name in [
+    check_mods = [
         "actions.computer_control",
         "actions.screen_processor",
         "actions.screen_analysis",
         "actions.browser_control",
         "actions.desktop",
-    ]:
-        assert mod_name not in sys.modules, f"{mod_name} was eagerly imported at discovery!"
+    ]
+    saved = {m: sys.modules.pop(m) for m in check_mods if m in sys.modules}
+    try:
+        # Discover actions
+        actions_dir = REPO_ROOT / "actions"
+        registry = discover_actions(actions_dir, logger=lambda _: None)
+
+        # Actions discovered
+        decls = registry.get_tool_declarations()
+        assert len(decls) >= 49
+
+        # Verify that heavy action modules like computer_control, screen_processor,
+        # browser_control are NOT loaded into sys.modules
+        for mod_name in check_mods:
+            assert mod_name not in sys.modules, f"{mod_name} was eagerly imported at discovery!"
+    finally:
+        sys.modules.update(saved)
 
 
 def test_lazy_action_declarations_complete_and_valid():

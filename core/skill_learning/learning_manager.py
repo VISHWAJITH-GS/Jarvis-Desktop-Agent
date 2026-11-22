@@ -12,12 +12,14 @@ Orchestrates the entire learning-by-demonstration loop:
 
 from __future__ import annotations
 
+from datetime import datetime
 import logging
 import time
-import uuid
 from typing import Any, Dict, List, Optional
+import uuid
 
 from core.outcome import ActionResult, result_done, result_failed
+from core.skill_learning.cooldown_queue import CooldownQueue, is_quota_error
 from core.skill_learning.models import LearningSession, SkillDefinition, SkillStatus
 from core.skill_learning.observation_engine import ObservationEngine
 from core.skill_learning.skill_executor import SkillExecutor
@@ -25,7 +27,11 @@ from core.skill_learning.skill_generator import SkillGenerator
 from core.skill_learning.skill_registry import get_default_skill_registry
 from core.skill_learning.skill_storage import (
     delete_skill as storage_delete_skill,
+    edit_skill as storage_edit_skill,
+    find_near_duplicate,
     load_skill,
+    rename_skill as storage_rename_skill,
+    restore_skill as storage_restore_skill,
     save_skill,
     update_skill_status,
 )
@@ -223,11 +229,26 @@ class LearningManager:
         if not self.current_session.events:
             return {"success": False, "message": "No events were recorded during the demonstration."}
 
+        cooldown = CooldownQueue.get_instance()
+        if cooldown.is_in_cooldown():
+            cooldown.enqueue("generate_skill", {"session_id": self.current_session.session_id})
+            msg = cooldown.notify_user_cooldown(player=player)
+            return {"success": False, "queued": True, "cooldown_seconds": cooldown.get_remaining_cooldown(), "message": msg}
+
         if player and hasattr(player, "write_log"):
             player.write_log("⚙ Analyzing demonstration trace with Gemini AI...")
 
         try:
             skill = self.generator.generate_from_session(self.current_session)
+            skill.source = "demonstration"
+
+            # Check for near-duplicates
+            near_dup = find_near_duplicate(skill)
+            dup_info = None
+            if near_dup:
+                dup_info = {"duplicate_detected": True, "duplicate_of": near_dup.id, "existing_name": near_dup.name}
+                logger.info("Near-duplicate skill detected: '%s' matches existing '%s'", skill.name, near_dup.name)
+
             # Validate schema and tools with single repair attempt
             skill, val_report = self.validator.validate_and_repair(skill)
             self.current_session.validation_report = val_report
@@ -254,10 +275,13 @@ class LearningManager:
                 f"Generated draft skill '{skill.name}' (ID: {skill.id}) with {len(skill.steps)} steps. "
                 "Skill is ready for testing and approval."
             )
+            if dup_info:
+                msg += f" (Note: similar to existing skill '{dup_info['existing_name']}')"
+
             if player and hasattr(player, "write_log"):
                 player.write_log(f"✔ {msg}")
 
-            return {
+            res_dict = {
                 "success": True,
                 "skill_id": skill.id,
                 "name": skill.name,
@@ -267,17 +291,40 @@ class LearningManager:
                 "validation": val_report,
                 "message": msg,
             }
+            if dup_info:
+                res_dict["duplicate_info"] = dup_info
+            return res_dict
         except Exception as e:
+            if is_quota_error(e):
+                cooldown.set_cooldown(60.0)
+                cooldown.enqueue("generate_skill", {"session_id": self.current_session.session_id if self.current_session else ""})
+                msg = cooldown.notify_user_cooldown(player=player)
+                return {"success": False, "queued": True, "cooldown_seconds": 60.0, "message": msg}
             logger.exception("Error generating skill from demonstration")
             return {"success": False, "message": f"Failed to generate skill: {e}"}
 
     def learn_from_description(self, name: str, description: str, player=None) -> dict:
         """Create a validated SkillDefinition directly from natural language description without demonstration."""
+        cooldown = CooldownQueue.get_instance()
+        if cooldown.is_in_cooldown():
+            cooldown.enqueue("learn_from_description", {"name": name, "description": description})
+            msg = cooldown.notify_user_cooldown(player=player)
+            return {"success": False, "queued": True, "cooldown_seconds": cooldown.get_remaining_cooldown(), "message": msg}
+
         if player and hasattr(player, "write_log"):
             player.write_log(f"⚙ Learning skill '{name}' from description...")
 
         try:
             skill = self.generator.generate_from_description(goal=name, description=description)
+            skill.source = "description"
+
+            # Check for near-duplicates
+            near_dup = find_near_duplicate(skill)
+            dup_info = None
+            if near_dup:
+                dup_info = {"duplicate_detected": True, "duplicate_of": near_dup.id, "existing_name": near_dup.name}
+                logger.info("Near-duplicate skill detected: '%s' matches existing '%s'", skill.name, near_dup.name)
+
             skill, val_report = self.validator.validate_and_repair(skill)
             if not val_report["valid"]:
                 return {
@@ -293,6 +340,9 @@ class LearningManager:
                 f"Generated skill '{skill.name}' (ID: {skill.id}) with {len(skill.steps)} steps from description. "
                 "Validation completed."
             )
+            if dup_info:
+                msg += f" (Note: similar to existing skill '{dup_info['existing_name']}')"
+
             if player and hasattr(player, "show_content"):
                 player.show_content(
                     "SKILL CREATED FROM DESCRIPTION",
@@ -301,7 +351,7 @@ class LearningManager:
             if player and hasattr(player, "write_log"):
                 player.write_log(f"✔ {msg}")
 
-            return {
+            res_dict = {
                 "success": True,
                 "skill_id": skill.id,
                 "name": skill.name,
@@ -311,7 +361,15 @@ class LearningManager:
                 "validation": val_report,
                 "message": msg,
             }
+            if dup_info:
+                res_dict["duplicate_info"] = dup_info
+            return res_dict
         except Exception as e:
+            if is_quota_error(e):
+                cooldown.set_cooldown(60.0)
+                cooldown.enqueue("learn_from_description", {"name": name, "description": description})
+                msg = cooldown.notify_user_cooldown(player=player)
+                return {"success": False, "queued": True, "cooldown_seconds": 60.0, "message": msg}
             logger.error("Error generating skill from description: %s", e, exc_info=True)
             return {"success": False, "message": f"Failed to generate skill from description: {e}"}
 
@@ -369,6 +427,53 @@ class LearningManager:
             data={"skill_id": skill.id, "status": skill.status},
         )
 
+    def show_skill(self, skill_id_or_name: str) -> Optional[dict]:
+        """Inspect and return detailed representation of a skill."""
+        skill = self.registry.get_skill(skill_id_or_name)
+        if not skill:
+            skill = load_skill(skill_id_or_name)
+        if not skill:
+            matched, _, _ = self.registry.find_matching_skill(skill_id_or_name, threshold=0.3)
+            if matched:
+                skill = matched
+        if not skill:
+            return None
+        return skill.to_dict()
+
+    def rename_skill(self, skill_id_or_name: str, new_name: str) -> ActionResult:
+        """Rename an existing skill."""
+        updated = storage_rename_skill(skill_id_or_name, new_name)
+        if updated:
+            self.registry.save_and_register(updated)
+            return result_done(action=f"rename_skill:{updated.id}", message=f"Skill '{updated.id}' renamed to '{new_name}'.", data=updated.to_dict())
+        return result_failed(action=f"rename_skill:{skill_id_or_name}", message=f"Skill '{skill_id_or_name}' not found.")
+
+    def edit_skill(self, skill_id_or_name: str, field_name: str, new_value: Any) -> ActionResult:
+        """Edit a parameter, description, or property of an existing skill."""
+        updated = storage_edit_skill(skill_id_or_name, field_name, new_value)
+        if updated:
+            self.registry.save_and_register(updated)
+            return result_done(action=f"edit_skill:{updated.id}", message=f"Skill '{updated.id}' updated {field_name}={new_value}.", data=updated.to_dict())
+        return result_failed(action=f"edit_skill:{skill_id_or_name}", message=f"Skill '{skill_id_or_name}' not found.")
+
+    def disable_skill(self, skill_id_or_name: str) -> ActionResult:
+        """Disable a skill from autonomous usage."""
+        skill = self.registry.get_skill(skill_id_or_name) or load_skill(skill_id_or_name)
+        if not skill:
+            return result_failed(action=f"disable_skill:{skill_id_or_name}", message=f"Skill '{skill_id_or_name}' not found.")
+        skill.status = SkillStatus.DISABLED.value
+        save_skill(skill)
+        self.registry.save_and_register(skill)
+        return result_done(action=f"disable_skill:{skill.id}", message=f"Skill '{skill.name}' ({skill.id}) is now disabled.", data={"status": skill.status})
+
+    def restore_skill(self, skill_id_or_name: str) -> ActionResult:
+        """Restore a disabled or deleted skill."""
+        restored = storage_restore_skill(skill_id_or_name)
+        if restored:
+            self.registry.save_and_register(restored)
+            return result_done(action=f"restore_skill:{restored.id}", message=f"Skill '{restored.name}' ({restored.id}) restored and approved.", data=restored.to_dict())
+        return result_failed(action=f"restore_skill:{skill_id_or_name}", message=f"Skill '{skill_id_or_name}' could not be restored.")
+
     def delete_skill(self, skill_id: str) -> ActionResult:
         """Permanently remove a learned skill."""
         success = self.registry.remove_skill(skill_id)
@@ -407,7 +512,19 @@ class LearningManager:
         if not skill:
             return result_failed(action=f"execute_skill:{skill_id}", message=f"Skill '{skill_id}' not found.")
 
-        return self.executor.execute(
+        # Self-improvement: check if skill failed 3 consecutive times
+        if skill.needs_relearning and not (parameters or {}).get("force") and not (parameters or {}).get("__user_confirmed__"):
+            msg = f"Skill '{skill.name}' has failed {skill.consecutive_failures} consecutive times and needs re-learning. Would you like me to re-learn it?"
+            if player and hasattr(player, "write_log"):
+                player.write_log(f"⚠️ {msg}")
+            return result_failed(
+                action=f"execute_skill:{skill.id}",
+                message=msg,
+                error="NeedsRelearning",
+                data={"skill_id": skill.id, "needs_relearning": True, "consecutive_failures": skill.consecutive_failures},
+            )
+
+        res = self.executor.execute(
             skill=skill,
             parameters=parameters,
             player=player,
@@ -415,6 +532,32 @@ class LearningManager:
             allow_unapproved=True,
             utterance=utterance,
         )
+
+        # Update execution history and stats
+        if res.is_success():
+            skill.usage_count += 1
+            skill.success_count += 1
+            skill.consecutive_failures = 0
+            skill.needs_relearning = False
+        else:
+            skill.usage_count += 1
+            skill.failure_count += 1
+            skill.consecutive_failures += 1
+            if skill.consecutive_failures >= 3:
+                skill.needs_relearning = True
+            step_fail = res.data.get("failed_step") if isinstance(res.data, dict) else None
+            skill.failure_history.append({
+                "timestamp": datetime.now().isoformat(),
+                "error": str(res.message or res.error or "Execution error"),
+                "step": step_fail,
+            })
+            skill.failure_history = skill.failure_history[-10:]
+
+        skill.last_used_at = datetime.now().isoformat()
+        save_skill(skill)
+        self.registry.save_and_register(skill)
+
+        return res
 
 
 def get_default_learning_manager(action_registry=None) -> LearningManager:
