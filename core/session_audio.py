@@ -334,6 +334,20 @@ class LiveAudioMixin:
                                     )
                                     if intercepted is not None:
                                         print(f"[Confirm] Voice confirmation handled directly: {full_in}")
+                                        if self.session:
+                                            res_text = getattr(intercepted, "message", None) or (
+                                                intercepted.to_speech_text()
+                                                if hasattr(intercepted, "to_speech_text")
+                                                else str(intercepted)
+                                            )
+                                            feedback_text = (
+                                                f"[ACTION_RESULT] User voice confirmation executed '{getattr(intercepted, 'action', '')}'. "
+                                                f"Result: {res_text}. Report this status truthfully; do NOT re-call '{getattr(intercepted, 'action', '')}'."
+                                            )
+                                            await self.session.send_client_content(
+                                                turns={"role": "user", "parts": [{"text": feedback_text}]},
+                                                turn_complete=True,
+                                            )
                                 except Exception as c_err:
                                     print(f"[Confirm] Voice check error: {c_err}")
 

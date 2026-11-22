@@ -227,6 +227,21 @@ class ActionPermissionManager:
         if cls.is_drive_format_attempt(act, params):
             return ActionRiskLevel.FORBIDDEN
 
+        # Status/read/list/check calls NEVER require confirmation
+        READ_STATUS_LIST_ACTIONS = (
+            "read", "status", "list", "get_status", "check", "inspect", "observe",
+            "get_elements", "get_text", "read_chat", "read_latest", "summarize",
+            "list_tasks", "list_monitors", "list_routines", "list_networks",
+            "list_devices", "list_apps", "list_running_apps", "list_displays",
+            "get_wifi_status", "wifi_status", "get_bluetooth_status", "bluetooth_status",
+            "get_power_status", "battery_status", "volume_status", "get_audio_status",
+        )
+        if act in READ_STATUS_LIST_ACTIONS or sub_act in READ_STATUS_LIST_ACTIONS:
+            return ActionRiskLevel.IMMEDIATE
+        if any(act.startswith(p) for p in ("list_", "get_", "check_")) or any(sub_act.startswith(p) for p in ("list_", "get_", "check_")):
+            if not any(destructive in act or destructive in sub_act for destructive in ("delete", "kill", "remove", "format", "shutdown", "destroy", "wipe")):
+                return ActionRiskLevel.IMMEDIATE
+
         # 1. JARVIS Shutdown vs Window Controls & Adjustments
         # Only shutdown/closing of JARVIS itself asks for user confirmation!
         if (
@@ -923,6 +938,10 @@ class ActionPermissionManager:
 
 class ActionExecutionGuard:
     """Authoritative execution guard for all registered actions."""
+
+    @classmethod
+    def get_risk_level(cls, action_name: str, parameters: dict | None = None) -> ActionRiskLevel:
+        return ActionPermissionManager.get_risk_level(action_name, parameters)
 
     @classmethod
     def guard_and_execute(

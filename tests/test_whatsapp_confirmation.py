@@ -166,16 +166,23 @@ class TestWhatsAppConfirmation(unittest.TestCase):
         self.assertTrue(res.data.get("expired"))
         self.assertIn("expired", res.message.lower())
 
-    # ── Test 5: Confirm with no pending action -> asks what to confirm ───────
+    # ── Test 5: Confirm with no pending action -> harmless & conversational phrases pass through ──
 
     def test_confirm_with_no_pending_action_asks_what_to_confirm(self):
-        """Confirming when nothing is pending asks what to confirm."""
+        """Confirming when nothing is pending says 'There is nothing to confirm.'
+        Conversational phrases (Okay, Yes please, Send it again) return None when nothing is pending."""
         self.assertIsNone(confirm.get_pending())
 
+        # Explicit confirm says there is nothing to confirm
         res = confirm.intercept_confirmation("confirm")
         self.assertIsNotNone(res)
         self.assertTrue(res.data.get("no_pending"))
-        self.assertIn("what would you like me to confirm", res.message.lower())
+        self.assertIn("nothing to confirm", res.message.lower())
+
+        # Conversational phrases return None when nothing is pending (do not hijack dialogue)
+        for phrase in ("Okay", "ok", "Yes please", "sure", "Send it again", "send again", "try again"):
+            intercepted = confirm.intercept_confirmation(phrase)
+            self.assertIsNone(intercepted, f"Phrase '{phrase}' should return None when nothing is pending")
 
     # ── Test 6: Multi-language support ───────────────────────────────────────
 
@@ -340,19 +347,181 @@ class TestWhatsAppConfirmation(unittest.TestCase):
         # Should now return False, allowing subsequent messages to be sent!
         self.assertFalse(confirm.has_recent_execution("whatsapp_send", seconds=5.0))
 
-    # ── Test 12: WhatsAppDriver Web bridge contact resolution ────────────────
+    # ── Test 13: Parameter canonicalization and deduplication ────────────────
 
-    def test_whatsapp_driver_resolve_contact_fallback(self):
-        """WhatsAppDriver bridge delegates contact resolution to the WhatsApp Web driver."""
-        from plugins._whatsapp_core import WhatsAppDriver
-        driver = WhatsAppDriver()
+    def test_parameter_canonicalization_and_deduplication(self):
+        """Parameter variants (key order, alias keys, extra whitespace, capitalization, redundant action/platform) map to the same pending id."""
+        # 1. Base action
+        p1 = confirm.save_pending(
+            tool="whatsapp_send",
+            params={"contact": "Mom", "text": "Hi."},
+            expires_in=60.0,
+            title="Send WhatsApp message to Mom",
+        )
+        self.assertIsNotNone(p1.id)
 
-        mock_res = outcome.result_done("resolve_contact", "Verified", verified=True, data={"contact": "Mom"})
-        with patch.object(driver._web, "resolve_contact", return_value=mock_res):
-            ok, chosen, candidates = driver.resolve_contact("Mom")
-            self.assertTrue(ok)
-            self.assertEqual(chosen, "Mom")
-            self.assertEqual(candidates, ["Mom"])
+        # 2. Re-calling with aliases, extra spaces, redundant fields
+        p2 = confirm.save_pending(
+            tool="send_message",
+            params={
+                "action": "send_message",
+                "platform": "whatsapp",
+                "receiver": "  mom  ",
+                "message_text": "Hi.  ",
+            },
+            expires_in=60.0,
+        )
+        # Must return the SAME pending action and ID
+        self.assertEqual(p1.id, p2.id)
+
+        # 3. Another variant using recipient and message
+        p3 = confirm.save_pending(
+            tool="whatsapp_send",
+            params={
+                "recipient": "MOM",
+                "message": "Hi.",
+                "action": "whatsapp_send",
+            },
+            expires_in=60.0,
+        )
+        self.assertEqual(p1.id, p3.id)
+
+    # ── Test 14: Confirmed action immediate execution & feedback callback ─────
+
+    def test_confirmed_action_immediate_execution_and_feedback_callback(self):
+        """When an action is confirmed, it executes immediately and invokes the session feedback callback."""
+        feedback_received = []
+
+        def _on_feedback(res, pending):
+            feedback_received.append((res, pending))
+
+        confirm.set_feedback_callback(_on_feedback)
+        try:
+            executed_flag = []
+
+            def _handler():
+                executed_flag.append(True)
+                return outcome.result_done("whatsapp_send", "Message sent to Mom.", verified=True)
+
+            pending = confirm.save_pending(
+                tool="whatsapp_send",
+                params={"contact": "Mom", "text": "Hi."},
+                run=_handler,
+                expires_in=60.0,
+                title="Send WhatsApp message to Mom",
+            )
+
+            # Confirm via voice
+            res = confirm.intercept_confirmation("confirm")
+            self.assertIsNotNone(res)
+            self.assertEqual(len(executed_flag), 1)
+            self.assertEqual(len(feedback_received), 1)
+            fb_res, fb_pending = feedback_received[0]
+            self.assertEqual(fb_pending.id, pending.id)
+            self.assertEqual(fb_res.status, outcome.STATUS_DONE)
+        finally:
+            confirm.set_feedback_callback(None)
+
+    # ── Test 15: Re-calling after confirmed execution returns done ───────────
+
+    def test_re_call_after_confirmed_execution_returns_done(self):
+        """When model re-calls tool after confirmed execution, it returns already sent, not needs_confirmation."""
+        mock_driver = MagicMock()
+        mock_driver.send_message_to.return_value = (True, "Sent tick confirmed visible in chat history.")
+
+        with patch("plugins._whatsapp_web.get_driver", return_value=mock_driver):
+            # 1. First call asks confirmation
+            res1 = whatsapp_automation.run({"contact": "Mom", "message": "Hi."})
+            self.assertEqual(res1.status, outcome.STATUS_NEEDS_CONFIRMATION)
+
+            # 2. User confirms -> executes
+            res_conf = confirm.intercept_confirmation("confirm")
+            self.assertIsNotNone(res_conf)
+            self.assertEqual(res_conf.status, outcome.STATUS_DONE)
+
+            # 3. Model re-calls tool with equivalent parameters (the bug scenario!)
+            res2 = whatsapp_automation.run({"contact": "Mom", "message": "Hi."})
+            self.assertEqual(res2.status, outcome.STATUS_DONE)
+            self.assertTrue(res2.data.get("already_sent"))
+            self.assertIn("already been sent", res2.message.lower())
+
+    # ── Test 16: Status/read/list calls never require confirmation ────────────
+
+    def test_status_read_list_calls_never_require_confirmation(self):
+        """Status, read, and list calls always execute immediately without confirmation."""
+        from core.permissions import ActionExecutionGuard, ActionRiskLevel
+
+        # 1. WhatsApp read actions
+        with patch("plugins.whatsapp_reader.run") as mock_wa_reader:
+            mock_wa_reader.return_value = outcome.result_done("whatsapp_read", "Latest messages read.", verified=True)
+            res = whatsapp_automation.run({"action": "read_chat", "contact": "Mom"})
+            self.assertEqual(mock_wa_reader.call_count, 1)
+            self.assertEqual(res.status, outcome.STATUS_DONE)
+
+        # 2. Permissions matrix risk checks
+        self.assertEqual(ActionExecutionGuard.get_risk_level("system_status"), ActionRiskLevel.IMMEDIATE)
+        self.assertEqual(ActionExecutionGuard.get_risk_level("list_tasks"), ActionRiskLevel.IMMEDIATE)
+        self.assertEqual(ActionExecutionGuard.get_risk_level("whatsapp_send", {"action": "read"}), ActionRiskLevel.IMMEDIATE)
+        self.assertEqual(ActionExecutionGuard.get_risk_level("windows_control", {"action": "get_wifi_status"}), ActionRiskLevel.IMMEDIATE)
+
+    # ── Test 17: Browser control cannot bypass confirmation gate on WhatsApp Web
+
+    def test_browser_control_cannot_bypass_confirmation_gate_on_whatsapp_web(self):
+        """browser_control type, Enter press, and send button clicks on web.whatsapp.com are blocked."""
+        from actions.browser_control import browser_control
+
+        with patch("actions.browser_control._get_active_url", return_value="https://web.whatsapp.com"):
+            with patch("actions.browser_session.get_browser_session_manager") as mock_bm:
+                mock_mgr = MagicMock()
+                mock_mgr.check_connection.return_value = (True, "")
+                mock_bm.return_value = mock_mgr
+
+                # Attempt to type
+                res_type = browser_control({"action": "type", "text": "Sneaky message"})
+                self.assertIn("blocked by the confirmation gate", str(res_type).lower())
+
+                # Attempt to press Enter
+                res_press = browser_control({"action": "press", "key": "Enter"})
+                self.assertIn("blocked by the confirmation gate", str(res_press).lower())
+
+                # Attempt to click send button
+                res_click = browser_control({"action": "click", "text": "Send"})
+                self.assertIn("blocked by the confirmation gate", str(res_click).lower())
+
+    # ── Test 18: screen_process and recall_memory do not return Unknown tool ──
+
+    def test_screen_process_and_recall_memory_not_unknown_tool(self):
+        """Dispatcher correctly handles inline tools without overwriting with 'Unknown tool'."""
+        import asyncio
+        from core.tool_dispatcher import ToolDispatcher
+
+        mock_live = MagicMock()
+        mock_live._vision_busy = False
+        mock_live._vision_last_time = 0.0
+        mock_live._action_registry = None
+        mock_live._plugin_registry = None
+
+        dispatcher = ToolDispatcher(mock_live)
+
+        class FakeFC:
+            def __init__(self, name, args):
+                self.id = "fc_test_1"
+                self.name = name
+                self.args = args
+
+        with patch("core.platform_hooks.get_hook", return_value=lambda: (b"dummy_img", "image/jpeg")):
+            # Test screen_process
+            fc_screen = FakeFC("screen_process", {"text": "What is on screen?"})
+            resp = asyncio.run(dispatcher.execute_tool_inner(mock_live, fc_screen))
+            self.assertNotIn("Unknown tool", resp.response["result"])
+            self.assertIn("VISION_ACTIVE", resp.response["result"])
+
+        with patch("core.tool_dispatcher.search_memory", return_value="Memory snippet"):
+            # Test recall_memory
+            fc_mem = FakeFC("recall_memory", {"query": "wifi password"})
+            resp_mem = asyncio.run(dispatcher.execute_tool_inner(mock_live, fc_mem))
+            self.assertNotIn("Unknown tool", resp_mem.response["result"])
+            self.assertEqual(resp_mem.response["result"], "Memory snippet")
 
 
 if __name__ == "__main__":

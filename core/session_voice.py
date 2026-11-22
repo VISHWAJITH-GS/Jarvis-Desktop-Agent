@@ -594,6 +594,23 @@ class LiveVoiceMixin:
             )
             if intercepted is not None:
                 self.ui.write_log(f"You: {text}")
+                if self.session:
+                    res_text = getattr(intercepted, "message", None) or (
+                        intercepted.to_speech_text()
+                        if hasattr(intercepted, "to_speech_text")
+                        else str(intercepted)
+                    )
+                    feedback_text = (
+                        f"[ACTION_RESULT] User voice confirmation executed '{getattr(intercepted, 'action', '')}'. "
+                        f"Result: {res_text}. Report this status truthfully; do NOT re-call '{getattr(intercepted, 'action', '')}'."
+                    )
+                    asyncio.run_coroutine_threadsafe(
+                        self.session.send_client_content(
+                            turns={"role": "user", "parts": [{"text": feedback_text}]},
+                            turn_complete=True,
+                        ),
+                        self._loop,
+                    )
                 return
         except Exception as c_err:
             print(f"[Confirm] Interception error: {c_err}")

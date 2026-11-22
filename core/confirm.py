@@ -64,6 +64,12 @@ CONFIRM_WORDS = {
     "確認", "はい", "送信", "送って", "やって", "お願い",
 }
 
+EXPLICIT_CONFIRM_TOKENS = {
+    "confirm", "confirmed", "please confirm", "confirm it", "confirm please",
+    "bestätigen", "bestätigt", "confirmar", "confirmado", "confirmer", "confirmé",
+    "conferma", "confermato", "確認", "确认", "подтверждаю", "подтвердить",
+}
+
 CANCEL_WORDS = {
     # English
     "cancel", "cancelled", "no", "nope", "stop", "don't", "dont", "abort",
@@ -107,8 +113,11 @@ def _is_command_or_action_utterance(norm: str) -> bool:
         "send whatsapp", "send him", "send her", "send them", "send their",
         "can you send", "could you send", "please send a", "please send me",
         "tell ", "ask ", "open ", "call ", "search for ", "play ",
+        # Action retry/re-send phrases that must never be treated as confirm
+        "send it again", "send again", "try again", "do it again", "say it again",
+        "play it again", "repeat that", "repeat again",
     ):
-        if norm.startswith(p):
+        if norm == p.strip() or norm.startswith(p):
             return True
     # Check phrases indicating target/recipient or conversational structure
     for p in ("message to ", "text to ", "email to ", "mail to ", "call to ", "write to "):
@@ -117,6 +126,19 @@ def _is_command_or_action_utterance(norm: str) -> bool:
     # Conversational negatives / queries that shouldn't match confirmation or cancellation
     for p in ("is it fine", "are you sure", "is not sent", "not sent", "doesnt make", "doesn't make", "did not", "didn't"):
         if p in norm:
+            return True
+    return False
+
+
+def is_explicit_confirm(utterance: str) -> bool:
+    """True if utterance is an explicit confirmation keyword rather than a conversational filler."""
+    norm = _normalize_text(utterance)
+    if not norm or _is_command_or_action_utterance(norm):
+        return False
+    if norm in EXPLICIT_CONFIRM_TOKENS:
+        return True
+    for t in EXPLICIT_CONFIRM_TOKENS:
+        if norm == t or norm.startswith(t + " ") or norm.endswith(" " + t):
             return True
     return False
 
@@ -180,6 +202,88 @@ def matches_cancel(utterance: str) -> bool:
             if all(w in CANCEL_WORDS or w in safe_fillers for w in words):
                 return True
     return False
+
+
+# ── Canonicalization & Equivalence Helpers ────────────────────────────────────
+
+def canonicalize_params(tool: str, params: Optional[dict]) -> dict:
+    """
+    Canonicalize tool parameters for deterministic deduplication and comparison.
+    Ignores default/redundant fields (action="send_message", platform="whatsapp", internal tokens),
+    normalizes key order, case, and whitespace.
+    """
+    if not params:
+        return {}
+    clean_params: Dict[str, Any] = {}
+    for k, v in params.items():
+        k_clean = str(k).lower().strip()
+        # Filter internal / meta parameters
+        if k_clean in ("_execution_authorized", "confirmed", "timestamp", "ts"):
+            continue
+        # Redundant action name (e.g. action="send_message" / action="whatsapp_send")
+        if k_clean == "action" and str(v).lower().strip() in (
+            "send_message", "whatsapp_send", "whatsapp", "send", "message", "execute", ""
+        ):
+            continue
+        # Redundant platform="whatsapp"
+        if k_clean == "platform" and str(v).lower().strip() in ("whatsapp", "wp", "wapp"):
+            continue
+        # Clean value string
+        if isinstance(v, str):
+            clean_params[k_clean] = v.strip()
+        else:
+            clean_params[k_clean] = v
+
+    # Canonicalize recipient / contact (pop all alias keys)
+    recip = ""
+    for r_key in ("contact", "receiver", "recipient", "to"):
+        if r_key in clean_params:
+            val = str(clean_params.pop(r_key) or "").strip()
+            if not recip and val:
+                recip = val
+    if recip:
+        clean_params["contact"] = re.sub(r"\s+", " ", recip).strip().lower()
+
+    # Canonicalize message text (pop all alias keys)
+    msg = ""
+    for m_key in ("text", "message", "message_text"):
+        if m_key in clean_params:
+            val = str(clean_params.pop(m_key) or "").strip()
+            if not msg and val:
+                msg = val
+    if msg:
+        clean_params["text"] = re.sub(r"\s+", " ", msg).strip()
+
+    # Canonicalize boolean formal
+    if "formal" in clean_params:
+        f_val = clean_params["formal"]
+        if isinstance(f_val, str):
+            clean_params["formal"] = f_val.lower() not in ("false", "0", "no")
+        else:
+            clean_params["formal"] = bool(f_val)
+
+    # Return sorted dictionary by key for consistent hashing/equality
+    return dict(sorted(clean_params.items()))
+
+
+def actions_equivalent(
+    tool1: str,
+    params1: Optional[dict],
+    tool2: str,
+    params2: Optional[dict],
+) -> bool:
+    """True if two actions represent the same logical operation with equivalent parameters."""
+    t1 = str(tool1 or "").lower().strip()
+    t2 = str(tool2 or "").lower().strip()
+    wa_tools = {"whatsapp_send", "whatsapp", "send_message"}
+    if t1 in wa_tools and t2 in wa_tools:
+        # Both are WhatsApp messaging actions
+        p1 = canonicalize_params(t1, params1)
+        p2 = canonicalize_params(t2, params2)
+        return p1 == p2
+    if t1 != t2:
+        return False
+    return canonicalize_params(t1, params1) == canonicalize_params(t2, params2)
 
 
 # ── PendingAction Dataclass ──────────────────────────────────────────────────
@@ -300,12 +404,19 @@ def requires_visual_prompt(risk_level: str, payment_details: Optional[dict] = No
 _show_cb: Optional[Callable[[str, str], None]] = None
 _hide_cb: Optional[Callable[[], None]] = None
 _log_cb: Optional[Callable[[str], None]] = None
+_feedback_cb: Optional[Callable[[outcome.ActionResult, PendingAction], None]] = None
 
 
 def bind(show, hide, log=None) -> None:
     """Wire this module to the HUD banner. Called once from main.py / live_session at startup."""
     global _show_cb, _hide_cb, _log_cb
     _show_cb, _hide_cb, _log_cb = show, hide, log
+
+
+def set_feedback_callback(cb: Optional[Callable[[outcome.ActionResult, PendingAction], None]]) -> None:
+    """Wire a callback to feed confirmed execution results back to the active session immediately."""
+    global _feedback_cb
+    _feedback_cb = cb
 
 
 def _log(msg: str) -> None:
@@ -357,7 +468,27 @@ class ConfirmationManager:
     ) -> PendingAction:
         """Save a pending action into the store deterministically without launching any app."""
         with cls._lock:
-            old_p = cls.get_pending_internal()
+            # 1. Canonical parameter comparison against active pending action
+            active_p = cls.get_pending_internal()
+            if active_p is not None and actions_equivalent(active_p.tool, active_p.params, tool, params):
+                if run is not None:
+                    active_p.run = run
+                if title:
+                    active_p.title = title
+                if detail:
+                    active_p.detail = detail
+                return active_p
+
+            # Check store for non-active pending actions that are equivalent and unexpired
+            for stored_p in cls._store.values():
+                if not stored_p.executed and not stored_p.is_expired() and stored_p.status == "needs_confirmation":
+                    if actions_equivalent(stored_p.tool, stored_p.params, tool, params):
+                        if run is not None:
+                            stored_p.run = run
+                        cls._active_id = stored_p.id
+                        return stored_p
+
+            old_p = active_p
             p = PendingAction(
                 id=action_id,
                 tool=tool,
@@ -492,15 +623,30 @@ class ConfirmationManager:
             return p.title if p else ""
 
     @classmethod
-    def has_recent_execution(cls, tool_name: str, seconds: float = 5.0) -> bool:
-        """Check if a tool was executed via confirmation within the last N seconds."""
+    def get_recent_execution(
+        cls,
+        tool_name: str,
+        params: Optional[dict] = None,
+        seconds: float = 60.0,
+    ) -> Optional[PendingAction]:
+        """Return a recently executed action matching tool and params within seconds."""
         now = time.monotonic()
         with cls._lock:
-            for p in cls._store.values():
-                if p.tool == tool_name and p.executed and p.executed_at is not None:
+            for p in reversed(list(cls._store.values())):
+                if (p.executed or p.id in cls._executed_ids) and p.executed_at is not None:
                     if (now - p.executed_at) <= seconds:
-                        return True
-        return False
+                        if params is not None:
+                            if actions_equivalent(p.tool, p.params, tool_name, params):
+                                return p
+                        else:
+                            if p.tool.lower().strip() == tool_name.lower().strip():
+                                return p
+        return None
+
+    @classmethod
+    def has_recent_execution(cls, tool_name: str, params: Optional[dict] = None, seconds: float = 5.0) -> bool:
+        """Check if a tool was executed via confirmation within the last N seconds."""
+        return cls.get_recent_execution(tool_name, params=params, seconds=seconds) is not None
 
     @classmethod
     def _execute_saved_action(cls, p: PendingAction, player=None) -> Any:
@@ -575,6 +721,12 @@ class ConfirmationManager:
                 res = cls._execute_saved_action(p)
                 p.result = res
                 _log(f"SYS: Confirmed — {p.title}. {res}")
+                if _feedback_cb:
+                    try:
+                        res_obj = outcome.normalize_result(res, action_name=p.tool)
+                        _feedback_cb(res_obj, p)
+                    except Exception:
+                        pass
                 return True
             except Exception as e:
                 _log(f"ERR: {p.title} failed — {e}")
@@ -586,6 +738,12 @@ class ConfirmationManager:
                 res = cls._execute_saved_action(p)
                 p.result = res
                 _log(f"SYS: Confirmed — {p.title}. {res}")
+                if _feedback_cb:
+                    try:
+                        res_obj = outcome.normalize_result(res, action_name=p.tool)
+                        _feedback_cb(res_obj, p)
+                    except Exception:
+                        pass
             except Exception as e:
                 _log(f"ERR: {p.title} failed — {e}")
 
@@ -661,6 +819,33 @@ class ConfirmationManager:
 
             # 1. No active pending action
             if p is None:
+                # Check if an action was recently executed (reject duplicates for any confirmation token e.g. confirm, yes, proceed)
+                last_exec = cls._last_executed
+                if last_exec is None:
+                    for item in reversed(list(cls._store.values())):
+                        if item.executed or item.id in cls._executed_ids:
+                            last_exec = item
+                            break
+
+                if last_exec is not None and (last_exec.executed or last_exec.id in cls._executed_ids):
+                    dup_msg = f"Action '{last_exec.title}' has already been executed."
+                    if player and hasattr(player, "write_log"):
+                        try:
+                            player.write_log(f"SYS: {dup_msg}")
+                        except Exception:
+                            pass
+                    return outcome.result_done(
+                        last_exec.tool,
+                        message=dup_msg,
+                        verified=True,
+                        data={"id": last_exec.id, "duplicate": True},
+                    )
+
+                # If no recently executed action and no pending action:
+                # Conversational tokens ("okay", "yes please", "sure") return None
+                if not is_explicit_confirm(utterance):
+                    return None
+
                 if last_exp is None:
                     for item in reversed(list(cls._store.values())):
                         if item.is_expired():
@@ -700,30 +885,8 @@ class ConfirmationManager:
                         data={"id": fresh.id, "expired": True, "renewed": True},
                     )
 
-                # Check if an action was recently executed (reject duplicates)
-                last_exec = cls._last_executed
-                if last_exec is None:
-                    for item in reversed(list(cls._store.values())):
-                        if item.executed or item.id in cls._executed_ids:
-                            last_exec = item
-                            break
-
-                if last_exec is not None and (last_exec.executed or last_exec.id in cls._executed_ids):
-                    dup_msg = f"Action '{last_exec.title}' has already been executed."
-                    if player and hasattr(player, "write_log"):
-                        try:
-                            player.write_log(f"SYS: {dup_msg}")
-                        except Exception:
-                            pass
-                    return outcome.result_done(
-                        last_exec.tool,
-                        message=dup_msg,
-                        verified=True,
-                        data={"id": last_exec.id, "duplicate": True},
-                    )
-
-                # Confirm with no pending action -> asks what to confirm
-                ask_msg = "There is no pending action to confirm. What would you like me to confirm?"
+                # Confirm with no pending action -> says nothing to confirm
+                ask_msg = "There is nothing to confirm."
                 if player and hasattr(player, "write_log"):
                     try:
                         player.write_log(f"SYS: {ask_msg}")
@@ -785,10 +948,21 @@ class ConfirmationManager:
                 except Exception:
                     pass
 
+            if _feedback_cb:
+                try:
+                    _feedback_cb(res_obj, p)
+                except Exception as fb_err:
+                    _log(f"ERR: feedback callback failed: {fb_err}")
+
             return res_obj
         except Exception as e:
             err_res = outcome.result_failed(p.tool, f"Execution failed: {e}", error=str(e))
             p.result = err_res
+            if _feedback_cb:
+                try:
+                    _feedback_cb(err_res, p)
+                except Exception:
+                    pass
             return err_res
 
     @classmethod
@@ -898,5 +1072,9 @@ def reset_state() -> None:
     ConfirmationManager.reset_state()
 
 
-def has_recent_execution(tool_name: str, seconds: float = 5.0) -> bool:
-    return ConfirmationManager.has_recent_execution(tool_name, seconds=seconds)
+def get_recent_execution(tool_name: str, params: Optional[dict] = None, seconds: float = 60.0) -> Optional[PendingAction]:
+    return ConfirmationManager.get_recent_execution(tool_name, params=params, seconds=seconds)
+
+
+def has_recent_execution(tool_name: str, params: Optional[dict] = None, seconds: float = 5.0) -> bool:
+    return ConfirmationManager.has_recent_execution(tool_name, params=params, seconds=seconds)

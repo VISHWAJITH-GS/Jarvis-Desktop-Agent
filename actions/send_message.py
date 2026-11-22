@@ -384,9 +384,34 @@ def send_message(
             platform=platform,
         )
 
+    # Status / read / list actions never require confirmation
+    action_type = str(params.get("action", "")).strip().lower()
+    if action_type in ("read", "read_chat", "status", "list", "check"):
+        return outcome.done(
+            "send_message",
+            message="Status and read checks ready.",
+            verified=True,
+            action=action_type,
+            platform=platform,
+            receiver=receiver,
+        )
+
     # Deterministic confirmation gate for WhatsApp: do NOT open WhatsApp before confirmation!
     if is_wa and not (params.get("_execution_authorized") or params.get("confirmed")):
         from core import confirm
+
+        recent = confirm.get_recent_execution(
+            "send_message",
+            {"contact": receiver, "text": message_text, "platform": platform},
+            seconds=60.0,
+        )
+        if recent is not None:
+            return outcome.result_done(
+                "send_message",
+                message=f"The {platform} message to {receiver} has already been sent: '{message_text}'",
+                verified=True,
+                data={"contact": receiver, "text": message_text, "already_sent": True, "id": recent.id},
+            )
 
         def _do_send_msg():
             auth_p = {**params, "_execution_authorized": True, "confirmed": True}

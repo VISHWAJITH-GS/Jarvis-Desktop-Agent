@@ -290,6 +290,32 @@ class JarvisLive(LiveAudioMixin, LiveMonitorsMixin, LiveVoiceMixin):
         # Initialize tool dispatcher
         self._tool_dispatcher = ToolDispatcher(self)
 
+        # Wire confirmed action feedback callback
+        from core import confirm as _confirm_module
+        _confirm_module.set_feedback_callback(self._on_confirmed_action_executed)
+
+    def _on_confirmed_action_executed(self, result: Any, pending: Any) -> None:
+        """Feed confirmed execution result back to the model immediately."""
+        if not getattr(self, "session", None) or getattr(self, "_closed", False):
+            return
+        res_text = getattr(result, "message", None) or (result.to_speech_text() if hasattr(result, "to_speech_text") else str(result))
+        feedback_text = (
+            f"[ACTION_RESULT] Confirmed action '{getattr(pending, 'tool', '')}' executed: {res_text}. "
+            f"Report this truthful outcome to the user; do not call the tool again."
+        )
+
+        async def _send_feedback():
+            try:
+                await self.session.send_client_content(
+                    turns={"role": "user", "parts": [{"text": feedback_text}]},
+                    turn_complete=True,
+                )
+            except Exception as e:
+                print(f"[Confirm] Failed to feed back result to session: {e}")
+
+        if getattr(self, "_loop", None) and not self._loop.is_closed():
+            asyncio.run_coroutine_threadsafe(_send_feedback(), self._loop)
+
     async def _execute_tool(self, fc) -> types.FunctionResponse:
         return await self._tool_dispatcher.execute_tool(self, fc)
 

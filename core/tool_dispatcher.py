@@ -187,7 +187,7 @@ class ToolDispatcher:
                     run=_run_confirmed_shutdown,
                 )
 
-            if name in ("whatsapp_send", "send_message") and confirm_gate.has_recent_execution(name, seconds=5.0):
+            elif name in ("whatsapp_send", "send_message") and confirm_gate.has_recent_execution(name, params=args, seconds=60.0):
                 result = "Message has already been sent."
             elif live._action_registry and live._action_registry.has(name):
                 if name == "file_processor" and not args.get("file_path") and live.ui and live.ui.current_file:

@@ -87,8 +87,8 @@ def run(parameters: dict, player=None, session_memory=None) -> outcome.ActionRes
     raw_message = (p.get("message") or p.get("message_text") or p.get("text") or "").strip()
     formal = p.get("formal", True)
 
-    # If action indicates reading, delegate directly
-    if action in ("read", "read_chat", "read_latest", "summarize"):
+    # If action indicates reading, delegate directly (never requires confirmation)
+    if action in ("read", "read_chat", "read_latest", "summarize", "status", "list", "check"):
         from plugins import whatsapp_reader
 
         return whatsapp_reader.run(parameters, player=player, session_memory=session_memory)
@@ -126,6 +126,20 @@ def run(parameters: dict, player=None, session_memory=None) -> outcome.ActionRes
     is_authorized = bool(p.get("_execution_authorized") or p.get("confirmed"))
     if not is_authorized:
         from core import confirm
+
+        # Check if an equivalent action was already executed recently
+        recent = confirm.get_recent_execution(
+            "whatsapp_send",
+            {"contact": contact, "text": final_message, "formal": formal},
+            seconds=60.0,
+        )
+        if recent is not None:
+            return outcome.result_done(
+                "whatsapp_send",
+                message=f"WhatsApp message to {contact} has already been sent: '{final_message}'",
+                verified=True,
+                data={"contact": contact, "text": final_message, "already_sent": True, "id": recent.id},
+            )
 
         def _do_send_action() -> outcome.ActionResult:
             return _execute_send(contact, final_message, player=player)

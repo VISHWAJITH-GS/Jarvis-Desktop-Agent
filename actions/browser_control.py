@@ -59,6 +59,31 @@ def browser_control(parameters: Optional[Dict[str, Any]] = None, **kwargs: Any) 
         if not ok:
             return outcome.failed("browser_control", err_msg)
 
+        # ── Guard: WhatsApp Web Confirmation Bypass Prevention ────────────────
+        active_url = _get_active_url() or ""
+        if "web.whatsapp.com" in active_url.lower():
+            is_authorized = bool(params.get("_execution_authorized") or params.get("confirmed"))
+            if not is_authorized:
+                if action in ("type", "input", "smart_type", "fill_form"):
+                    return outcome.failed(
+                        "browser_control",
+                        "Direct typing into WhatsApp Web is blocked by the confirmation gate. "
+                        "Use the 'whatsapp_send' tool so message delivery requires user confirmation.",
+                    )
+                if action in ("press", "press_key") and str(params.get("key", "")).lower() == "enter":
+                    return outcome.failed(
+                        "browser_control",
+                        "Pressing Enter on WhatsApp Web is blocked by the confirmation gate to prevent unauthorized message sending. "
+                        "Use 'whatsapp_send' instead.",
+                    )
+                if action in ("click", "smart_click", "hint_click"):
+                    target_text = str(params.get("text", "") or params.get("description", "")).lower()
+                    if any(w in target_text for w in ("send", "enviar", "bhejo")):
+                        return outcome.failed(
+                            "browser_control",
+                            "Clicking send on WhatsApp Web is blocked by the confirmation gate. Use 'whatsapp_send' instead.",
+                        )
+
         # ── Setup / First-Run Sign-In ─────────────────────────────────────────
         if action in ("setup", "setup_browser", "first_run", "signin"):
             from actions.setup_browser import setup_browser
