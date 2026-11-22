@@ -563,6 +563,11 @@ class MainWindow(
         self._displays[disp_id] = win
         win.closed.connect(self._on_display_closed)
         win.minimized_requested.connect(self._on_display_minimized)
+        try:
+            from gui import display_registry
+            display_registry.register_display(disp_id, title=title or name, kind=content_type, qt_window_ref=win)
+        except Exception:
+            pass
 
         screen = QApplication.primaryScreen().availableGeometry()
         offset = ((disp_id - 1) % 6) * 36
@@ -582,6 +587,11 @@ class MainWindow(
 
     def _on_display_minimized(self, d_id: int):
         self._minimized_display_ids.add(d_id)
+        try:
+            from gui import display_registry
+            display_registry.update_state(d_id, is_minimized=True)
+        except Exception:
+            pass
         self._update_dots_overlay()
 
     def _on_restore_display(self, d_id):
@@ -614,6 +624,11 @@ class MainWindow(
             return
 
         self._minimized_display_ids.discard(d_id)
+        try:
+            from gui import display_registry
+            display_registry.update_state(d_id, is_minimized=False)
+        except Exception:
+            pass
         win = self._displays.get(d_id)
         if win:
             win.setWindowState(Qt.WindowState.WindowNoState)
@@ -626,10 +641,16 @@ class MainWindow(
         self._reserved_display_ids.discard(d_id)
         self._minimized_display_ids.discard(d_id)
         self._displays.pop(d_id, None)
+        try:
+            from gui import display_registry
+            display_registry.unregister_display(d_id)
+        except Exception:
+            pass
         if not self._displays:
             self._display_counter = 0
             self._reserved_display_ids.clear()
         self._update_dots_overlay()
+
 
     def _update_dots_overlay(self):
         items = []

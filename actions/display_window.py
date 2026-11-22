@@ -115,64 +115,51 @@ def display_window(parameters: dict = None, player=None, session_memory=None) ->
 
     target_id = 0 if all_requested else (int(display_id) if display_id is not None else 0)
 
+    from gui import display_registry
+
     # ── Focus display ────────────────────────────────────────────────────────
     if action in ("focus", "focus_display", "center", "bring_to_front", "restore"):
-        open_displays = player.get_open_displays()
-        if not open_displays:
-            return "Sir, there are no active display windows to focus."
-        if display_id is None and not all_requested:
-            target_id = max(d["display_id"] for d in open_displays)
-        ok = player.focus_display(target_id)
-        if ok:
-            return (
-                f"Display {target_id} is now front and center, sir."
-                if target_id
-                else "Displays have been brought to focus, sir."
-            )
-        return f"Sir, I could not find Display {target_id}."
+        target_name_or_id = raw_display_id or title or source
+        if all_requested:
+            target_name_or_id = 0
+        return display_registry.restore_display(target_name_or_id, player=player)
 
     # ── Maximize display ─────────────────────────────────────────────────────
     if action in ("maximize", "maximize_display", "maximize_displays", "fullscreen", "expand"):
-        open_displays = player.get_open_displays()
+        open_displays = player.get_open_displays() if player else []
         if not open_displays:
             return "Sir, there are no active display windows to maximize."
         if display_id is None and not all_requested:
             target_id = open_displays[-1]["display_id"] if len(open_displays) == 1 else 0
-        player.maximize_display_window(target_id)
+        if player:
+            player.maximize_display_window(target_id)
         if target_id == 0:
             return "Maximized all display windows, sir."
         return f"Maximized Display {target_id}, sir."
 
     # ── Minimize display ─────────────────────────────────────────────────────
     if action in ("minimize", "minimize_display", "minimize_displays", "dock", "collapse"):
-        open_displays = player.get_open_displays()
-        if not open_displays:
-            return "Sir, there are no active display windows to minimize."
-        if display_id is None and not all_requested:
-            target_id = open_displays[-1]["display_id"] if len(open_displays) == 1 else 0
-        player.minimize_display_window(target_id)
-        if target_id == 0:
-            return "Minimized all display windows to the left dock, sir."
-        return f"Minimized Display {target_id} to the left dock, sir."
+        target_name_or_id = raw_display_id or title or source
+        if all_requested:
+            target_name_or_id = 0
+        return display_registry.minimize_display(target_name_or_id, player=player)
 
     # ── Close display ────────────────────────────────────────────────────────
     if action in ("close", "close_display", "close_displays", "hide", "dismiss"):
-        open_displays = player.get_open_displays()
-        if not open_displays:
-            return "Sir, there are no active display windows to close."
-        if display_id is None and not all_requested:
-            target_id = open_displays[-1]["display_id"] if len(open_displays) == 1 else 0
-        player.close_display_window(target_id)
-        if target_id == 0:
-            return "Closed all extra display windows, sir."
-        return f"Closed Display {target_id}, sir."
+        if all_requested:
+            return display_registry.close_all_displays(player=player)
+        target_name_or_id = raw_display_id or title or source
+        force = bool(params.get("force") or params.get("confirmed") or params.get("_execution_authorized"))
+        return display_registry.close_display(target_name_or_id, player=player, force=force)
 
     # ── List displays ────────────────────────────────────────────────────────
     if action in ("list", "list_displays"):
-        displays = player.get_open_displays()
+        displays = display_registry.list_displays()
+        if not displays and player:
+            displays = player.get_open_displays()
         if not displays:
             return "There are no extra media displays open right now, sir."
-        summary = ", ".join(f"{d['name']} ({d['title']})" for d in displays)
+        summary = ", ".join(f"Display {d.get('id', d.get('display_id'))} ('{d.get('title', d.get('name'))}')" for d in displays)
         return f"Open displays: {summary}."
 
     # ── Show image, video, text, or task plan/progress ───────────────────────

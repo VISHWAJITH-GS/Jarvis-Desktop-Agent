@@ -150,6 +150,50 @@ class JarvisUI:
         except (RuntimeError, AttributeError):
             pass
 
+    @property
+    def speaker_muted(self) -> bool:
+        return self.muted
+
+    @speaker_muted.setter
+    def speaker_muted(self, v: bool):
+        self.muted = bool(v)
+
+    @property
+    def mic_muted(self) -> bool:
+        return getattr(self, "_mic_muted", False)
+
+    @mic_muted.setter
+    def mic_muted(self, v: bool):
+        self._mic_muted = bool(v)
+
+    def mute_speaker(self) -> None:
+        self.speaker_muted = True
+
+    def unmute_speaker(self) -> None:
+        self.speaker_muted = False
+
+    def mute_mic(self) -> None:
+        self.mic_muted = True
+
+    def unmute_mic(self) -> None:
+        self.mic_muted = False
+
+    def minimize_jarvis(self) -> None:
+        """Thread-safe: minimize Jarvis HUD."""
+        try:
+            if self._is_alive():
+                self._win._jarvis_window_sig.emit("minimize")
+        except (RuntimeError, AttributeError):
+            pass
+
+    def restore_jarvis(self) -> None:
+        """Thread-safe: restore Jarvis HUD back to normal."""
+        try:
+            if self._is_alive():
+                self._win._jarvis_window_sig.emit("restore")
+        except (RuntimeError, AttributeError):
+            pass
+
     def sync_mute_state(self, muted: bool, hud_state: str = "") -> None:
         """Thread-safe: atomically update mute indicator and exact HUD state
         (e.g. MUTED, SLEEPING, LISTENING)."""
