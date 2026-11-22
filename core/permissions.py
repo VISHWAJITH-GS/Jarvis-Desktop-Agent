@@ -721,6 +721,21 @@ class ActionPermissionManager:
             if sub_act in ("delete_system_files", "delete_system_file"):
                 return ActionRiskLevel.HIGH_IMPACT
 
+        # Antigravity IDE Risk Classifications
+        if act == "antigravity_ide":
+            if sub_act in ("send_prompt", "prompt"):
+                return ActionRiskLevel.CONFIRMATION_REQUIRED
+            if sub_act in ("accept_all", "reject_all"):
+                return ActionRiskLevel.CONFIRMATION_REQUIRED
+            # Read-only or normal controls
+            if sub_act in (
+                "status", "window_status", "panel_status", "list_models",
+                "open_folder", "open_file", "open_diff", "add_folder", "open_panel",
+                "select_model", "new_conversation", "stop_agent", "create_file",
+                "write_file", "create_folder", "save_file", "review_changes",
+            ):
+                return ActionRiskLevel.IMMEDIATE
+
         # Productivity actions (to-do list, tasks, habits) execute immediately without confirmation
         if act == "productivity":
             return ActionRiskLevel.IMMEDIATE
@@ -925,6 +940,24 @@ class ActionPermissionManager:
             msg_text = params.get("text") or params.get("message") or params.get("message_text") or ""
             title = f"Send {plat} Message to {recip}"
             detail = f"Send message '{msg_text}' to {recip} via {plat}."
+
+        # Antigravity IDE Actions
+        elif act == "antigravity_ide":
+            folder = params.get("folder") or params.get("path") or "active project"
+            prompt_txt = params.get("prompt") or params.get("text") or ""
+            if sub_act in ("send_prompt", "prompt"):
+                title = "Send Prompt to Antigravity IDE"
+                detail = f"Send prompt to Antigravity IDE in project '{folder}':\n\"{prompt_txt}\""
+            elif sub_act == "accept_all":
+                fc = params.get("file_count") or params.get("files") or "all"
+                title = "Accept All Changes in Antigravity IDE"
+                detail = f"Accept all agent code edits in Antigravity IDE ({fc} files)."
+            elif sub_act == "reject_all":
+                title = "Reject All Changes in Antigravity IDE"
+                detail = "Discard all agent code changes in Antigravity IDE."
+            else:
+                title = f"Antigravity IDE: {sub_act}"
+                detail = f"Execute Antigravity IDE action '{sub_act}'."
 
         else:
             title = f"Execute {action_name}"

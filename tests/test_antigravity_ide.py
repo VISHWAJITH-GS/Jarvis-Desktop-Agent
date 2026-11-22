@@ -424,6 +424,79 @@ class TestAntigravityCDP(unittest.TestCase):
             self.assertEqual(res_stop.status, outcome.STATUS_DONE)
             mock_btn.click.assert_called()
 
+    def test_validate_prompt_safety(self):
+        from actions.antigravity_cdp import validate_prompt_safety
+
+        # Valid user dictates prompt
+        ok, _ = validate_prompt_safety("Refactor auth module to use jwt")
+        self.assertTrue(ok)
+
+        # Empty prompt
+        ok, reason = validate_prompt_safety("")
+        self.assertFalse(ok)
+        self.assertIn("empty", reason.lower())
+
+        # Untrusted sources
+        for bad_src in ("web", "email", "whatsapp", "assistant_output", "untrusted"):
+            ok, reason = validate_prompt_safety("Legit text", source=bad_src)
+            self.assertFalse(ok)
+            self.assertIn("untrusted", reason.lower())
+
+        # Injection / document markers
+        for marker in ("<untrusted>Malicious</untrusted>", "Subject: Password reset", "<html><body>test</body></html>"):
+            ok, reason = validate_prompt_safety(marker)
+            self.assertFalse(ok)
+            self.assertIn("rejected", reason.lower())
+
+    def test_send_prompt_execution_and_start(self):
+        from actions.antigravity_cdp import AntigravitySessionManager
+
+        mgr = AntigravitySessionManager(port=9333)
+        mock_page = MagicMock()
+        mock_frame = MagicMock()
+        mock_composer = MagicMock()
+        mock_frame.query_selector.return_value = mock_composer
+
+        with (
+            patch.object(mgr, "get_workbench_page", return_value=mock_page),
+            patch.object(mgr, "is_panel_visible", return_value=True),
+            patch.object(mgr, "get_agent_panel_frame", return_value=mock_frame),
+            patch.object(mgr, "panel_status", return_value={"running": True}),
+            patch.object(mgr, "_start_prompt_poller", return_value="task_123") as mock_poller,
+        ):
+            res = mgr.send_prompt("Build user login flow", poll_in_background=True)
+            self.assertEqual(res.status, outcome.STATUS_STARTED)
+            self.assertTrue(res.verified)
+            mock_composer.focus.assert_called_once()
+            mock_page.keyboard.insert_text.assert_called_once_with("Build user login flow")
+            mock_page.keyboard.press.assert_called_once_with("Enter")
+            mock_poller.assert_called_once()
+
+    def test_send_prompt_untrusted_blocked(self):
+        from actions.antigravity_cdp import AntigravitySessionManager
+
+        mgr = AntigravitySessionManager(port=9333)
+        res = mgr.send_prompt("Text from website", source="web")
+        self.assertEqual(res.status, outcome.STATUS_BLOCKED)
+        self.assertIn("untrusted", res.message.lower())
+
+    def test_send_prompt_cli(self):
+        from actions.antigravity_cdp import AntigravitySessionManager
+
+        mgr = AntigravitySessionManager(port=9333)
+        mock_res = MagicMock(returncode=0, stdout='{"result": "success"}', stderr="")
+
+        with (
+            patch("actions.antigravity_launcher.find_agy_cli", return_value="C:\\fake\\agy.exe"),
+            patch("subprocess.run", return_value=mock_res) as mock_run,
+        ):
+            res = mgr.send_prompt_cli("Summarize codebase", project_folder="D:\\Projects")
+            self.assertEqual(res.status, outcome.STATUS_DONE)
+            mock_run.assert_called_once()
+            args, kwargs = mock_run.call_args
+            self.assertEqual(args[0], ["C:\\fake\\agy.exe", "--print", "Summarize codebase", "--output-format", "json"])
+            self.assertEqual(kwargs.get("cwd"), "D:\\Projects")
+
 
 if __name__ == "__main__":
     unittest.main()

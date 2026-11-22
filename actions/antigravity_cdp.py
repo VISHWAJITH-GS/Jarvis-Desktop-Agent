@@ -17,19 +17,80 @@ import json
 import logging
 import os
 import re
+import subprocess
 import threading
 import time
 import urllib.error
 import urllib.request
+import uuid
 from typing import Any, List, Optional, Tuple
 
 from actions import antigravity_selectors as sel
 from core import outcome
+from core.tasks.control import get_default_store
+from core.tasks.notify import notify_task_event
 
 logger = logging.getLogger("antigravity_cdp")
 
 DEFAULT_ANTIGRAVITY_PORT = 9333
 DEFAULT_ANTIGRAVITY_CDP_URL = f"http://127.0.0.1:{DEFAULT_ANTIGRAVITY_PORT}"
+
+# Untrusted sources that must never be auto-forwarded as prompt text
+UNTRUSTED_SOURCES = {
+    "web",
+    "web_page",
+    "browser",
+    "email",
+    "mail",
+    "whatsapp",
+    "whatsapp_web",
+    "whatsapp_reader",
+    "file",
+    "assistant_output",
+    "model_output",
+    "untrusted",
+}
+
+UNTRUSTED_TEXT_MARKERS = [
+    "<untrusted>",
+    "</untrusted>",
+    "<script",
+    "<html>",
+    "<!doctype",
+    "subject:",
+    "from:",
+    "content-type:",
+    "whatsapp_read",
+    "document.queryselector",
+]
+
+
+def validate_prompt_safety(text: str, source: Optional[str] = None) -> Tuple[bool, str]:
+    """Ensure that only user-dictated or explicitly approved text becomes a prompt.
+
+    Rejects content originating from external third-party sources or containing injection markers.
+    """
+    clean_txt = str(text or "").strip()
+    if not clean_txt:
+        return False, "Prompt text cannot be empty."
+
+    src = str(source or "").lower().strip()
+    if src in UNTRUSTED_SOURCES:
+        return (
+            False,
+            f"Prompt source '{source}' is untrusted. Third-party content from web, emails, WhatsApp, "
+            "or agent outputs cannot be forwarded to Antigravity IDE without explicit user entry.",
+        )
+
+    lower_txt = clean_txt.lower()
+    for marker in UNTRUSTED_TEXT_MARKERS:
+        if marker in lower_txt:
+            return (
+                False,
+                f"Prompt contains untrusted document or injection marker '{marker}'. Prompt rejected for safety.",
+            )
+
+    return True, ""
 
 
 class AntigravityCDPError(Exception):
@@ -541,6 +602,272 @@ class AntigravitySessionManager:
                 success=False,
                 verified=False,
                 message=f"Failed to stop agent: {e}",
+                error=str(e),
+            )
+
+    def send_prompt(
+        self,
+        text: str,
+        player=None,
+        source: Optional[str] = None,
+        poll_in_background: bool = True,
+        timeout_sec: float = 600.0,
+    ) -> outcome.ActionResult:
+        """Send prompt to Antigravity IDE agent panel using CDP trusted input.
+
+        Enforces:
+        - Strict prompt safety validation (blocks untrusted third-party sources/markers).
+        - Focuses composer and inserts text with CDP trusted Input.insertText.
+        - Verifies generation begins and transitions to 'started'.
+        - Spawns background polling worker with backoff to monitor completion without blocking voice loop.
+        """
+        # 1. Safety validation
+        is_safe, reason = validate_prompt_safety(text, source=source)
+        if not is_safe:
+            return outcome.ActionResult(
+                status=outcome.STATUS_BLOCKED,
+                action="send_prompt",
+                success=False,
+                verified=False,
+                message=reason,
+                error="Untrusted prompt",
+            )
+
+        page = self.get_workbench_page()
+        if not page:
+            return outcome.ActionResult(
+                status=outcome.STATUS_FAILED,
+                action="send_prompt",
+                success=False,
+                verified=False,
+                message="Cannot connect to Antigravity IDE over CDP (port 9333).",
+                error="CDP connection failed",
+            )
+
+        # 2. Ensure panel is open
+        if not self.is_panel_visible():
+            self.open_agent_panel()
+
+        frame = self.get_agent_panel_frame(page)
+        if not frame:
+            return outcome.ActionResult(
+                status=outcome.STATUS_FAILED,
+                action="send_prompt",
+                success=False,
+                verified=False,
+                message="Antigravity agent panel frame not found.",
+                error="Frame not found",
+            )
+
+        try:
+            # 3. Focus composer
+            composer = frame.query_selector(sel.PROMPT_COMPOSER) or page.query_selector(sel.PROMPT_COMPOSER)
+            if not composer:
+                return outcome.ActionResult(
+                    status=outcome.STATUS_FAILED,
+                    action="send_prompt",
+                    success=False,
+                    verified=False,
+                    message="Prompt composer input not found in agent panel.",
+                    error="Composer not found",
+                )
+
+            composer.focus()
+            time.sleep(0.2)
+
+            # 4. Insert text via CDP trusted input (insert_text triggers Input.insertText)
+            page.keyboard.insert_text(text)
+            time.sleep(0.3)
+            page.keyboard.press("Enter")
+            time.sleep(1.0)
+
+            # 5. Verify agent started
+            st = self.panel_status()
+            started = st.get("running") or False
+            # Check if stop button or running indicator is now visible
+            stop_btn = frame.query_selector(sel.STOP_BUTTON)
+            if stop_btn and stop_btn.is_visible():
+                started = True
+
+            # Register background polling monitor
+            task_id = None
+            if poll_in_background:
+                task_id = self._start_prompt_poller(
+                    prompt=text, player=player, timeout_sec=timeout_sec
+                )
+
+            preview = text[:40] + ("..." if len(text) > 40 else "")
+            return outcome.ActionResult(
+                status=outcome.STATUS_STARTED,
+                action="send_prompt",
+                success=True,
+                verified=started,
+                message=f"Sent prompt to Antigravity IDE: \"{preview}\". Agent execution started.",
+                data={"prompt": text, "task_id": task_id, "started": started},
+            )
+        except Exception as e:
+            return outcome.ActionResult(
+                status=outcome.STATUS_FAILED,
+                action="send_prompt",
+                success=False,
+                verified=False,
+                message=f"Failed to send prompt: {e}",
+                error=str(e),
+            )
+
+    def _start_prompt_poller(
+        self, prompt: str, player=None, timeout_sec: float = 600.0
+    ) -> str:
+        """Start a background monitor thread polling panel_status with backoff."""
+        task_id = f"agy_prompt_{uuid.uuid4().hex[:8]}"
+        store = get_default_store()
+        try:
+            store.create_task(
+                task_id=task_id,
+                title=f"Antigravity IDE: {prompt[:35]}",
+                description=prompt,
+                time_budget_sec=timeout_sec,
+                priority=0,
+            )
+            store.update_state(task_id, "running")
+        except Exception as exc:
+            logger.debug(f"Failed to record prompt task in store: {exc}")
+
+        def _poll_worker():
+            start_time = time.monotonic()
+            interval = 3.0
+            last_approval_cmd = None
+
+            while time.monotonic() - start_time < timeout_sec:
+                # Check for external cancellation
+                try:
+                    current_task = store.get_task(task_id)
+                    if current_task and current_task.state == "cancelled":
+                        logger.info(f"Antigravity prompt polling cancelled for {task_id}")
+                        break
+                except Exception:
+                    pass
+
+                time.sleep(interval)
+                try:
+                    st = self.panel_status()
+
+                    # 1. Approval prompt waiting (NEVER auto-approve)
+                    if st.get("approval_waiting"):
+                        cmd = st.get("approval_command") or "Terminal Command"
+                        if cmd != last_approval_cmd:
+                            last_approval_cmd = cmd
+                            msg = f"Antigravity IDE requires command approval: '{cmd}'. Please review and approve in the IDE."
+                            if player and hasattr(player, "write_log"):
+                                player.write_log(f"AGY: [APPROVAL REQUIRED] {msg}")
+                            try:
+                                store.atomic_checkpoint(
+                                    task_id=task_id,
+                                    state="needs_confirmation",
+                                    round_count=1,
+                                    elapsed_sec=time.monotonic() - start_time,
+                                    checkpoint={"approval_command": cmd},
+                                )
+                            except Exception:
+                                pass
+
+                    # 2. Error or quota banner
+                    if st.get("error_banner"):
+                        err_txt = st.get("error_banner")
+                        msg = f"Antigravity IDE reported an error: {err_txt}"
+                        if player and hasattr(player, "write_log"):
+                            player.write_log(f"AGY: [ERROR] {msg}")
+                        try:
+                            store.update_state(task_id, "failed", error=err_txt)
+                        except Exception:
+                            pass
+                        break
+
+                    # 3. Agent is no longer running (generation completed)
+                    if not st.get("running"):
+                        time.sleep(0.8)
+                        st_confirm = self.panel_status()
+                        if not st_confirm.get("running"):
+                            pending_files = st_confirm.get("pending_files", 0)
+                            msg = f"Antigravity agent finished. Pending changed files: {pending_files}."
+                            if player and hasattr(player, "write_log"):
+                                player.write_log(f"AGY: {msg}")
+                            if player and hasattr(player, "show_content"):
+                                player.show_content("Antigravity IDE", msg)
+                            try:
+                                store.update_state(task_id, "done")
+                                notify_task_event(task_id, f"Antigravity: {prompt[:25]}", "done", msg)
+                            except Exception:
+                                pass
+                            break
+
+                except Exception as e:
+                    logger.debug(f"Error in prompt poller loop: {e}")
+
+                # Backoff up to 5.0s
+                interval = min(interval + 0.5, 5.0)
+
+            else:
+                try:
+                    store.update_state(task_id, "failed", error="Prompt execution timed out")
+                except Exception:
+                    pass
+
+        t = threading.Thread(target=_poll_worker, daemon=True, name=f"agy-poller-{task_id}")
+        t.start()
+        return task_id
+
+    def send_prompt_cli(
+        self,
+        prompt: str,
+        project_folder: Optional[str] = None,
+        player=None,
+    ) -> outcome.ActionResult:
+        """Alternative experimental handoff: dispatch prompt via standalone Antigravity CLI (agy)."""
+        from actions.antigravity_launcher import find_agy_cli
+
+        agy = find_agy_cli()
+        if not agy:
+            return outcome.ActionResult(
+                status=outcome.STATUS_FAILED,
+                action="send_prompt_cli",
+                success=False,
+                verified=False,
+                message="Antigravity CLI (agy) is not installed or not found.",
+                error="CLI not found",
+            )
+
+        cmd = [agy, "--print", prompt, "--output-format", "json"]
+        cwd = project_folder or str(Path.cwd())
+
+        try:
+            res = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=60)
+            if res.returncode == 0:
+                if player and hasattr(player, "write_log"):
+                    player.write_log(f"AGY CLI: Finished prompt execution in {cwd}")
+                return outcome.ActionResult(
+                    status=outcome.STATUS_DONE,
+                    action="send_prompt_cli",
+                    success=True,
+                    verified=True,
+                    message=f"Antigravity CLI finished execution: {res.stdout[:200]}",
+                    data={"output": res.stdout, "cwd": cwd},
+                )
+            return outcome.ActionResult(
+                status=outcome.STATUS_FAILED,
+                action="send_prompt_cli",
+                success=False,
+                verified=False,
+                message=f"Antigravity CLI failed with code {res.returncode}: {res.stderr[:200]}",
+                error=res.stderr,
+            )
+        except Exception as e:
+            return outcome.ActionResult(
+                status=outcome.STATUS_FAILED,
+                action="send_prompt_cli",
+                success=False,
+                verified=False,
+                message=f"Failed to execute Antigravity CLI: {e}",
                 error=str(e),
             )
 
