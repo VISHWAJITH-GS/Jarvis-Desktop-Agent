@@ -365,6 +365,7 @@ class LiveAudioMixin:
                             in_buf = []
 
                             full_out = " ".join(out_buf).strip()
+                            full_out = confirm_gate.strip_model_confirmation_phrases(full_out)
                             # Second line of defence: even if a repeat slips
                             # into a *fresh* buffer after a flush, never log the
                             # same answer (or a tail of it) twice in a row.

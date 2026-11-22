@@ -205,3 +205,87 @@ def test_no_pending_action_reports_nothing_to_confirm():
     assert res is not None
     assert res.success is False
     assert "nothing to confirm" in res.message.lower()
+
+
+def test_confirm_executes_stored_action_exactly_once():
+    execution_count = []
+
+    def mock_action():
+        execution_count.append(1)
+        return "Chat exported to Desktop\\chat.txt successfully."
+
+    save_pending(
+        tool="file_controller",
+        params={"action": "create_file", "path": "Desktop/chat.txt"},
+        run=mock_action,
+        tier=RiskTier.MEDIUM,
+        title="Export Chat to Desktop",
+        turn_id="turn_1",
+    )
+
+    # User says "confirm"
+    res = intercept_confirmation("confirm", turn_id="turn_2")
+    assert res is not None
+    assert res.success is True
+    assert "chat exported to desktop" in res.message.lower()
+    assert execution_count == [1]
+
+    # Verify pending action is cleared
+    assert get_pending() is None
+
+
+def test_canonicalize_params_maps_equivalent_calls_to_one_pending_id():
+    from core.confirm import canonicalize_params, actions_equivalent
+
+    # Equivalent file params (case, slashes, meta flags)
+    p1 = {"path": "C:\\Users\\User\\Desktop\\Chat.txt", "_execution_authorized": False, "confirmed": False}
+    p2 = {"path": "c:/users/user/desktop/chat.txt", "timestamp": 123456}
+
+    assert actions_equivalent("file_controller", p1, "file_controller", p2) is True
+
+    # Same for WhatsApp
+    w1 = {"contact": "Ram Nath", "text": "Hello world", "platform": "whatsapp"}
+    w2 = {"receiver": "ram nath ", "message": " Hello world", "action": "send_message"}
+    assert actions_equivalent("whatsapp_send", w1, "send_message", w2) is True
+
+
+def test_confirm_clears_pending_and_duplicate_does_not_rerun():
+    execution_count = []
+
+    def mock_action():
+        execution_count.append(1)
+        return "Operation executed."
+
+    save_pending(
+        tool="windows_control",
+        params={"action": "close_app", "target": "notepad"},
+        run=mock_action,
+        tier=RiskTier.MEDIUM,
+        title="Close Notepad",
+        turn_id="turn_1",
+    )
+
+    # First confirm -> executes
+    res1 = intercept_confirmation("confirm", turn_id="turn_2")
+    assert res1.success is True
+    assert execution_count == [1]
+    assert get_pending() is None
+
+    # Immediate second confirm -> reports already done, does NOT execute again
+    res2 = intercept_confirmation("confirm", turn_id="turn_3")
+    assert res2 is not None
+    assert "already done" in res2.message.lower()
+    assert execution_count == [1]
+
+
+def test_strip_model_confirmation_phrases():
+    from core.confirm import strip_model_confirmation_phrases
+
+    msg1 = "I am ready to export the conversation. Shall I proceed with exporting? Say confirm to proceed or no to cancel."
+    cleaned1 = strip_model_confirmation_phrases(msg1)
+    assert "say confirm" not in cleaned1.lower()
+    assert "I am ready to export the conversation." in cleaned1
+
+    msg2 = "Please say confirm to execute."
+    assert strip_model_confirmation_phrases(msg2) == ""
+

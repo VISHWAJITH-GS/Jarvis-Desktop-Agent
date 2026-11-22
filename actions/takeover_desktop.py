@@ -10,7 +10,23 @@ from __future__ import annotations
 
 
 def takeover_desktop(parameters: dict, player=None) -> str:
-    """Lazy handler delegating to core.agent_orchestrator on-demand."""
+    """Lazy handler delegating to core.agent_orchestrator on-demand, with direct routing for deterministic tasks."""
+    params = dict(parameters or {})
+    goal = str(params.get("goal") or "").strip()
+    goal_lower = goal.lower()
+
+    # Routing rule: simple deterministic page/chat extraction to file uses page_to_file directly
+    if (
+        any(w in goal_lower for w in ("chatgpt", "chat", "conversation", "webpage", "page"))
+        and any(w in goal_lower for w in ("save", "copy", "export", "dump", "write"))
+        and any(w in goal_lower for w in ("file", "notepad", "txt", "md", "desktop", "document"))
+    ):
+        try:
+            from actions.page_to_file import page_to_file
+            return page_to_file({"source": "active_tab", "goal": goal}, player=player)
+        except Exception:
+            pass
+
     from core import agent_orchestrator
 
     return agent_orchestrator.takeover_desktop(parameters, player=player)

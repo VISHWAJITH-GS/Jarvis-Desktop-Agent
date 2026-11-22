@@ -284,6 +284,21 @@ def canonicalize_params(tool: str, params: Optional[dict]) -> dict:
         else:
             clean_params["formal"] = bool(f_val)
 
+    # Canonicalize file path / filename (slashes, whitespace, lowercased on windows)
+    for p_key in ("path", "filepath", "filename", "destination", "folder"):
+        if p_key in clean_params:
+            p_val = str(clean_params[p_key] or "").strip().strip("'\"")
+            p_norm = p_val.replace("\\", "/").rstrip("/")
+            import platform
+            if platform.system() == "Windows":
+                p_norm = p_norm.lower()
+            clean_params[p_key] = p_norm
+
+    # Canonicalize target / app name
+    for a_key in ("target", "app_name", "app", "name"):
+        if a_key in clean_params and isinstance(clean_params[a_key], str):
+            clean_params[a_key] = re.sub(r"\s+", " ", clean_params[a_key]).strip().lower()
+
     # Return sorted dictionary by key for consistent hashing/equality
     return dict(sorted(clean_params.items()))
 
@@ -1108,6 +1123,7 @@ class ConfirmationManager:
             cls._executed_ids.add(p.id)
             cls._last_executed = p
             cls._active_id = None
+            cls._store.pop(p.id, None)  # Cleared immediately so it is never re-prompted
 
         if _hide_cb:
             try:
@@ -1284,4 +1300,23 @@ def get_recent_execution(tool_name: str, params: Optional[dict] = None, seconds:
 
 def has_recent_execution(tool_name: str, params: Optional[dict] = None, seconds: float = 5.0) -> bool:
     return ConfirmationManager.has_recent_execution(tool_name, params=params, seconds=seconds)
+
+
+def strip_model_confirmation_phrases(text: str) -> str:
+    """Strip redundant model-generated 'say confirm' phrases from assistant speech/output."""
+    if not text:
+        return ""
+    patterns = [
+        r"(?:shall\s+i\s+proceed[^\.\?\!]*[\.\?\!]\s*)?(?:please\s+)?say\s+['\"]?confirm['\"]?\s+to\s+(?:proceed|execute)[^\.\?\!]*[\.\?\!]?",
+        r"(?:please\s+)?say\s+['\"]?confirm['\"]?\s+to\s+(?:proceed|execute)[^\.\?\!]*[\.\?\!]?",
+        r"(?:please\s+)?say\s+['\"]?confirm['\"]?\s+or\s+['\"]?no['\"]?\s+to\s+cancel[^\.\?\!]*[\.\?\!]?",
+        r"(?:please\s+)?say\s+['\"]?confirm['\"]?\s+whenever\s+you\s+are\s+ready[^\.\?\!]*[\.\?\!]?",
+        r"(?:please\s+)?say\s+['\"]?confirm['\"]?\s+to\s+[^\.\?\!]*[\.\?\!]?",
+        r"shall\s+i\s+proceed\s+with\s+[^\.\?\!]*\?",
+    ]
+    cleaned = text
+    for p in patterns:
+        cleaned = re.sub(p, "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned).strip()
+    return cleaned
 

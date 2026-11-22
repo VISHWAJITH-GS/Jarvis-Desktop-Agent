@@ -1007,6 +1007,26 @@ class ActionExecutionGuard:
                 duration_ms=dur,
             )
 
+        # 1.2. Check if recently executed via confirmation to prevent re-asking
+        from core import confirm
+        if confirm.has_recent_execution(name, params=params, seconds=60.0):
+            last_exec = confirm.get_recent_execution(name, params=params, seconds=60.0)
+            dur = (time.monotonic() - start_time) * 1000
+            res_msg = f"Action '{name}' has already been executed."
+            if last_exec and last_exec.result:
+                if isinstance(last_exec.result, str):
+                    res_msg = last_exec.result
+                elif hasattr(last_exec.result, "message") and last_exec.result.message:
+                    res_msg = last_exec.result.message
+            return outcome.ActionResult(
+                status=outcome.STATUS_DONE,
+                action=name,
+                success=True,
+                verified=True,
+                message=res_msg,
+                duration_ms=dur,
+            )
+
         # 2. Check if already authorized by human confirmation
         # Internal flag set ONLY when user confirms through ConfirmationManager
         if params.get("_execution_authorized") is True:
