@@ -45,19 +45,26 @@ class LearningManager:
         generator: Optional[SkillGenerator] = None,
         validator: Optional[SkillValidator] = None,
         executor: Optional[SkillExecutor] = None,
+        action_registry=None,
     ):
+        from core.action_loader import get_default_registry
+        self.action_registry = action_registry or get_default_registry()
         self.observation_engine = observation_engine or ObservationEngine()
         self.generator = generator or SkillGenerator()
-        self.validator = validator or SkillValidator()
-        self.executor = executor or SkillExecutor()
+        self.validator = validator or SkillValidator(action_registry=self.action_registry)
+        self.executor = executor or SkillExecutor(action_registry=self.action_registry)
         self.registry = get_default_skill_registry()
 
         self.current_session: Optional[LearningSession] = None
 
     @classmethod
-    def get_instance(cls) -> LearningManager:
+    def get_instance(cls, action_registry=None) -> LearningManager:
         if cls._instance is None:
-            cls._instance = cls()
+            cls._instance = cls(action_registry=action_registry)
+        elif action_registry is not None and cls._instance.action_registry != action_registry:
+            cls._instance.action_registry = action_registry
+            cls._instance.validator.registry = action_registry
+            cls._instance.executor.registry = action_registry
         return cls._instance
 
     def is_learning_active(self) -> bool:
@@ -336,5 +343,5 @@ class LearningManager:
         )
 
 
-def get_default_learning_manager() -> LearningManager:
-    return LearningManager.get_instance()
+def get_default_learning_manager(action_registry=None) -> LearningManager:
+    return LearningManager.get_instance(action_registry=action_registry)

@@ -148,8 +148,39 @@ class ActionRegistry:
             out.append(decl)
         return out
 
-    def has(self, name: str) -> bool:
+    def has_action(self, name: str) -> bool:
+        """Stable public API: returns True if action is registered and valid."""
         return name in self._actions
+
+    def has(self, name: str) -> bool:
+        return self.has_action(name)
+
+    def get_declaration(self, name: str) -> Optional[dict]:
+        """Stable public API: returns tool declaration dict (name, description, parameters, tier, etc.) or None."""
+        rec = self._actions.get(name)
+        if rec is None:
+            return None
+        decl = {
+            "name": rec.name,
+            "description": rec.description,
+            "parameters": rec.parameters or dict(_DEFAULT_PARAMS),
+        }
+        if rec.tier:
+            decl["tier"] = rec.tier
+        if rec.brief:
+            decl["brief"] = rec.brief
+        return decl
+
+    def get_parameters_schema(self, name: str) -> Optional[dict]:
+        """Stable public API: returns parameters schema dictionary for action or None."""
+        rec = self._actions.get(name)
+        if rec is None:
+            return None
+        return rec.parameters or dict(_DEFAULT_PARAMS)
+
+    def list_actions(self) -> list[str]:
+        """Stable public API: returns sorted list of registered action names."""
+        return sorted(self._actions.keys())
 
     def scheduling(self, name: str) -> Optional[str]:
         """How this action's result should re-enter the conversation, if it said."""
@@ -160,6 +191,10 @@ class ActionRegistry:
         return set(self._actions.keys())
 
     def get_action_record(self, name: str) -> Optional[ActionRecord]:
+        return self._actions.get(name)
+
+    def get_action(self, name: str) -> Optional[ActionRecord]:
+        """Stable public API: returns ActionRecord for action or None."""
         return self._actions.get(name)
 
     def _validate_parameters(self, rec: ActionRecord, parameters: dict) -> tuple[bool, str]:
@@ -291,6 +326,12 @@ def _validate_tool(tool: dict, filename: str) -> ActionRecord:
         )
 
     handler = tool.get("handler")
+    if isinstance(handler, str):
+        act_mod = f"actions.{Path(filename).stem}"
+        if act_mod in sys.modules and hasattr(sys.modules[act_mod], handler):
+            handler = getattr(sys.modules[act_mod], handler)
+        else:
+            handler = LazyActionHandler(name, act_mod, handler, filename)
     if not callable(handler):
         return ActionRecord(name=name, file=filename, error="TOOL['handler'] missing or not callable.")
 
@@ -461,11 +502,15 @@ def discover_actions(
                 rec = _validate_tool(tool_dict, path.name)
 
                 if rec.valid and rec.name in reserved:
-                    rec = ActionRecord(
-                        name=rec.name,
-                        file=path.name,
-                        error=f"Name '{rec.name}' collides with a reserved core tool — rejected.",
-                    )
+                    if rec.name == "screen_process":
+                        # Register screen_processor as the working action handler for screen_process
+                        pass
+                    else:
+                        rec = ActionRecord(
+                            name=rec.name,
+                            file=path.name,
+                            error=f"Name '{rec.name}' collides with a reserved core tool — rejected.",
+                        )
                 elif rec.valid and rec.name in valid:
                     other = valid[rec.name].file
                     rec = ActionRecord(
@@ -491,8 +536,6 @@ def discover_actions(
     registry._all_records = all_records
     logger(f"Action discovery complete: {len(valid)} active.")
     return registry
-    logger(f"Action discovery complete: {len(valid)} active.")
-    return registry
 
 
 _default_registry: Optional[ActionRegistry] = None
@@ -505,6 +548,12 @@ def get_default_registry(actions_dir: Path | None = None) -> ActionRegistry:
         p = actions_dir or (Path(__file__).resolve().parent.parent / "actions")
         _default_registry = discover_actions(p)
     return _default_registry
+
+
+def set_default_registry(registry: ActionRegistry) -> None:
+    """Set the shared singleton ActionRegistry."""
+    global _default_registry
+    _default_registry = registry
 
 
 # Public alias for modules calling get_registry

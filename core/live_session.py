@@ -48,7 +48,7 @@ from core.session_audio import LiveAudioMixin
 from core.session_monitors import LiveMonitorsMixin
 from core.session_voice import LiveVoiceMixin, IDLE_SLEEP_TIMEOUT, WAKE_SLEEP_TIMEOUT
 import platform as _platform
-from core.action_loader import discover_actions, strip_meta
+from core.action_loader import discover_actions, get_default_registry, strip_meta
 from core.plugin_loader import discover_plugins
 from core.voice_state import VoiceStateManager, VoiceState
 from core.global_input import GlobalInputController
@@ -186,16 +186,12 @@ class JarvisLive(LiveAudioMixin, LiveMonitorsMixin, LiveVoiceMixin):
         self._tuned_live = True  # turn-taking / media / thinking knobs; same fallback
 
         _base_dir = BASE_DIR
-        _inline_names: set[str] = {str(t.get("name", "")) for t in TOOL_DECLARATIONS if isinstance(t, dict)}
+        _inline_names: set[str] = {
+            str(t.get("name", "")) for t in TOOL_DECLARATIONS if isinstance(t, dict) and t.get("name") != "screen_process"
+        }
 
-        # File-backed tools: every actions/*.py with a TOOL dict, discovered the
-        # same way plugins are. Reserved names = the inline tools above, so an
-        # action can never shadow one.
-        self._action_registry = discover_actions(
-            actions_dir=_base_dir / "actions",
-            reserved_names=_inline_names,
-            logger=lambda msg: print(f"[Actions] {msg}"),
-        )
+        # Shared authoritative action registry across all subsystems
+        self._action_registry = get_default_registry(_base_dir / "actions")
 
         # Plugins must not collide with either an inline tool or a discovered action.
         _core_names = _inline_names | self._action_registry.names()

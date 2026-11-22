@@ -44,6 +44,14 @@ SCOPE_BROWSER_TAB = "browser_tab"
 
 ALLOWED_SCOPES = {SCOPE_SCREEN, SCOPE_WINDOW, SCOPE_BROWSER_TAB}
 
+
+def verify_outcome(parameters: dict, player=None) -> outcome.ActionResult:
+    """Action entry point for verify_outcome."""
+    from actions import visual_verifier
+
+    return visual_verifier.verify_outcome_action(parameters, player=player)
+
+
 TOOL = {
     "name": "verify_outcome",
     "description": (
@@ -79,12 +87,5 @@ TOOL = {
         },
         "required": ["expected"],
     },
-    "handler": "verify_outcome",
+    "handler": verify_outcome,
 }
-
-
-def verify_outcome(parameters: dict, player=None) -> outcome.ActionResult:
-    """Action entry point for verify_outcome."""
-    from actions import visual_verifier
-
-    return visual_verifier.verify_outcome_action(parameters, player=player)

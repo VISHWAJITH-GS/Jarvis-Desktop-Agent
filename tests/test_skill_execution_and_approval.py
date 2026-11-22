@@ -26,14 +26,13 @@ class TestSkillExecutionAndApproval(unittest.TestCase):
     def tearDown(self):
         ConfirmationManager.discard_pending("test teardown")
 
-    def test_tool_schema_contains_approve_skill(self):
-        """Tool parameter schema must expose approve_skill to prevent model parameter jamming."""
+    def test_tool_schema_does_not_contain_approve_skill(self):
+        """Tool parameter schema must NOT expose approve_skill to prevent model self-approval."""
         props = TOOL["parameters"]["properties"]
-        self.assertIn("approve_skill", props)
-        self.assertEqual(props["approve_skill"]["type"], "BOOLEAN")
+        self.assertNotIn("approve_skill", props)
 
     def test_compound_action_parsing(self):
-        """When model provides 'execute_skill, approve_skill:True', action is correctly extracted."""
+        """When model provides 'execute_skill, approve_skill:True', action is correctly extracted and approval flags ignored."""
         with patch("actions.skill_learner.get_default_learning_manager") as mock_mgr_getter:
             mock_mgr = MagicMock()
             mock_mgr_getter.return_value = mock_mgr
@@ -45,12 +44,12 @@ class TestSkillExecutionAndApproval(unittest.TestCase):
                 }
             )
 
-            # execute_skill should have been called with approve_skill set in parameters
+            # execute_skill should have been called, but approve_skill must NOT be injected
             self.assertTrue(mock_mgr.execute_skill.called)
             call_kwargs = mock_mgr.execute_skill.call_args[1]
             params = call_kwargs.get("parameters", {})
-            self.assertTrue(params.get("approve_skill"))
-            self.assertTrue(params.get("__user_confirmed__"))
+            self.assertFalse(params.get("approve_skill", False))
+            self.assertFalse(params.get("__user_confirmed__", False))
 
     def test_word_boundary_risk_classification(self):
         """'Skillrack Login' should NOT be classified as DESTRUCTIVE due to 'kill' in 'skillrack'."""

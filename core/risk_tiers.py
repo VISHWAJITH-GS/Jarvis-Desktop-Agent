@@ -269,6 +269,28 @@ def _classify_default_tier(tool_name: str, params: Dict[str, Any]) -> RiskTier:
     if tool == "open_app":
         return RiskTier.LOW
 
+    # 5b. Skill Learning & Management
+    if tool == "skill_learner":
+        if action in (
+            "start_learning", "start", "learn",
+            "pause_learning", "pause",
+            "resume_learning", "resume",
+            "stop_learning", "stop",
+            "cancel_learning", "cancel",
+            "review_demonstration", "review",
+            "list_skills", "list",
+            "test_skill", "test",
+            "get_skill", "show_skill", "view_skill",
+        ):
+            return RiskTier.LOW
+        if action in ("delete_skill", "delete", "remove_skill"):
+            return RiskTier.HIGH
+        if action in ("approve_skill", "save_skill", "save", "approve", "create_skill", "generate_skill", "edit_skill", "rename_skill"):
+            return RiskTier.MEDIUM
+        if action in ("execute_skill", "run_skill", "execute", "run"):
+            return RiskTier.MEDIUM
+        return RiskTier.LOW
+
     if tool in ("browser_control", "action_executor"):
         # Check financial / checkout keywords
         financial_keywords = (

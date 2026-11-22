@@ -37,14 +37,13 @@ def skill_learner(
     skill_id = p.get("skill_id")
     skill_params = p.get("parameters")
 
-    # Detect explicit user approval flags passed in parameters or kwargs
-    approve_skill_flag = bool(p.get("approve_skill") or p.get("approved") or p.get("confirm"))
-
-    # Handle model hallucinations where parameters are combined into action string,
-    # e.g. "execute_skill, approve_skill:True"
-    if "approve_skill" in action_raw.lower() or "approve" in action_raw.lower():
-        if "true" in action_raw.lower() or "1" in action_raw.lower():
-            approve_skill_flag = True
+    # Guard: Approvals come ONLY from the confirmation system in code.
+    # Any approval flags passed by the model are strictly ignored and logged.
+    if any(k in p for k in ("approve_skill", "approved", "confirm")) or "approve_skill" in action_raw.lower():
+        import logging
+        logging.getLogger("skill_learner").warning(
+            "Ignoring model-passed approval argument in skill_learner: skill approvals must come from the code confirmation system."
+        )
 
     # Normalize primary action name: take first token before comma/semicolon/colon
     act = re.split(r"[,;:]", action_raw)[0].strip().lower()
@@ -154,10 +153,6 @@ def skill_learner(
             except Exception:
                 params_dict = {}
 
-        if approve_skill_flag:
-            params_dict["__user_confirmed__"] = True
-            params_dict["approve_skill"] = True
-
         return manager.execute_skill(
             skill_id=target_id,
             parameters=params_dict,
@@ -203,10 +198,6 @@ TOOL = {
             "skill_id": {
                 "type": "STRING",
                 "description": "The unique ID of the skill to test, approve, execute, or delete.",
-            },
-            "approve_skill": {
-                "type": "BOOLEAN",
-                "description": "Explicit user approval to execute skills containing sensitive actions (set to true when user confirms execution).",
             },
             "parameters": {
                 "type": "OBJECT",
