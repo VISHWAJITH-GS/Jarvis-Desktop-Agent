@@ -118,12 +118,35 @@ def run(parameters: dict, player=None, session_memory=None) -> outcome.ActionRes
             data={"contact": contact},
         )
 
-    # Format message formally
-    final_message = _polish_message_formal(raw_message) if formal else raw_message
+    # Composing help / Drafting mode (Part 3.5)
+    is_authorized = bool(p.get("_execution_authorized") or p.get("confirmed"))
+    is_draft_request = action in ("draft", "compose", "help") or any(
+        raw_message.lower().startswith(prefix)
+        for prefix in ("draft ", "compose ", "write a message ", "i need a message ")
+    )
+    if is_draft_request and not is_authorized:
+        topic = raw_message
+        for prefix in ("draft ", "compose ", "write a message ", "i need a message "):
+            if topic.lower().startswith(prefix):
+                topic = topic[len(prefix) :].strip()
+        try:
+            prompt = (
+                f"Draft a clear, polite, and concise WhatsApp message to {contact} for: {topic}. "
+                f"Return ONLY the drafted message text without quotes or explanation."
+            )
+            drafted = gemini.text(prompt, tier=gemini.FAST, timeout_ms=5000)
+            if drafted and drafted.strip():
+                final_message = drafted.strip().strip('"').strip("'")
+            else:
+                final_message = topic
+        except Exception:
+            final_message = topic
+    else:
+        # Format message formally
+        final_message = _polish_message_formal(raw_message) if formal else raw_message
 
     # 1. Deterministic code-level confirmation gate
     # Do NOT open WhatsApp before user confirmation!
-    is_authorized = bool(p.get("_execution_authorized") or p.get("confirmed"))
     if not is_authorized:
         from core import confirm
 
@@ -158,10 +181,21 @@ def run(parameters: dict, player=None, session_memory=None) -> outcome.ActionRes
             title=f"Send WhatsApp message to {contact}",
             detail=f"Message: '{final_message}'",
         )
+        if is_draft_request:
+            message_prompt = f"I have drafted the following message for {contact}: '{final_message}'. Shall I send this? Say confirm to execute, or no to cancel."
+        else:
+            message_prompt = f"Shall I proceed with sending WhatsApp message to {contact}: '{final_message}'? Say confirm to execute, or no to cancel."
+
         return outcome.result_needs_confirmation(
             "whatsapp_send",
-            message=f"Shall I proceed with sending WhatsApp message to {contact}: '{final_message}'? Say confirm to execute, or no to cancel.",
-            data={"id": pending.id, "tool": "whatsapp_send", "params": {"contact": contact, "text": final_message}},
+            message=message_prompt,
+            data={
+                "id": pending.id,
+                "tool": "whatsapp_send",
+                "params": {"contact": contact, "text": final_message},
+                "is_draft": is_draft_request,
+                "draft": final_message if is_draft_request else None,
+            },
         )
 
     # 2. Authorized execution

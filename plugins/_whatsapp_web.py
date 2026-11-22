@@ -600,7 +600,7 @@ class WhatsAppWebDriver:
             logger.info("[WhatsAppWeb] Direct phone URL timed out; falling back to search box.")
 
         # 3. Fall back to search box
-        search_el = await page.wait_for_selector(SELECTORS.search_input, timeout=12000)
+        search_el = await _safe_call(page, "wait_for_selector", SELECTORS.search_input, timeout=12000)
         if not search_el:
             return outcome.result_failed("resolve_contact", "WhatsApp Web layout changed: Search input box not found.")
 
@@ -810,7 +810,25 @@ class WhatsAppWebDriver:
         # 1. Resolve contact and open chat
         res_contact = await self._resolve_contact_in_page(page, contact_name)
         if not res_contact.is_success():
+            if res_contact.data.get("verdict") == "wrong_target" or "does not match" in res_contact.message.lower():
+                return outcome.result_failed(
+                    "whatsapp_send",
+                    f"Wrong chat open: {res_contact.message}",
+                    data={"verdict": "wrong_target", "contact": contact_name},
+                )
             return res_contact
+
+        # Verify active chat header matches target contact
+        header_info = await self._inspect_chat_header(page)
+        if header_info:
+            open_title = header_info.get("title", "").strip().lower()
+            c_low = contact_name.strip().lower()
+            if c_low not in open_title and open_title not in c_low:
+                return outcome.result_failed(
+                    "whatsapp_send",
+                    f"Wrong chat open: expected '{contact_name}', but active chat is '{header_info.get('title')}'.",
+                    data={"verdict": "wrong_target", "expected": contact_name, "found": header_info.get("title")},
+                )
 
         # 2. Wait for message composer to be visible
         compose_el = await page.wait_for_selector(SELECTORS.compose_box, timeout=10000)
@@ -820,7 +838,16 @@ class WhatsAppWebDriver:
                 "WhatsApp Web layout changed: Message composer input box not found.",
             )
 
-        await compose_el.click()
+        # Record pre-action baseline (outgoing bubbles present BEFORE sending)
+        pre_bubbles = await _safe_call(page, "query_selector_all", SELECTORS.message_outgoing) or []
+        pre_count = len(pre_bubbles)
+        pre_ids = set()
+        for b in pre_bubbles:
+            mid = await _safe_call(b, "get_attribute", "data-id")
+            if mid:
+                pre_ids.add(mid)
+
+        await _safe_call(compose_el, "click")
         await asyncio.sleep(0.1)
 
         # 3. Type message via CDP Input (never pyautogui, never clipboard)
@@ -847,40 +874,51 @@ class WhatsAppWebDriver:
             await page.keyboard.press("Enter")
         await asyncio.sleep(0.5)
 
-        # 5. Verify Delivery via Outgoing Message Bubble and Status Ticks
-        deadline = time.monotonic() + 8.0
-        bubble_found = False
+        # 5. Post-Action Verification: ONLY a NEW outgoing bubble counts (older bubbles never count!)
+        deadline = time.monotonic() + 10.0
+        new_bubble = None
         tick_seen = None
-        snippet = message[:30].strip()
 
         while time.monotonic() < deadline:
-            bubbles = await page.query_selector_all(SELECTORS.message_outgoing)
-            if bubbles:
-                last_bubble = bubbles[-1]
-                bubble_text = (await last_bubble.inner_text()) or ""
-                if not snippet or snippet.lower() in bubble_text.lower() or len(bubbles) > 0:
-                    bubble_found = True
+            post_bubbles = await _safe_call(page, "query_selector_all", SELECTORS.message_outgoing) or []
+            post_count = len(post_bubbles)
 
-                    # Inspect status ticks: clock -> sent tick -> delivered double tick
-                    sent_tick = await last_bubble.query_selector(SELECTORS.tick_sent_single)
-                    dbl_tick = await last_bubble.query_selector(
-                        SELECTORS.tick_delivered_double
-                    ) or await last_bubble.query_selector(SELECTORS.tick_read_blue)
-                    pending_clock = await last_bubble.query_selector(SELECTORS.tick_pending_clock)
+            cand = None
+            if post_count > pre_count and post_bubbles:
+                cand = post_bubbles[-1]
+            elif post_bubbles:
+                cand_id = await _safe_call(post_bubbles[-1], "get_attribute", "data-id")
+                if cand_id and cand_id not in pre_ids:
+                    cand = post_bubbles[-1]
 
-                    if dbl_tick and await dbl_tick.is_visible():
+            if cand is not None:
+                cand_text_el = (await _safe_call(cand, "query_selector", SELECTORS.message_text)) or cand
+                cand_text = (await _safe_call(cand_text_el, "inner_text")) or ""
+                clean_msg = message.strip().lower()
+                clean_cand = cand_text.strip().lower()
+                if not clean_msg or clean_msg in clean_cand or clean_cand in clean_msg:
+                    new_bubble = cand
+
+                    sent_tick = await _safe_call(cand, "query_selector", SELECTORS.tick_sent_single)
+                    dbl_tick = (await _safe_call(cand, "query_selector", SELECTORS.tick_delivered_double)) or (
+                        await _safe_call(cand, "query_selector", SELECTORS.tick_read_blue)
+                    )
+                    pending_clock = await _safe_call(cand, "query_selector", SELECTORS.tick_pending_clock)
+
+                    if dbl_tick and (await _safe_call(dbl_tick, "is_visible")) is not False:
                         tick_seen = "delivered"
                         break
-                    elif sent_tick and await sent_tick.is_visible():
+                    elif sent_tick and (await _safe_call(sent_tick, "is_visible")) is not False:
                         tick_seen = "sent"
                         break
-                    elif pending_clock and await pending_clock.is_visible():
+                    elif pending_clock and (await _safe_call(pending_clock, "is_visible")) is not False:
                         tick_seen = "pending"
+                        break
 
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.4)
 
         msg_preview = f'"{message}"'
-        if tick_seen in ("sent", "delivered"):
+        if new_bubble and tick_seen in ("sent", "delivered"):
             if player and hasattr(player, "write_log"):
                 try:
                     player.write_log(f"JARVIS: Message sent to {contact_name}: {msg_preview}")
@@ -895,29 +933,30 @@ class WhatsAppWebDriver:
                     "text": message,
                     "to": contact_name,
                     "verified": True,
+                    "verdict": "verified",
                     "tick": tick_seen,
                 },
             )
-        elif bubble_found and tick_seen == "pending":
+        elif new_bubble and tick_seen == "pending":
             return outcome.result_unverified(
                 "whatsapp_send",
-                "Message queued locally, check phone connection",
+                "Message queued locally in WhatsApp Web (clock icon), waiting for phone connection.",
                 error="Message pending in local queue (clock icon)",
-                data={"contact": contact_name, "text": message, "to": contact_name, "tick": "clock"},
+                data={"contact": contact_name, "text": message, "to": contact_name, "verdict": "unverifiable", "tick": "clock"},
             )
-        elif bubble_found:
+        elif new_bubble:
             return outcome.result_unverified(
                 "whatsapp_send",
                 f"Message was typed for {contact_name}, but delivery tick could not be confirmed.",
                 error="Sent tick unconfirmed",
-                data={"contact": contact_name, "text": message, "to": contact_name},
+                data={"contact": contact_name, "text": message, "to": contact_name, "verdict": "unverifiable"},
             )
 
         return outcome.result_failed(
             "whatsapp_send",
-            f"Message bubble did not appear in chat after sending to {contact_name}.",
-            error="No outgoing message bubble detected after send",
-            data={"contact": contact_name, "text": message, "to": contact_name},
+            f"Message was not sent to {contact_name}: no new outgoing bubble appeared in chat.",
+            error="No new outgoing message bubble detected after send",
+            data={"contact": contact_name, "text": message, "to": contact_name, "verdict": "not_done"},
         )
 
     def send_message(

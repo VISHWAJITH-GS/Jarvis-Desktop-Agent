@@ -140,10 +140,10 @@ class TestWhatsAppConfirmation(unittest.TestCase):
         res_after = confirm.intercept_confirmation("confirm")
         self.assertEqual(send_mock.call_count, 0)
 
-    # ── Test 4: Expired pending -> asks again ────────────────────────────────
+    # ── Test 4: Expired pending -> cleared and never resurfaced ──────────────
 
     def test_expired_pending_asks_again(self):
-        """When an action has expired (>60s), confirmation asks again and does not send."""
+        """When an action has expired (>60s), confirmation is cancelled and never resurfaced."""
         send_mock = MagicMock(return_value="Should not run")
 
         # Create action with 0.05s timeout
@@ -161,10 +161,27 @@ class TestWhatsAppConfirmation(unittest.TestCase):
         res = confirm.intercept_confirmation("confirm")
         self.assertIsNotNone(res)
         self.assertEqual(send_mock.call_count, 0)
-        # Asks again
-        self.assertEqual(res.status, outcome.STATUS_NEEDS_CONFIRMATION)
+        # Does NOT resurface; reports expired and cancelled
+        self.assertEqual(res.status, outcome.STATUS_FAILED)
         self.assertTrue(res.data.get("expired"))
         self.assertIn("expired", res.message.lower())
+
+    def test_pending_cleared_on_user_new_request(self):
+        """When user changes the subject or asks for something else, pending action is cleared (Part 4.2)."""
+        send_mock = MagicMock(return_value="Should not run")
+        pending = confirm.save_pending(
+            tool="whatsapp_send",
+            params={"contact": "Mom", "text": "HI"},
+            run=send_mock,
+            expires_in=60.0,
+            title="Send WhatsApp message to Mom",
+        )
+        self.assertIsNotNone(confirm.get_pending())
+
+        # User asks for something else (action command)
+        res = confirm.intercept_confirmation("open youtube")
+        self.assertIsNone(res)
+        self.assertIsNone(confirm.get_pending())
 
     # ── Test 5: Confirm with no pending action -> harmless & conversational phrases pass through ──
 

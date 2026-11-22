@@ -223,7 +223,7 @@ class TestWhatsAppWebDriver(unittest.TestCase):
             return None
 
         bubble.query_selector = AsyncMock(side_effect=_bubble_query)
-        mock_page.query_selector_all = AsyncMock(return_value=[bubble])
+        mock_page.query_selector_all = AsyncMock(side_effect=[[], [bubble], [bubble]])
 
         loop = asyncio.new_event_loop()
         res = loop.run_until_complete(
@@ -260,7 +260,7 @@ class TestWhatsAppWebDriver(unittest.TestCase):
             return None
 
         bubble.query_selector = AsyncMock(side_effect=_bubble_query)
-        mock_page.query_selector_all = AsyncMock(return_value=[bubble])
+        mock_page.query_selector_all = AsyncMock(side_effect=[[], [bubble], [bubble]])
 
         loop = asyncio.new_event_loop()
         res = loop.run_until_complete(

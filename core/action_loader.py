@@ -505,3 +505,7 @@ def get_default_registry(actions_dir: Path | None = None) -> ActionRegistry:
         p = actions_dir or (Path(__file__).resolve().parent.parent / "actions")
         _default_registry = discover_actions(p)
     return _default_registry
+
+
+# Public alias for modules calling get_registry
+get_registry = get_default_registry

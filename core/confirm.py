@@ -788,6 +788,17 @@ class ConfirmationManager:
         is_canc = matches_cancel(utterance)
 
         if not (is_conf or is_canc):
+            # If user asks for something else or changes subject, clear stale pending action (Part 4.2)
+            with cls._lock:
+                p = cls.get_pending_internal()
+                if p is not None and (
+                    _is_command_or_action_utterance(utterance.strip().lower())
+                    or len(utterance.strip().split()) >= 3
+                ):
+                    p.status = "cancelled"
+                    cls._active_id = None
+                    cls._store.pop(p.id, None)
+                    _log(f"Cleared pending action '{p.title}' because user changed subject / asked for something else.")
             return None
 
         # Handle cancellation
@@ -868,22 +879,10 @@ class ConfirmationManager:
                             break
 
                 if last_exp is not None:
-                    # Expired pending -> asks again
-                    ask_msg = (
-                        f"The confirmation for {last_exp.title} has expired. "
-                        f"Shall I proceed with {last_exp.title}? Say confirm to execute, or no to cancel."
-                    )
+                    # Expired pending -> NEVER resurface as "shall I proceed anyway?" (Part 4.2)
                     cls._last_expired = None
-                    # Renew pending action with fresh timeout
-                    fresh = cls.save_pending(
-                        tool=last_exp.tool,
-                        params=last_exp.params,
-                        run=last_exp.run,
-                        expires_in=TIMEOUT_SECONDS,
-                        title=last_exp.title,
-                        detail=last_exp.detail,
-                        risk_level=last_exp.risk_level,
-                    )
+                    cls._store.pop(last_exp.id, None)
+                    ask_msg = f"The confirmation for {last_exp.title} has expired and was cancelled."
                     if player and hasattr(player, "write_log"):
                         try:
                             player.write_log(f"SYS: {ask_msg}")
@@ -894,10 +893,10 @@ class ConfirmationManager:
                             speak(ask_msg)
                         except Exception:
                             pass
-                    return outcome.result_needs_confirmation(
-                        fresh.tool,
-                        message=ask_msg,
-                        data={"id": fresh.id, "expired": True, "renewed": True},
+                    return outcome.result_failed(
+                        "confirmation",
+                        ask_msg,
+                        data={"id": last_exp.id, "expired": True, "no_pending": True},
                     )
 
                 # Confirm with no pending action -> says nothing to confirm
