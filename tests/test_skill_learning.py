@@ -467,7 +467,7 @@ class TestLearningManagerLifecycle(unittest.TestCase):
                         "step_id": 1,
                         "thought": "Click Login",
                         "tool": "windows_uia",
-                        "parameters": {"action": "click", "name": "Login", "x": 500, "y": 300},
+                        "parameters": {"action": "click", "name": "Login"},
                     },
                 ],
             }
@@ -671,7 +671,7 @@ class TestSkillLearnerToolAction(unittest.TestCase):
                         "step_id": 2,
                         "thought": "Select Student Profile",
                         "tool": "browser_profile",
-                        "parameters": {"profile_name": "Student", "x": 450, "y": 320},
+                        "parameters": {"profile_name": "Student", "action": "select_profile"},
                     },
                     {
                         "step_id": 3,

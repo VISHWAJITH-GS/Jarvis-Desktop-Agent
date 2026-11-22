@@ -118,10 +118,39 @@ class ActionRecord:
 
     def validate_parameters(self, parameters: dict) -> tuple[bool, str]:
         schema = self.parameters or {}
+        properties = schema.get("properties", {})
         required = schema.get("required", [])
+
+        # Check for unknown parameters (reject unknown arguments)
+        if properties:
+            for k in parameters:
+                if k not in properties:
+                    return False, f"Unexpected argument '{k}' for action '{self.name}'. Allowed: {sorted(properties.keys())}"
+
+        # Check required parameters
         for req in required:
             if req not in parameters or parameters[req] is None or parameters[req] == "":
-                return False, f"Missing required parameter '{req}'"
+                return False, f"Missing required parameter '{req}' for action '{self.name}'"
+
+        # Check types
+        for k, val in parameters.items():
+            if val is None or k not in properties:
+                continue
+            prop_info = properties[k]
+            if not isinstance(prop_info, dict):
+                continue
+            prop_type = prop_info.get("type", "").lower()
+            if prop_type in ("string", "str") and not isinstance(val, str):
+                return False, f"Parameter '{k}' must be a string, got {type(val).__name__}"
+            elif prop_type in ("integer", "int") and not isinstance(val, int) and not (isinstance(val, str) and val.isdigit()):
+                return False, f"Parameter '{k}' must be an integer, got {type(val).__name__}"
+            elif prop_type in ("boolean", "bool") and not isinstance(val, bool) and val not in ("true", "false", "True", "False"):
+                return False, f"Parameter '{k}' must be a boolean, got {type(val).__name__}"
+            elif prop_type in ("object", "dict") and not isinstance(val, dict):
+                return False, f"Parameter '{k}' must be an object/dict, got {type(val).__name__}"
+            elif prop_type in ("array", "list") and not isinstance(val, list):
+                return False, f"Parameter '{k}' must be an array/list, got {type(val).__name__}"
+
         return True, ""
 
 

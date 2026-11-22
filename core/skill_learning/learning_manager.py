@@ -228,9 +228,18 @@ class LearningManager:
 
         try:
             skill = self.generator.generate_from_session(self.current_session)
-            # Validate schema and tools
-            val_report = self.validator.validate_full(skill)
+            # Validate schema and tools with single repair attempt
+            skill, val_report = self.validator.validate_and_repair(skill)
             self.current_session.validation_report = val_report
+            self.current_session.generated_skill = skill
+
+            if not val_report["valid"]:
+                return {
+                    "success": False,
+                    "skill_id": skill.id,
+                    "message": f"Skill validation failed after repair attempt: {'; '.join(val_report['errors'])}. Would you like to re-learn this workflow?",
+                    "validation": val_report,
+                }
 
             # Save draft skill to disk
             save_skill(skill)
@@ -269,7 +278,14 @@ class LearningManager:
 
         try:
             skill = self.generator.generate_from_description(goal=name, description=description)
-            val_report = self.validator.validate_full(skill)
+            skill, val_report = self.validator.validate_and_repair(skill)
+            if not val_report["valid"]:
+                return {
+                    "success": False,
+                    "skill_id": skill.id,
+                    "message": f"Skill validation failed after repair attempt: {'; '.join(val_report['errors'])}. Please re-phrase or re-learn.",
+                    "validation": val_report,
+                }
             save_skill(skill)
             self.registry.save_and_register(skill)
 

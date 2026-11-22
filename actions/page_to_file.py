@@ -132,13 +132,18 @@ def page_to_file(parameters: Optional[Dict[str, Any]] = None, player=None, **kwa
         )
 
     # Resolve target folder (defaults to user's Desktop)
+    dest_path_param = params.get("destination_path")
     folder_param = params.get("folder")
-    if folder_param:
+    filename_param = params.get("filename")
+
+    if dest_path_param and not folder_param and not filename_param:
+        p_obj = Path(dest_path_param).expanduser()
+        dest_folder = p_obj.parent.resolve()
+        filename_param = p_obj.name
+    elif folder_param:
         dest_folder = Path(folder_param).expanduser().resolve()
     else:
         dest_folder = (Path.home() / "Desktop").resolve()
-
-    filename_param = params.get("filename")
     if not filename_param:
         safe_title = re.sub(r'[<>:"/\\|?*\s]+', '_', title.strip())[:45].strip("_")
         filename_param = f"{safe_title or 'chat_export'}.{format_type}"
@@ -202,6 +207,10 @@ TOOL = {
             "selector": {
                 "type": "STRING",
                 "description": "Optional CSS selector to isolate a specific container element.",
+            },
+            "destination_path": {
+                "type": "STRING",
+                "description": "Optional full destination file path (e.g. 'C:/Users/User/Desktop/chat.txt'). If provided, folder and filename are derived from it.",
             },
             "filename": {
                 "type": "STRING",
