@@ -1408,3 +1408,90 @@ def save_stt_languages(languages: list[str]) -> None:
     cleaned = [str(l).strip().lower() for l in languages if str(l).strip()]
     _save_flag("stt_languages", cleaned or ["en"])
 
+
+# ── STT Vocabulary & Recognition Settings ────────────────────────────────────
+DEFAULT_STT_HOTWORDS = [
+    "Jarvis",
+    "VS Code",
+    "GitHub",
+    "Antigravity",
+    "Python",
+    "API",
+    "algorithm",
+    "placement interview",
+    "Mark LVI",
+]
+
+
+def get_stt_hotwords() -> list[str]:
+    """Return user-configured custom vocabulary/hotwords for STT prompt priming."""
+    raw = load_api_keys().get("stt_hotwords")
+    if isinstance(raw, list) and raw:
+        cleaned = [str(w).strip() for w in raw if str(w).strip()]
+        if cleaned:
+            return cleaned
+    return list(DEFAULT_STT_HOTWORDS)
+
+
+def save_stt_hotwords(words: list[str]) -> None:
+    """Persist user-configured STT hotwords."""
+    if not isinstance(words, list):
+        raise ValueError("stt_hotwords must be a list of strings")
+    cleaned = []
+    seen = set()
+    for w in words:
+        item = str(w).strip()
+        if item and item.lower() not in seen:
+            seen.add(item.lower())
+            cleaned.append(item)
+    _save_flag("stt_hotwords", cleaned or list(DEFAULT_STT_HOTWORDS))
+
+
+def add_stt_hotword(word: str) -> bool:
+    """Add a new word/phrase to STT vocabulary. Returns True if added, False if duplicate."""
+    w = str(word or "").strip()
+    if not w:
+        return False
+    current = get_stt_hotwords()
+    if any(c.lower() == w.lower() for c in current):
+        return False
+    current.append(w)
+    save_stt_hotwords(current)
+    return True
+
+
+def remove_stt_hotword(word: str) -> bool:
+    """Remove a word/phrase from STT vocabulary. Returns True if removed."""
+    w = str(word or "").strip().lower()
+    if not w:
+        return False
+    current = get_stt_hotwords()
+    filtered = [c for c in current if c.lower() != w]
+    if len(filtered) != len(current):
+        save_stt_hotwords(filtered)
+        return True
+    return False
+
+
+def get_stt_initial_prompt() -> str:
+    """Format configured STT vocabulary into a short prompt for Whisper priming.
+    Kept concise because overly long prompts degrade Whisper transcription accuracy.
+    """
+    words = get_stt_hotwords()
+    if not words:
+        return ""
+    # Cap to first 25 words to avoid prompt degradation
+    trimmed = words[:25]
+    return ", ".join(trimmed) + "."
+
+
+def is_stt_hybrid_mode() -> bool:
+    """Return whether optional hybrid STT mode (cloud fallback) is enabled."""
+    return bool(load_api_keys().get("stt_hybrid_mode", False))
+
+
+def set_stt_hybrid_mode(enabled: bool) -> None:
+    """Configure optional hybrid STT mode."""
+    _save_flag("stt_hybrid_mode", bool(enabled))
+
+

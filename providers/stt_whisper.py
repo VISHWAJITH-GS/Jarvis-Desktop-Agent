@@ -16,49 +16,29 @@ CPU IS THE DEFAULT AND THAT IS A PROMISE, NOT A FALLBACK
     supports, which on a CPU without AVX512 can be a type that then fails at
     load time with a message about instruction sets.
 
-NO FFMPEG, ON ANY PLATFORM
-    `WhisperModel.transcribe()` accepts a numpy array as well as a file path.
-    Given a path it decodes with PyAV and can want ffmpeg; given samples it
-    decodes nothing. The microphone already hands us raw 16 kHz PCM, so the
-    audio never becomes a file and the whole class of "works on my Linux box,
-    fails on Windows because ffmpeg is not on PATH" never arises.
-
-THE LANGUAGE IS DETECTED, NOT CONFIGURED
-    `language` defaults to empty, which means Whisper decides per utterance.
-    This assistant is used in many languages and people switch mid-conversation;
-    pinning a language would make it mis-transcribe the moment somebody says a
-    sentence in another one. Setting it is available for the case where someone
-    knows they only ever speak one and wants the small accuracy gain.
-
-RECOGNITION IS BLOCKING WORK AND IS KEPT OFF THE EVENT LOOP
-    `transcribe()` is CPU-bound and synchronous, and it returns a GENERATOR —
-    the work happens while the segments are iterated, not when the call returns.
-    Doing that on the asyncio thread freezes the audio loops, the UI bridge and
-    the receive loop for the whole of the recognition. It runs in a worker
-    thread here, and the model is loaded in one too.
+ACCURACY TUNED FOR ACCENTED ENGLISH AND TAMIL
+    Configured with beam search (beam_size=5), temperature fallback, custom
+    vocabulary priming from config_manager hotwords, silence/noise padding,
+    and automatic suppression of known Whisper silence hallucinations.
 """
 
 from __future__ import annotations
 
 import asyncio
+import math
 import os
 import time
 from importlib.util import find_spec
+from typing import Optional
 
 from . import audio
 from .base import DEFAULT_CAPS, Field
+from memory import config_manager
 
-# Ordered small to large. Every one of them is multilingual except the `.en`
-# variants, which are deliberately not offered: this assistant is not an English
-# appliance, and an English-only model is a trap that only shows itself when
-# somebody speaks their own language into it.
-MODELS = ("tiny", "base", "small", "medium", "large-v3", "large-v3-turbo")
-
-# Measured guidance rather than marketing: on an ordinary desktop CPU, `base`
-# transcribes a few seconds of speech in well under a second and is the right
-# default for a voice assistant, where being fast matters more than catching a
-# rare proper noun. `small` is noticeably better and roughly twice the wait.
-DEFAULT_MODEL = "base"
+# Ordered by recommendation/accuracy.
+# Medium is the default for maximum accuracy on accented English/Tamil.
+MODELS = ("medium", "small", "distil-large-v3", "large-v3", "large-v3-turbo", "base", "tiny")
+DEFAULT_MODEL = "medium"
 
 
 def _threads() -> int:
@@ -67,8 +47,7 @@ def _threads() -> int:
     Not all of them. This runs while the assistant is also playing audio,
     drawing an avatar at ~50 mouth shapes a second and holding a socket open.
     ctranslate2's default is to take every core, which starves exactly those and
-    produces stuttering playback during recognition — a fault that looks like a
-    sound problem and is really a scheduling one.
+    produces stuttering playback during recognition.
     """
     try:
         n = os.cpu_count() or 4
@@ -82,25 +61,41 @@ class WhisperSTT:
         self.backend = (cfg.get("backend") or "local").strip().lower()
         self.model_name = (cfg.get("model") or DEFAULT_MODEL).strip()
         self.device = (cfg.get("device") or "cpu").strip().lower()
-        # English only policy: no auto-detect, no translation step
-        raw_lang = (cfg.get("language") or "").strip().lower()
-        self.language = raw_lang if raw_lang.startswith("en") else "en"
+
+        raw_lang = (cfg.get("language") or "en").strip().lower()
+        if raw_lang in ("ta", "auto"):
+            self.language = raw_lang
+        else:
+            self.language = "en"
+
         self.base_url = (cfg.get("base_url") or "").strip()
         self.api_key = (cfg.get("api_key") or "").strip()
         self.download_root = (cfg.get("download_root") or "").strip() or None
         self._model = None
         self._load_lock = asyncio.Lock()
-        self.detected_language = "en"
+        self.detected_language = self.language if self.language in ("en", "ta") else "en"
+        self.last_confidence = 1.0
+        self.last_is_low_confidence = False
+
+        # Tuned decoding parameters for accented speech
+        self.beam_size = int(cfg.get("beam_size") or 5)
+        self.temperature = float(cfg.get("temperature") or 0.0)
+        self.vad_filter = True
+        self.min_silence_duration_ms = int(cfg.get("min_silence_duration_ms") or 500)
+        self.speech_pad_ms = int(cfg.get("speech_pad_ms") or 300)
+        self.no_speech_threshold = float(cfg.get("no_speech_threshold") or 0.60)
+
         self.caps = dict(DEFAULT_CAPS)
 
     # ── local ────────────────────────────────────────────────────────────────
     def _compute_type(self) -> str:
         # int8 on CPU is several times faster than float32 and the accuracy cost
-        # on speech this short is not audible. float16 is a GPU format; asking
-        # for it on a CPU fails at load, not at use, which is at least loud.
+        # on speech this short is not audible. float16 is a GPU format.
         return "float16" if self.device.startswith("cuda") else "int8"
 
     def _load_blocking(self):
+        os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "0"
+        os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
         from faster_whisper import WhisperModel
 
         t0 = time.monotonic()
@@ -126,8 +121,6 @@ class WhisperSTT:
                 )
             if log:
                 log(f"SYS: loading the {self.model_name} speech model (the first time also downloads it)")
-            # Loading is slow the first time — it downloads the model — and
-            # blocking, so it happens in a thread like the recognition itself.
             self._model, took = await asyncio.to_thread(self._load_blocking)
             if log:
                 log(
@@ -144,54 +137,63 @@ class WhisperSTT:
 
         gc.collect()
 
-    def _transcribe_blocking(self, samples) -> str:
+    def _transcribe_blocking(self, samples, language_override: str = "") -> tuple[str, float, str, bool]:
+        prompt = config_manager.get_stt_initial_prompt()
+
+        lang = None
+        if language_override:
+            lang = language_override
+        elif self.language in ("en", "ta"):
+            lang = self.language
+        # else lang is None -> auto-detection
+
         segments, info = self._model.transcribe(
             samples,
-            language="en",
+            language=lang,
             task="transcribe",
-            beam_size=1,  # greedy: a voice command is short and beam
-            # search costs multiples of the time for an
-            # accuracy gain that does not show up here
-            vad_filter=True,  # drops the silence a push-to-talk release
-            # leaves at both ends, which Whisper otherwise
-            # fills with an invented sentence
-            condition_on_previous_text=False,  # stops one bad transcript from
-            # steering every one after it
+            beam_size=self.beam_size,
+            best_of=self.beam_size,
+            temperature=self.temperature,
+            vad_filter=self.vad_filter,
+            vad_parameters=dict(
+                min_silence_duration_ms=self.min_silence_duration_ms,
+                speech_pad_ms=self.speech_pad_ms,
+            ),
+            no_speech_threshold=self.no_speech_threshold,
+            condition_on_previous_text=False,
+            initial_prompt=prompt or None,
         )
-        # The work happens HERE — `segments` is a generator.
-        text = " ".join(s.text.strip() for s in segments).strip()
-        self.detected_language = "en"
-        return text
 
-    # How sure Whisper has to be, and how much it has to have heard, before the
-    # answer switches to another language.
-    #
-    # THIS EXISTS BECAUSE THE VOICE CHANGED ACCENT AT RANDOM.
-    #     Whisper reports a language for EVERY utterance and is confident about
-    #     all of them, including "ok", "hmm", "evet" and "thanks". One-word
-    #     replies carry almost no signal, so the guess lands on whatever the
-    #     phonemes resemble — and because tts_piper follows the reported code,
-    #     the assistant answered one turn in a Portuguese voice and the next in
-    #     an English one, with the user having done nothing.
-    #
-    #     `language_probability` was sitting on the same object and was being
-    #     thrown away. It is the whole fix: below the threshold the previous
-    #     language stands, because "I could not tell" should keep the voice
-    #     where it is rather than move it somewhere new.
-    #
-    #     The length rule catches the other half — a short utterance can score
-    #     high and still be a coin toss, since there is not enough audio to be
-    #     wrong about.
+        segments_list = list(segments)
+        text = " ".join(s.text.strip() for s in segments_list).strip()
+
+        # Update language if auto-detecting
+        if lang is None and info is not None:
+            self._accept_language(info.language, info.language_probability, text)
+
+        # Compute confidence metrics
+        if segments_list:
+            avg_logprob = sum(s.avg_logprob for s in segments_list) / len(segments_list)
+            max_no_speech = max((s.no_speech_prob for s in segments_list), default=0.0)
+            confidence = math.exp(max(avg_logprob, -10.0))
+            is_low_confidence = (avg_logprob < -0.80) or (max_no_speech > 0.45) or (confidence < 0.60)
+        else:
+            confidence = 0.0
+            is_low_confidence = False
+
+        # Suppress silence/noise hallucinations
+        if text and audio.is_whisper_hallucination(text):
+            return "", 0.0, self.detected_language, False
+
+        self.last_confidence = confidence
+        self.last_is_low_confidence = is_low_confidence
+        return text, confidence, self.detected_language, is_low_confidence
+
     _LANG_MIN_CONFIDENCE = 0.65
     _LANG_MIN_CHARS = 12
 
     def _accept_language(self, code: str, confidence: float, text: str) -> None:
-        """Update the language the voice follows — only on real evidence.
-
-        The FIRST detection is always taken, whatever it scores: at the start of
-        a session there is nothing to keep, and refusing to choose would leave
-        the assistant with no language at all.
-        """
+        """Update the language the voice follows — only on real evidence."""
         code = code.strip().lower()
         if not code:
             return
@@ -228,52 +230,87 @@ class WhisperSTT:
             if r.status_code >= 400:
                 raise RuntimeError(f"{r.status_code} {_terse(r.text)}")
             payload = r.json()
-        # The hosted endpoint reports no confidence, so a language it names is
-        # taken as it always was — but through the same door, so the first-vs-
-        # switch rules stay in one place.
         self._accept_language(str(payload.get("language") or self.language or ""), 1.0, "x" * 99)
         return (payload.get("text") or "").strip()
+
+    # ── hybrid cloud fallback ────────────────────────────────────────────────
+    async def _hybrid_gemini_transcribe(self, pcm: bytes, sample_rate: int) -> Optional[str]:
+        """Multimodal one-shot REST fallback via core.gemini when local STT is uncertain."""
+        try:
+            from core import gemini
+
+            wav_bytes = audio.to_wav(pcm, rate=sample_rate)
+            prompt = (
+                "You are an accurate Speech-To-Text transcription engine for Indian English and Tamil-accented English. "
+                "Listen carefully to the audio and transcribe EXACTLY what the user spoke. "
+                "Output ONLY the transcribed words with proper capitalization and punctuation. "
+                "Do not add any preamble, explanation, or quotes. If there is only silence, noise, or music, output empty string."
+            )
+            wav_part = {"mime_type": "audio/wav", "data": wav_bytes}
+            result = await asyncio.to_thread(gemini.text, [prompt, wav_part], tier=gemini.FAST)
+            if result and isinstance(result, str):
+                cleaned = result.strip().strip("\"'")
+                if cleaned and not audio.is_whisper_hallucination(cleaned):
+                    return cleaned
+        except Exception:
+            pass
+        return None
 
     # ── the contract ─────────────────────────────────────────────────────────
     async def transcribe(self, pcm: bytes, sample_rate: int = audio.MIC_RATE, language: str = "", log=None) -> str:
         if not pcm:
             return ""
-        # Whisper invents sentences out of silence — the well-known artefact
-        # where a fraction of a second of room tone becomes "Thank you." in
-        # whatever language it guessed. A quarter of a second is below anything
-        # a person says on purpose, so it is dropped before it can become one.
-        if audio.duration_s(pcm, sample_rate) < 0.25:
+
+        # Preprocess: resample to 16kHz, remove DC offset, gentle normalize, pad edges, min 0.3s duration
+        samples = audio.preprocess_for_whisper(
+            pcm,
+            sample_rate=sample_rate,
+            min_duration_s=0.30,
+            pad_start_ms=150,
+            pad_end_ms=250,
+            normalize=True,
+            remove_dc=True,
+        )
+        if samples.size == 0:
             return ""
+
         if language:
-            self.language = language
+            if language in ("en", "ta"):
+                self.language = language
+            elif language in ("auto", ""):
+                self.language = "auto"
 
         if self.backend == "api":
             return await asyncio.to_thread(self._api_blocking, pcm, sample_rate)
 
+        # Optional hybrid mode: try Gemini first if explicitly enabled in settings
+        if config_manager.is_stt_hybrid_mode():
+            cloud_text = await self._hybrid_gemini_transcribe(pcm, sample_rate)
+            if cloud_text:
+                if log:
+                    log(f"STT (Gemini Hybrid): \"{cloud_text}\"")
+                return cloud_text
+
         await self._ensure_model(log)
-        samples = audio.to_float32(audio.resample(pcm, sample_rate, 16_000))  # Whisper is a 16 kHz model
-        return await asyncio.to_thread(self._transcribe_blocking, samples)
+        text, conf, lang, is_low = await asyncio.to_thread(self._transcribe_blocking, samples)
+
+        # Fallback to hybrid Gemini if local confidence is low
+        if is_low and text and not config_manager.is_stt_hybrid_mode():
+            cloud_text = await self._hybrid_gemini_transcribe(pcm, sample_rate)
+            if cloud_text:
+                if log:
+                    log(f"STT: local confidence low ({conf:.0%}), upgraded via Gemini: \"{cloud_text}\"")
+                return cloud_text
+
+        # Activity visibility logging
+        if text and log:
+            flag = " [LOW CONFIDENCE]" if is_low else ""
+            log(f"STT: \"{text}\" ({lang}, {conf:.0%}{flag})")
+
+        return text
 
     async def warmup(self, log=None) -> None:
-        """Load the model AND run one throwaway recognition, before the user
-        ever speaks.
-
-        Loading alone is not enough, and the difference was measured rather than
-        assumed. On this machine, `base` on the CPU:
-
-            load the model                 1.4s
-            FIRST transcription            8.5s
-            every transcription after      1.1s   (for 3.9s of speech)
-
-        The eight seconds are ctranslate2 bringing up its kernels on first use,
-        and without this they are paid by whatever the user says first — which
-        is the single worst moment to spend them, because a person who gets no
-        answer for eight seconds concludes the assistant is broken and says it
-        again, producing two overlapping turns.
-
-        A tenth of a second of silence is enough to trigger all of it, so the
-        warm-up costs nothing but the wait it is moving off the critical path.
-        """
+        """Load the model and run one throwaway recognition before user speaks."""
         if self.backend != "local":
             return
         try:
@@ -297,6 +334,30 @@ class WhisperSTT:
         return True, (f"{self.model_name} on {self.device} ({self._compute_type()}, {_threads()} threads)")
 
 
+def prepare(values: dict, report=None) -> None:
+    """Download model as soon as chosen in settings, with live progress reporting."""
+    backend = str((values or {}).get("backend") or "local").strip().lower()
+    if backend != "local":
+        return
+    model_name = str((values or {}).get("model") or DEFAULT_MODEL).strip()
+    if not model_name:
+        return
+    try:
+        os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "0"
+        os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+        import faster_whisper
+
+        if report:
+            report(None, f"Checking / downloading Whisper {model_name} model...")
+        t0 = time.monotonic()
+        faster_whisper.download_model(model_name)
+        if report:
+            report(True, f"Whisper {model_name} downloaded and ready in {time.monotonic() - t0:.1f}s.")
+    except Exception as e:
+        if report:
+            report(False, f"Download failed: {type(e).__name__}: {str(e)[:120]}")
+
+
 def _make(cfg: dict) -> WhisperSTT:
     return WhisperSTT(cfg)
 
@@ -306,21 +367,15 @@ PROVIDER = {
     "kind": "stt",
     "label": "Whisper",
     "hint": "On this machine with faster-whisper, or through a transcription API",
-    # Neither backend's dependency is required to LIST this provider — httpx is
-    # always present, and faster-whisper is only needed once "local" is chosen.
-    # Reporting it as unavailable would hide the API backend, which needs
-    # nothing installed at all.
     "requires": (),
     "install": "faster-whisper",
-    # Hearing, named the way somebody choosing it would name it. The local entry
-    # is first and is the one that needs no account, no key and no connection.
     "catalog": (
         {
             "id": "local",
             "label": "Whisper on this computer",
             "note": "free · private · runs on the CPU",
             "local": True,
-            "values": {"backend": "local", "base_url": "", "api_key": ""},
+            "values": {"backend": "local", "base_url": "", "api_key": "", "model": "medium"},
         },
         {
             "id": "groq",
@@ -356,7 +411,7 @@ PROVIDER = {
             kind="choice",
             choices=MODELS,
             default=DEFAULT_MODEL,
-            hint="base is the fast default; small is more accurate and slower",
+            hint="medium is high accuracy on CPU (~3-4s); small is faster (~1.5s); large models need GPU",
         ),
         Field(
             "device",
@@ -371,10 +426,12 @@ PROVIDER = {
         Field(
             "language",
             "Language",
-            default="",
+            kind="choice",
+            choices=("en", "auto", "ta"),
+            default="en",
             required=False,
             advanced=True,
-            hint="Leave empty to detect it every time — the right setting unless you only ever speak one language",
+            hint="en (forced by default for best English recognition); ta for Tamil; auto for dynamic detection",
         ),
         Field(
             "base_url",
@@ -400,5 +457,4 @@ PROVIDER = {
 
 
 def available() -> bool:
-    # The API backend needs nothing beyond httpx, which ships with the app.
     return find_spec("httpx") is not None

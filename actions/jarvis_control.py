@@ -18,6 +18,7 @@ from typing import Any, Dict, Optional
 
 from core import outcome
 from gui import display_registry
+from memory import config_manager
 
 logger = logging.getLogger(__name__)
 
@@ -235,19 +236,51 @@ def jarvis_control(parameters: Optional[Dict[str, Any]] = None, player=None, ses
         disp_cnt = len(display_registry.list_displays())
         return f"Jarvis is operational. Speaker is {spk_st}, microphone is {mic_st}. Active displays: {disp_cnt}."
 
+    # ── 8. STT Custom Vocabulary / Hotwords ───────────────────────────────────
+    if action in ("add_hotword", "add_vocabulary", "add_stt_word"):
+        word = str(params.get("word") or raw_target or "").strip()
+        if not word:
+            return "Please specify a word or phrase to add to the speech vocabulary, sir."
+        added = config_manager.add_stt_hotword(word)
+        if added:
+            if player and hasattr(player, "write_log"):
+                player.write_log(f"SYS: Added '{word}' to STT custom vocabulary.")
+            return f"Added '{word}' to speech recognition vocabulary, sir."
+        return f"'{word}' is already in your speech recognition vocabulary, sir."
+
+    if action in ("remove_hotword", "remove_vocabulary", "delete_hotword"):
+        word = str(params.get("word") or raw_target or "").strip()
+        if not word:
+            return "Please specify a word or phrase to remove, sir."
+        removed = config_manager.remove_stt_hotword(word)
+        if removed:
+            if player and hasattr(player, "write_log"):
+                player.write_log(f"SYS: Removed '{word}' from STT custom vocabulary.")
+            return f"Removed '{word}' from speech recognition vocabulary, sir."
+        return f"'{word}' was not found in your speech recognition vocabulary, sir."
+
+    if action in ("list_hotwords", "list_vocabulary", "get_hotwords"):
+        words = config_manager.get_stt_hotwords()
+        if not words:
+            return "No custom speech vocabulary words configured, sir."
+        formatted = ", ".join(words)
+        if player and hasattr(player, "write_log"):
+            player.write_log(f"SYS: STT Vocabulary: {formatted}")
+        return f"Current speech recognition vocabulary contains: {formatted}."
+
     return f"Unknown jarvis_control action: '{raw_action}'."
 
 
 TOOL = {
     "name": "jarvis_control",
     "description": (
-        "JARVIS Self-Control and Display Window Management: Controls Jarvis's own system state "
-        "(mute/unmute speaker or microphone, sleep, wake, minimize to taskbar/tray, restore back to normal, "
-        "shutdown Jarvis orderly) and controls Jarvis-created display windows (list_displays, "
-        "minimize_display, restore_display, close_display, close_all_displays). "
-        "Strictly operates on Jarvis's own windows and displays; never touches external applications."
+        "JARVIS Self-Control, Display Window Management, and Speech Vocabulary: Controls Jarvis's own "
+        "system state (mute/unmute speaker or microphone, sleep, wake, minimize to taskbar/tray, "
+        "restore back to normal, shutdown Jarvis orderly), controls Jarvis-created display windows, "
+        "and manages custom speech recognition vocabulary (add_hotword, remove_hotword, list_hotwords). "
+        "Strictly operates on Jarvis's own state and displays; never touches external applications."
     ),
-    "brief": "Control Jarvis state (mute, sleep, minimize, restore, shutdown) and Jarvis display windows.",
+    "brief": "Control Jarvis state, display windows, and speech recognition vocabulary.",
     "parameters": {
         "type": "OBJECT",
         "properties": {
@@ -267,15 +300,23 @@ TOOL = {
                     "close_display",
                     "close_all_displays",
                     "status",
+                    "add_hotword",
+                    "remove_hotword",
+                    "list_hotwords",
                 ],
-                "description": "The self-control or display action to perform.",
+                "description": "The self-control, display, or vocabulary action to perform.",
             },
             "target": {
                 "type": "STRING",
                 "description": (
                     "Action target: for mute/unmute specify 'speaker', 'microphone', or 'both'; "
-                    "for display commands specify the display name, title, or ID."
+                    "for display commands specify display name or ID; "
+                    "for add_hotword/remove_hotword specify the word or phrase."
                 ),
+            },
+            "word": {
+                "type": "STRING",
+                "description": "The vocabulary word or phrase for add_hotword/remove_hotword.",
             },
         },
         "required": ["action"],
