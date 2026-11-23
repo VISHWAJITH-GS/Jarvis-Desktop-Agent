@@ -1408,3 +1408,151 @@ def save_stt_languages(languages: list[str]) -> None:
     cleaned = [str(l).strip().lower() for l in languages if str(l).strip()]
     _save_flag("stt_languages", cleaned or ["en"])
 
+
+# ── Permission Settings & Policy Overrides ───────────────────────────────────
+
+def get_permission_settings() -> dict:
+    """Return user-configured permission policy settings."""
+    raw = load_api_keys().get("permission_settings")
+    if isinstance(raw, dict):
+        return raw
+    return {"overrides": {}, "timed_allows": {}}
+
+
+def save_permission_settings(settings: dict) -> None:
+    """Persist permission policy settings to config/api_keys.json."""
+    if not isinstance(settings, dict):
+        raise ValueError("permission_settings must be a dictionary")
+    _save_flag("permission_settings", settings)
+
+
+def get_permission_policy_override(permission_id: str) -> Optional[str]:
+    """Return policy override ('ASK', 'ALLOW', 'DENY') for a permission ID, if any."""
+    settings = get_permission_settings()
+    overrides = settings.get("overrides", {})
+    val = overrides.get(str(permission_id or "").strip())
+    return str(val).upper() if val else None
+
+
+def set_permission_policy_override(permission_id: str, policy: str) -> None:
+    """Save policy override ('ASK', 'ALLOW', 'DENY') for a permission ID."""
+    clean_id = str(permission_id or "").strip()
+    clean_pol = str(policy or "").strip().upper()
+    if clean_pol not in ("ASK", "ALLOW", "DENY"):
+        raise ValueError(f"Invalid policy '{policy}'. Must be ASK, ALLOW, or DENY.")
+    settings = dict(get_permission_settings())
+    overrides = dict(settings.get("overrides", {}))
+    overrides[clean_id] = clean_pol
+    settings["overrides"] = overrides
+    save_permission_settings(settings)
+
+
+def reset_permission_settings() -> None:
+    """Reset all permission overrides and timed allows to defaults."""
+    settings = {"overrides": {}, "timed_allows": {}}
+    save_permission_settings(settings)
+
+
+# ── System Operating Modes Configuration (Focus Mode & English Practice) ─────
+
+DEFAULT_MODES_CONFIG = {
+    "active_mode": None,
+    "modes": {
+        "focus": {
+            "name": "Focus Mode",
+            "description": "Block distracting apps, adult sites, and distractions during deep work",
+            "always_allowed_apps": [
+                "Code",
+                "Antigravity IDE",
+                "GitHubDesktop",
+                "Notion",
+                "Obsidian",
+            ],
+            "blocked_apps": ["Instagram"],
+            "blocked_domains": [
+                "instagram.com",
+                "www.instagram.com",
+                "i.instagram.com",
+                "cdninstagram.com",
+            ],
+            "block_adult_content": True,
+            "enable_family_dns": False,
+            "close_browser_tabs": True,
+            "poll_interval_seconds": 2.5,
+        },
+        "english_practice": {
+            "name": "English Placement Practice Mode",
+            "description": "Practice conversational and interview English for campus placements",
+            "scenario": "self_intro",
+            "feedback_style": "after_answer",  # after_answer | end_of_session | on_request
+            "silence_threshold_ms": 3500,
+            "filler_words_tracking": True,
+        },
+    },
+}
+
+
+def get_modes_config() -> dict:
+    """Return user-configured operating modes configuration with fallback to defaults."""
+    raw = load_api_keys().get("modes_config")
+    if not isinstance(raw, dict):
+        return dict(DEFAULT_MODES_CONFIG)
+    cfg = dict(DEFAULT_MODES_CONFIG)
+    cfg.update(raw)
+    # Ensure modes map exists
+    if "modes" not in cfg or not isinstance(cfg["modes"], dict):
+        cfg["modes"] = dict(DEFAULT_MODES_CONFIG["modes"])
+    else:
+        for k, v in DEFAULT_MODES_CONFIG["modes"].items():
+            if k not in cfg["modes"] or not isinstance(cfg["modes"][k], dict):
+                cfg["modes"][k] = dict(v)
+            else:
+                merged_entry = dict(v)
+                merged_entry.update(cfg["modes"][k])
+                cfg["modes"][k] = merged_entry
+    return cfg
+
+
+def save_modes_config(config: dict) -> None:
+    """Persist modes configuration to config/api_keys.json."""
+    if not isinstance(config, dict):
+        raise ValueError("modes_config must be a dictionary")
+    _save_flag("modes_config", config)
+
+
+def get_active_mode() -> Optional[str]:
+    """Return ID of currently active mode ('focus', 'english_practice'), or None."""
+    cfg = get_modes_config()
+    act = cfg.get("active_mode")
+    return str(act).strip() if act else None
+
+
+def set_active_mode(mode_id: Optional[str]) -> None:
+    """Set and persist the currently active mode ID."""
+    cfg = get_modes_config()
+    clean = str(mode_id).strip() if mode_id else None
+    cfg["active_mode"] = clean
+    save_modes_config(cfg)
+
+
+def get_mode_settings(mode_id: str) -> dict:
+    """Return settings for a specific mode by ID."""
+    cfg = get_modes_config()
+    modes = cfg.get("modes", {})
+    return dict(modes.get(str(mode_id).strip(), {}))
+
+
+def update_mode_settings(mode_id: str, settings: dict) -> None:
+    """Update settings for a specific mode by ID."""
+    if not isinstance(settings, dict):
+        raise ValueError("Mode settings must be a dictionary")
+    cfg = get_modes_config()
+    modes = dict(cfg.get("modes", {}))
+    cur = dict(modes.get(str(mode_id).strip(), {}))
+    cur.update(settings)
+    modes[str(mode_id).strip()] = cur
+    cfg["modes"] = modes
+    save_modes_config(cfg)
+
+
+

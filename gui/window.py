@@ -1313,6 +1313,14 @@ class MainWindow(
         settings_btn.clicked.connect(self._open_plugin_settings)
         lay.addWidget(settings_btn)
 
+        perm_btn = QPushButton("🛡  PERMISSIONS")
+        perm_btn.setFixedHeight(26)
+        perm_btn.setFont(QFont("Montserrat", 7))
+        perm_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        perm_btn.setStyleSheet(_BTN_STYLE_DIM)
+        perm_btn.clicked.connect(self._open_permissions_drawer)
+        lay.addWidget(perm_btn)
+
         # The button is built here with the rest of the drawer; the panel behind
         # it — and the whole providers package — is imported on the click. The
         # drawer used to stutter for a measured 2.104 seconds because a state

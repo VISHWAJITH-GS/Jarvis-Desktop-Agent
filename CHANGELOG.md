@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.1.0] - 2026-11-23
+
+### Added
+- **Permission Settings System (`core/permissions.py`, `gui/settings_overlays.py`, `memory/config_manager.py`)**:
+  - Centralized single registry (`PermissionRegistry`) of every system-altering and external action across 4 tiers (`READ_ONLY`, `NORMAL`, `SENSITIVE`, `DESTRUCTIVE`).
+  - Configurable policy resolution (`ASK`, `ALLOW`, `DENY`) with optional timed allow mode ("allow for N minutes" with auto-reversion).
+  - Tier defaults: `READ_ONLY` and `NORMAL` default to `ALLOW`; `SENSITIVE` and `DESTRUCTIVE` default to `ASK`.
+  - Visible warning dialog when setting any `DESTRUCTIVE` permission to `ALLOW`.
+  - Plugin auto-registration via `PLUGIN["permissions"]` list in tool definitions.
+  - Model tamper-proofing: AI models and untrusted contexts are blocked from changing permission settings (`SecurityViolationError`).
+  - "PERMISSIONS" drawer overlay in the Qt UI with live search, tier grouping, policy comboboxes, "Reset to defaults", and recent decisions audit log.
+  - Persistent storage in `config/api_keys.json` with mtime cache.
+- **Focus Mode (`plugins/modes.py`, `plugins/_focus_mode.py`, `memory/config_manager.py`)**:
+  - System-level hosts file domain blocking inside `# === BEGIN JARVIS FOCUS MODE ===` markers with bundled adult domain list (`data/hosts_porn.txt`).
+  - Optional secondary Family DNS filter (Cloudflare `1.1.1.3` / `1.0.0.3`) with original DNS restoration on exit or undo.
+  - Secure DNS / DoH bypass detection and warning.
+  - Background process monitor thread (poll every 2.5s) politely closing blocked apps (Instagram) via `WM_CLOSE` / `SIGTERM` (never kill).
+  - Strict protection of always-allowed apps (VS Code, Antigravity, GitHub Desktop, Notion, Obsidian) and JARVIS's own PIDs.
+  - MVP browser tab closer with pre-warning and verified title change check.
+  - Crash safety via `data/focus_mode_state.json` restoring hosts and DNS on startup or process termination.
+  - Graceful handling of missing administrative rights without silent failure.
+- **English Placement Practice Mode (`plugins/modes.py`, `plugins/_english_mode.py`, `core/prompt_builder.py`)**:
+  - Prompt overlay for campus placement coaching, forcing professional English responses mid-session with seamless reconnection while preserving context.
+  - 6 structured interview scenarios: `self_intro`, `hr_round` (STAR methodology), `project_explain` (architecture & trade-offs), `code_walkthrough`, `group_discussion` (peer simulation), and `presentation` (2-minute talk).
+  - Strict feedback engine: maximum 2 actionable corrections per answer with Original phrase, Polished rewrite, and One-line reason.
+  - Real-time filler-word tracking ('um', 'like', 'basically', 'actually', 'you know') and average answer length metrics.
+  - 3 feedback styles: `after_answer`, `end_of_session`, `on_request`.
+  - Persistent mistake log in `memory/english_mistakes.json` with flashcard generation compatible with `player.show_quiz()` and spaced repetition.
+  - Declared honest limits: grammar/vocabulary coaching is reliable; pronunciation and accent over STT is not; does not replace human mock interviews.
+
+
 ## [1.0.0] - 2026-11-21
 
 ### Added

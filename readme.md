@@ -95,8 +95,53 @@ Built with **Google Gemini API as the primary reasoning engine**, Jarvis-Desktop
 | 🪜 Gemini Model Ladder | Nine Gemini models in measured order — handles quotas or timeouts by stepping to the next rung |
 | ⚡ Unified Tool Architecture | Single authoritative registry, standardized `ActionResult` contract, verified outcomes |
 | 🛡️ Security & Permissions | Multi-tier permissions (`READ_ONLY`, `NORMAL`, `SENSITIVE`, `DESTRUCTIVE`) and secret scanning |
+| 🛡️ Permission Settings Drawer | Central registry, user-configurable policies (ASK, ALLOW, DENY), timed allows, AI tamper-proofing, and decision audit logs |
+| 🎯 Focus Mode | Distraction & adult domain blocking (hosts file markers + Family DNS), polite process closer (never kill), and MVP browser tab closer |
+| 🎓 English Placement Practice | Mock interview coaching for campus placements (STAR method, architecture deep-dive), <=2 corrections per turn, mistake flashcards |
 | 🧠 Structured Memory | Segregated short-term context, task history, and persistent user preferences |
 | 🤫 Reasoning Stays Private | Internal model thinking tokens are stripped on the fly so private reasoning is never spoken aloud or leaked into logs |
+
+### 🛡️ Configurable Permission Settings
+Jarvis includes a central security permission system (`core/permissions.py`) and a dedicated **PERMISSIONS** drawer in the UI (`ui.py`, `gui/settings_overlays.py`):
+- **Central Action Registry**: Every operation that alters the system or communicates externally is registered with an ID, tier, default policy, and owner.
+- **Permission Tiers**:
+  - `READ_ONLY`: Safe inspection operations (default: `ALLOW`).
+  - `NORMAL`: Standard reversible operations like volume, brightness, media, timer (default: `ALLOW`).
+  - `SENSITIVE`: Operations altering application states, Wi-Fi toggling, sending messages, polite app closing (default: `ASK`).
+  - `DESTRUCTIVE`: Potentially disruptive operations such as shutdown, restart, file deletion, hosts editing, DNS modification (default: `ASK`).
+- **Policy Control**: Configure any action as `ASK` (voice/visual confirmation), `ALLOW` (immediate execution), or `DENY` (always block).
+- **Timed Allows**: Temporarily allow sensitive operations for *N* minutes with automatic reversion.
+- **Safety Rule**: Destructive actions show a confirmation dialog before switching to `ALLOW`. AI models and tool output cannot alter permissions (`SecurityViolationError`).
+- **Plugin Integration**: Custom plugins declare their needs via `PLUGIN["permissions"]` and are auto-registered.
+
+### 🎯 Focus Mode
+Designed for distraction-free deep work (`plugins/modes.py`, `plugins/_focus_mode.py`):
+- **Distraction & Adult Blocking**: Appends blocked domains (`instagram.com`, `cdninstagram.com`, etc.) and a bundled adult-domain blocklist (`data/hosts_porn.txt`) inside clearly marked `# === BEGIN JARVIS FOCUS MODE ===` markers in the system hosts file.
+- **Optional Family DNS Layer**: Switches network adapters to Cloudflare Family DNS (`1.1.1.3` / `1.0.0.3`) and restores original DNS on exit or undo.
+- **DoH Detection**: Informs the user if browser Secure DNS (DNS-over-HTTPS) could bypass system blocks.
+- **Polite Process Monitor**: Background thread (polls every 2.5s) politely closes blocked applications (Instagram) via `WM_CLOSE` / `SIGTERM` (never kills).
+- **Always-Allowed Protection**: Strictly protects development tools (VS Code, Antigravity IDE, GitHub Desktop, Notion, Obsidian) and JARVIS's own PIDs.
+- **Active Browser Tab Closer**: MVP tab monitor closes active distraction browser tabs after a warning and verifies closure.
+- **Crash Recovery**: Saves state to `data/focus_mode_state.json`; automatically restores hosts and DNS on startup or unexpected shutdown.
+
+### 🎓 English Placement Practice Mode
+Designed for college students preparing for campus recruitment interviews and technical discussions (`plugins/modes.py`, `plugins/_english_mode.py`):
+- **Forced English Interaction**: Applies a system prompt overlay mid-session ensuring JARVIS speaks only fluent, professional English regardless of the user's native language setting.
+- **6 Recruitment Scenarios**:
+  1. `self_intro`: 60-90 second elevator pitch covering education, tech stack, standout projects, and goals.
+  2. `hr_round`: Behavioral interview questions using the STAR framework (Situation, Task, Action, Result).
+  3. `project_explain`: Senior engineering deep-dive on system architecture, database choices, bottlenecks, and trade-offs.
+  4. `code_walkthrough`: Top-down verbal code walkthroughs (complexity, data structures, edge cases).
+  5. `group_discussion`: Campus GD simulation where JARVIS plays multiple peer participants with differing viewpoints.
+  6. `presentation`: 2-minute timed structured presentation.
+- **Feedback Engine**:
+  - Maximum 2 actionable corrections per turn: `Original`, `Polished Rewrite`, and `Why`.
+  - Tracks filler words ('um', 'like', 'basically', 'actually', 'you know') and average answer lengths over time.
+  - Three feedback styles: `after_answer` (immediate), `end_of_session` (summary at conclusion), or `on_request`.
+  - Encouraging, confidence-building coaching with retry invitations.
+- **Mistake Log & Flashcards**: Persists corrections in `memory/english_mistakes.json` and exports interactive review flashcards for `player.show_quiz()`.
+- **Honest Limits**: Grammar and vocabulary feedback is highly reliable; real-time acoustic pronunciation over STT is not; does not replace real mock interviews with human mentors.
+
 
 ### 🤫 Reasoning Stays Private
 

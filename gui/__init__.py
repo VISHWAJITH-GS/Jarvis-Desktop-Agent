@@ -70,6 +70,8 @@ __all__ = [
     "ProvidersOverlay",
     "ClipboardPanel",
     "PluginSettingsOverlay",
+    "PermissionsDrawerOverlay",
+    "PermissionsDrawer",
     "RemoteKeyOverlay",
     "format_visual_content_html",
     "get_uicon",

@@ -954,3 +954,439 @@ class ConfirmationTiersOverlay(QWidget):
         except Exception as exc:
             self._status_lbl.setText(f"Error resetting: {exc}")
             self._status_lbl.setStyleSheet(f"color: {C.ACC}; background: transparent;")
+
+
+class PermissionsDrawerOverlay(QWidget):
+    """Floating cyberpunk drawer — manage action permission policies (ASK, ALLOW, DENY) and decision audit log."""
+
+    _OW = 640
+    closed = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet(f"""
+            PermissionsDrawerOverlay {{
+                background: rgba(0, 6, 10, 248);
+                border: 1px solid {C.BORDER_B};
+                border-radius: 6px;
+            }}
+        """)
+        self._combos: dict[str, QComboBox] = {}
+        self._item_rows: list[tuple[QWidget, str]] = []  # (row_widget, search_text)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(20, 16, 20, 16)
+        root.setSpacing(10)
+
+        # Header
+        hdr = QHBoxLayout()
+        hdr.setSpacing(8)
+        title_lbl = QLabel("◈  PERMISSIONS DRAWER")
+        title_lbl.setFont(QFont("Montserrat", 11, QFont.Weight.Bold))
+        title_lbl.setStyleSheet(f"color: {C.PRI}; background: transparent;")
+        hdr.addWidget(title_lbl)
+        hdr.addStretch()
+
+        close_x = QPushButton("✕")
+        close_x.setFixedSize(20, 20)
+        close_x.setFont(QFont("Montserrat", 9))
+        close_x.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent; border: none;")
+        close_x.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_x.clicked.connect(self._on_close)
+        hdr.addWidget(close_x)
+        root.addLayout(hdr)
+
+        # Navigation / Mode buttons: "POLICIES" & "DECISIONS LOG"
+        tab_bar = QHBoxLayout()
+        tab_bar.setSpacing(6)
+        self._btn_policies = QPushButton("⚙  POLICIES")
+        self._btn_policies.setFont(QFont("Montserrat", 8, QFont.Weight.Bold))
+        self._btn_policies.setCheckable(True)
+        self._btn_policies.setChecked(True)
+        self._btn_policies.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_policies.setStyleSheet(self._tab_btn_style(True))
+        self._btn_policies.clicked.connect(lambda: self._set_view(0))
+        tab_bar.addWidget(self._btn_policies)
+
+        self._btn_decisions = QPushButton("📋  RECENT DECISIONS")
+        self._btn_decisions.setFont(QFont("Montserrat", 8, QFont.Weight.Bold))
+        self._btn_decisions.setCheckable(True)
+        self._btn_decisions.setChecked(False)
+        self._btn_decisions.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_decisions.setStyleSheet(self._tab_btn_style(False))
+        self._btn_decisions.clicked.connect(lambda: self._set_view(1))
+        tab_bar.addWidget(self._btn_decisions)
+        tab_bar.addStretch()
+        root.addLayout(tab_bar)
+
+        # Stacked view: Page 0 = Policies, Page 1 = Decisions Log
+        self._pages = QStackedWidget()
+        root.addWidget(self._pages, stretch=1)
+
+        # ── Page 0: Policies ──
+        p0 = QWidget()
+        p0.setStyleSheet("background: transparent;")
+        p0_lay = QVBoxLayout(p0)
+        p0_lay.setContentsMargins(0, 4, 0, 0)
+        p0_lay.setSpacing(8)
+
+        # Search box
+        search_box = QHBoxLayout()
+        search_box.setSpacing(6)
+        search_icon = QLabel("🔍")
+        search_icon.setFont(QFont("Montserrat", 9))
+        search_icon.setStyleSheet(f"color: {C.PRI_DIM}; background: transparent;")
+        search_box.addWidget(search_icon)
+
+        self._search_input = QLineEdit()
+        self._search_input.setPlaceholderText("Search permissions by name, tier, owner...")
+        self._search_input.setFont(QFont("Montserrat", 8))
+        self._search_input.setFixedHeight(28)
+        self._search_input.setStyleSheet(f"""
+            QLineEdit {{
+                background: #000d12;
+                color: {C.TEXT};
+                border: 1px solid {C.BORDER};
+                border-radius: 4px;
+                padding: 0 8px;
+            }}
+            QLineEdit:focus {{
+                border-color: {C.PRI};
+            }}
+        """)
+        self._search_input.textChanged.connect(self._filter_items)
+        search_box.addWidget(self._search_input, stretch=1)
+        p0_lay.addLayout(search_box)
+
+        # Scroll area for items
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setStyleSheet("QScrollArea { background: transparent; }")
+
+        inner = QWidget()
+        inner.setStyleSheet("background: transparent;")
+        self._form = QVBoxLayout(inner)
+        self._form.setContentsMargins(0, 4, 8, 4)
+        self._form.setSpacing(6)
+
+        self._populate_policies()
+        self._form.addStretch(1)
+        scroll.setWidget(inner)
+        p0_lay.addWidget(scroll, 1)
+        self._pages.addWidget(p0)
+
+        # ── Page 1: Decision Log ──
+        p1 = QWidget()
+        p1.setStyleSheet("background: transparent;")
+        p1_lay = QVBoxLayout(p1)
+        p1_lay.setContentsMargins(0, 4, 0, 0)
+        p1_lay.setSpacing(8)
+
+        log_hdr = QHBoxLayout()
+        log_desc = QLabel("Audited decisions made by the central permission gate:")
+        log_desc.setFont(QFont("Montserrat", 8))
+        log_desc.setStyleSheet(f"color: {C.TEXT_MED}; background: transparent;")
+        log_hdr.addWidget(log_desc)
+        log_hdr.addStretch()
+
+        ref_btn = QPushButton("↺  REFRESH LOG")
+        ref_btn.setFont(QFont("Montserrat", 7, QFont.Weight.Bold))
+        ref_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        ref_btn.setStyleSheet(f"""
+            QPushButton {{ background: {C.PANEL2}; color: {C.PRI};
+                border: 1px solid {C.BORDER_B}; border-radius: 3px; padding: 4px 8px; }}
+            QPushButton:hover {{ border-color: {C.PRI}; color: #ffffff; }}
+        """)
+        ref_btn.clicked.connect(self._refresh_decisions_log)
+        log_hdr.addWidget(ref_btn)
+        p1_lay.addLayout(log_hdr)
+
+        self._log_text = QTextEdit()
+        self._log_text.setReadOnly(True)
+        self._log_text.setFont(QFont("Consolas", 8))
+        self._log_text.setStyleSheet(f"""
+            QTextEdit {{
+                background: #000910;
+                color: {C.TEXT};
+                border: 1px solid {C.BORDER};
+                border-radius: 4px;
+                padding: 6px;
+            }}
+        """)
+        p1_lay.addWidget(self._log_text, stretch=1)
+        self._pages.addWidget(p1)
+
+        # Bottom Bar: Status Label, Reset Button, Close Button
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
+
+        self._status_lbl = QLabel("")
+        self._status_lbl.setFont(QFont("Montserrat", 8))
+        self._status_lbl.setStyleSheet(f"color: {C.GREEN}; background: transparent;")
+        btn_row.addWidget(self._status_lbl, stretch=1)
+
+        reset_btn = QPushButton("↺  RESET TO DEFAULTS")
+        reset_btn.setFixedHeight(30)
+        reset_btn.setFont(QFont("Montserrat", 8, QFont.Weight.Bold))
+        reset_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        reset_btn.setStyleSheet(f"""
+            QPushButton {{ background: transparent; color: {C.ACC2};
+                border: 1px solid {C.ACC2}; border-radius: 3px; padding: 0 10px; }}
+            QPushButton:hover {{ background: rgba(255, 145, 0, 0.15); color: #ffffff; }}
+        """)
+        reset_btn.clicked.connect(self._reset_defaults)
+        btn_row.addWidget(reset_btn)
+
+        close_btn = QPushButton("CLOSE")
+        close_btn.setFixedHeight(30)
+        close_btn.setFont(QFont("Montserrat", 8))
+        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn.setStyleSheet(f"""
+            QPushButton {{ background: transparent; color: {C.TEXT_MED};
+                border: 1px solid {C.BORDER}; border-radius: 3px; padding: 0 12px; }}
+            QPushButton:hover {{ color: {C.TEXT}; border-color: {C.BORDER_B}; }}
+        """)
+        close_btn.clicked.connect(self._on_close)
+        btn_row.addWidget(close_btn)
+
+        root.addLayout(btn_row)
+
+    def _tab_btn_style(self, active: bool) -> str:
+        if active:
+            return f"""
+                QPushButton {{
+                    background: {C.PRI_GHO}; color: {C.PRI};
+                    border: 1px solid {C.PRI}; border-radius: 3px; padding: 4px 10px;
+                }}
+            """
+        return f"""
+            QPushButton {{
+                background: transparent; color: {C.TEXT_MED};
+                border: 1px solid {C.BORDER}; border-radius: 3px; padding: 4px 10px;
+            }}
+            QPushButton:hover {{ color: {C.PRI}; border-color: {C.BORDER_B}; }}
+        """
+
+    def _set_view(self, index: int):
+        self._pages.setCurrentIndex(index)
+        self._btn_policies.setChecked(index == 0)
+        self._btn_policies.setStyleSheet(self._tab_btn_style(index == 0))
+        self._btn_decisions.setChecked(index == 1)
+        self._btn_decisions.setStyleSheet(self._tab_btn_style(index == 1))
+        if index == 1:
+            self._refresh_decisions_log()
+
+    def _populate_policies(self):
+        from core.permissions import (
+            get_permission_registry,
+            resolve_permission_policy,
+            DESTRUCTIVE,
+            SENSITIVE,
+            NORMAL,
+            READ_ONLY,
+            POLICY_ALLOW,
+            POLICY_ASK,
+            POLICY_DENY,
+        )
+
+        reg = get_permission_registry()
+        by_tier = reg.by_tier()
+
+        tier_info = [
+            (DESTRUCTIVE, "DESTRUCTIVE (HIGH-RISK)", "#ff1744"),
+            (SENSITIVE, "SENSITIVE (MEDIUM-RISK)", "#ff9100"),
+            (NORMAL, "NORMAL (SAFE INTERACTIVE)", C.PRI),
+            (READ_ONLY, "READ-ONLY (INFORMATIONAL)", "#00e676"),
+        ]
+
+        for tier_id, tier_title, tier_color in tier_info:
+            entries = by_tier.get(tier_id, [])
+            if not entries:
+                continue
+
+            section_hdr = QLabel(f"━  {tier_title}")
+            section_hdr.setFont(QFont("Montserrat", 8, QFont.Weight.Bold))
+            section_hdr.setStyleSheet(f"color: {tier_color}; background: transparent; margin-top: 10px; margin-bottom: 2px;")
+            self._form.addWidget(section_hdr)
+
+            for entry in sorted(entries, key=lambda e: e.label):
+                row = QWidget()
+                row.setStyleSheet(f"""
+                    QWidget {{
+                        background: {C.PANEL2};
+                        border: 1px solid {C.BORDER};
+                        border-radius: 4px;
+                    }}
+                """)
+                row_lay = QHBoxLayout(row)
+                row_lay.setContentsMargins(8, 6, 8, 6)
+                row_lay.setSpacing(8)
+
+                info_lay = QVBoxLayout()
+                info_lay.setSpacing(1)
+
+                title_row = QHBoxLayout()
+                title_row.setSpacing(6)
+
+                lbl = QLabel(entry.label)
+                lbl.setFont(QFont("Montserrat", 9, QFont.Weight.Bold))
+                lbl.setStyleSheet(f"color: {C.TEXT}; background: transparent;")
+                title_row.addWidget(lbl)
+
+                id_badge = QLabel(f"[{entry.id}]")
+                id_badge.setFont(QFont("Consolas", 7))
+                id_badge.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
+                title_row.addWidget(id_badge)
+                title_row.addStretch()
+                info_lay.addLayout(title_row)
+
+                desc_lbl = QLabel(entry.description or entry.id)
+                desc_lbl.setFont(QFont("Montserrat", 7))
+                desc_lbl.setStyleSheet(f"color: {C.TEXT_MED}; background: transparent;")
+                desc_lbl.setWordWrap(True)
+                info_lay.addWidget(desc_lbl)
+
+                row_lay.addLayout(info_lay, stretch=1)
+
+                cb = QComboBox()
+                cb.addItems([POLICY_ASK, POLICY_ALLOW, POLICY_DENY])
+                cb.setFont(QFont("Montserrat", 8, QFont.Weight.Bold))
+                cb.setFixedWidth(85)
+                cb.setFixedHeight(26)
+                cb.setStyleSheet(f"""
+                    QComboBox {{
+                        background: #000d12;
+                        color: {C.TEXT};
+                        border: 1px solid {C.BORDER_B};
+                        border-radius: 3px;
+                        padding: 1px 6px;
+                    }}
+                    QComboBox QAbstractItemView {{
+                        background: #000d12;
+                        color: {C.TEXT};
+                        selection-background-color: {C.PRI_GHO};
+                    }}
+                """)
+
+                # Pre-fill current effective policy
+                current_pol = resolve_permission_policy(entry.id)
+                idx = cb.findText(current_pol)
+                if idx >= 0:
+                    cb.setCurrentIndex(idx)
+                else:
+                    cb.setCurrentText(entry.default_policy)
+
+                def _make_handler(p_entry=entry, combo=cb):
+                    def _on_change(new_val):
+                        self._on_policy_changed(p_entry, new_val)
+                    return _on_change
+
+                cb.currentTextChanged.connect(_make_handler(entry, cb))
+                self._combos[entry.id] = cb
+                row_lay.addWidget(cb)
+
+                self._form.addWidget(row)
+                search_text = f"{entry.label} {entry.id} {entry.description} {entry.owner} {entry.tier}".lower()
+                self._item_rows.append((row, search_text))
+
+    def _on_policy_changed(self, entry, new_val: str):
+        from core.permissions import (
+            set_permission_policy,
+            DESTRUCTIVE,
+            POLICY_ALLOW,
+        )
+
+        clean_val = str(new_val).strip().upper()
+
+        # Warning when setting DESTRUCTIVE to ALLOW
+        if entry.tier == DESTRUCTIVE and clean_val == POLICY_ALLOW:
+            warn_msg = (
+                f"⚠️ CAUTION: You have set '{entry.label}' to ALLOW.\n\n"
+                "This will permit the assistant to execute high-impact or destructive operations "
+                "(such as process termination, file deletions, or system shutdown) WITHOUT asking for confirmation!\n\n"
+                "Are you sure you want to proceed?"
+            )
+            ret = QMessageBox.warning(
+                self,
+                "Destructive Permission Warning",
+                warn_msg,
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Cancel,
+            )
+            if ret != QMessageBox.StandardButton.Yes:
+                # Revert combo
+                cb = self._combos.get(entry.id)
+                if cb:
+                    cb.blockSignals(True)
+                    idx = cb.findText(entry.default_policy)
+                    if idx >= 0:
+                        cb.setCurrentIndex(idx)
+                    cb.blockSignals(False)
+                return
+
+        try:
+            set_permission_policy(entry.id, clean_val, from_ui=True)
+            self._status_lbl.setText(f"✓ Saved policy '{clean_val}' for '{entry.label}'.")
+            self._status_lbl.setStyleSheet(f"color: {C.GREEN}; background: transparent;")
+        except Exception as exc:
+            self._status_lbl.setText(f"Error saving: {exc}")
+            self._status_lbl.setStyleSheet(f"color: {C.ACC}; background: transparent;")
+
+    def _filter_items(self, text: str):
+        q = str(text or "").strip().lower()
+        for row_widget, search_text in self._item_rows:
+            row_widget.setVisible(q in search_text if q else True)
+
+    def _refresh_decisions_log(self):
+        from core.permissions import get_recent_permission_decisions
+        decisions = get_recent_permission_decisions(limit=60)
+        if not decisions:
+            self._log_text.setPlainText("No recent permission decisions logged.")
+            return
+
+        lines = []
+        for d in decisions:
+            ts = d.get("timestamp", "").replace("T", " ")[:19]
+            dec = d.get("decision", "ASK")
+            color = "#00e676" if dec == "ALLOWED" else ("#ff1744" if dec == "DENIED" else "#ff9100")
+            act = d.get("action", "")
+            pid = d.get("permission_id", "")
+            reason = d.get("reason", "")
+            lines.append(f"[{ts}] <font color='{color}'><b>[{dec}]</b></font> <b>{act}</b> ({pid}) — {reason}")
+
+        self._log_text.setHtml("<br>".join(lines))
+
+    def _reset_defaults(self):
+        from core.permissions import (
+            reset_permissions_to_defaults,
+            get_permission_registry,
+        )
+        try:
+            reset_permissions_to_defaults(from_ui=True)
+            reg = get_permission_registry()
+            for entry in reg.all():
+                cb = self._combos.get(entry.id)
+                if cb:
+                    cb.blockSignals(True)
+                    idx = cb.findText(entry.default_policy)
+                    if idx >= 0:
+                        cb.setCurrentIndex(idx)
+                    cb.blockSignals(False)
+            self._status_lbl.setText("✓ Reset all permission policies to system defaults.")
+            self._status_lbl.setStyleSheet(f"color: {C.GREEN}; background: transparent;")
+        except Exception as exc:
+            self._status_lbl.setText(f"Error resetting defaults: {exc}")
+            self._status_lbl.setStyleSheet(f"color: {C.ACC}; background: transparent;")
+
+    def _on_close(self):
+        self.hide()
+        self.closed.emit()
+
+
+# Export alias
+PermissionsDrawer = PermissionsDrawerOverlay
+

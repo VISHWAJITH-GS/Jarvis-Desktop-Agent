@@ -209,11 +209,27 @@ def _get_api_key() -> str:
 
 
 def _load_system_prompt() -> str:
+    base = ""
     try:
-        return PROMPT_PATH.read_text(encoding="utf-8")
+        base = PROMPT_PATH.read_text(encoding="utf-8")
     except Exception:
-        return (
+        base = (
             "You are JARVIS, Tony Stark's AI assistant. "
             "Be concise, direct, and always use the provided tools to complete tasks. "
             "Never simulate or guess results — always call the appropriate tool."
         )
+
+    # Check for active mode overlay (e.g. English Placement Practice Mode)
+    try:
+        from memory import config_manager
+        active_mode = config_manager.get_active_mode()
+        if active_mode == "english_practice":
+            from plugins import _english_mode
+            overlay = _english_mode.get_prompt_overlay()
+            if overlay:
+                base = base.rstrip() + "\n\n" + overlay
+    except Exception:
+        pass
+
+    return base
+

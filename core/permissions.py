@@ -80,6 +80,8 @@ ACTION_PERMISSIONS: dict[str, str] = {
     "screen_process": READ_ONLY,
     "verify_outcome": READ_ONLY,
     "copy_page_text_to_clipboard": READ_ONLY,
+    "notification_reader": READ_ONLY,
+    "whatsapp_read": READ_ONLY,
     "page_to_file": NORMAL,
     # Normal operational tools (Immediate)
     "open_app": NORMAL,
@@ -111,6 +113,9 @@ ACTION_PERMISSIONS: dict[str, str] = {
     "browser_qa": NORMAL,
     "browser_profile": NORMAL,
     "productivity": NORMAL,
+    "antigravity_ide": NORMAL,
+    "version_control": NORMAL,
+    "setup_browser": NORMAL,
     # Task tools
     "start_task": NORMAL,
     "list_tasks": READ_ONLY,
@@ -129,6 +134,10 @@ ACTION_PERMISSIONS: dict[str, str] = {
     "computer_settings": SENSITIVE,
     "dev_agent": SENSITIVE,
     "game_updater": SENSITIVE,
+    "jarvis_control": SENSITIVE,
+    "whatsapp_send": SENSITIVE,
+    "whatsapp": SENSITIVE,
+    "whatsapp_automation": SENSITIVE,
     # Destructive actions (High-impact)
     "sleep_jarvis": NORMAL,
     "shutdown_jarvis": DESTRUCTIVE,
@@ -138,6 +147,490 @@ ACTION_PERMISSIONS: dict[str, str] = {
 
 _audit_log: list[dict] = []
 _audit_lock = Lock()
+
+
+# ── Permission Policy Models & Central Registry ──────────────────────────────
+
+from dataclasses import dataclass, field
+
+POLICY_ALLOW = "ALLOW"
+POLICY_ASK = "ASK"
+POLICY_DENY = "DENY"
+VALID_POLICIES = {POLICY_ALLOW, POLICY_ASK, POLICY_DENY}
+
+
+class SecurityViolationError(PermissionError):
+    """Raised when model or untrusted code attempts to modify permission settings."""
+    pass
+
+
+@dataclass
+class PermissionEntry:
+    id: str
+    label: str
+    description: str
+    tier: str  # READ_ONLY, NORMAL, SENSITIVE, DESTRUCTIVE
+    default_policy: str = POLICY_ASK  # ASK or ALLOW
+    owner: str = ""  # action or plugin name
+
+
+class PermissionRegistry:
+    """Central registry of all system actions and plugins that require permission classification."""
+
+    def __init__(self):
+        self._entries: dict[str, PermissionEntry] = {}
+        self._lock = Lock()
+        self._init_defaults()
+
+    def _init_defaults(self):
+        core_permissions = [
+            # System controls
+            PermissionEntry("system:shutdown", "Shut Down PC", "Power off the operating system", DESTRUCTIVE, POLICY_ASK, "windows_control"),
+            PermissionEntry("system:restart", "Restart PC", "Reboot the operating system", DESTRUCTIVE, POLICY_ASK, "windows_control"),
+            PermissionEntry("system:sleep", "Sleep PC / Display", "Put the computer or screen to sleep", SENSITIVE, POLICY_ASK, "windows_control"),
+            PermissionEntry("system:power_mode", "Change Power Mode", "Switch OS battery/power performance profile", SENSITIVE, POLICY_ASK, "windows_control"),
+            PermissionEntry("system:airplane_mode", "Toggle Airplane Mode", "Enable or disable all wireless communications", SENSITIVE, POLICY_ASK, "windows_control"),
+            # Network controls
+            PermissionEntry("network:wifi_toggle", "Toggle Wi-Fi", "Turn the Wi-Fi adapter on or off", NORMAL, POLICY_ALLOW, "windows_control"),
+            PermissionEntry("network:wifi_connect", "Connect Wi-Fi Network", "Connect or switch to a wireless network", SENSITIVE, POLICY_ASK, "windows_control"),
+            PermissionEntry("network:wifi_forget", "Forget Wi-Fi Profile", "Delete stored network credentials", SENSITIVE, POLICY_ASK, "windows_control"),
+            PermissionEntry("network:dns_change", "Change DNS Servers", "Modify network adapter DNS resolver configuration", SENSITIVE, POLICY_ASK, "system"),
+            PermissionEntry("network:hosts_edit", "Edit System Hosts File", "Add or remove blocked domain mappings in hosts", DESTRUCTIVE, POLICY_ASK, "system"),
+            # Bluetooth & Audio
+            PermissionEntry("bluetooth:toggle", "Toggle Bluetooth", "Turn the Bluetooth adapter on or off", NORMAL, POLICY_ALLOW, "windows_control"),
+            PermissionEntry("bluetooth:connect", "Connect BT Device", "Connect or disconnect paired Bluetooth devices", SENSITIVE, POLICY_ASK, "windows_control"),
+            PermissionEntry("bluetooth:pair", "Pair BT Device", "Pair with or remove Bluetooth peripherals", SENSITIVE, POLICY_ASK, "windows_control"),
+            PermissionEntry("audio:device_switch", "Switch Audio I/O Device", "Change default playback or recording audio device", SENSITIVE, POLICY_ASK, "windows_control"),
+            PermissionEntry("audio:volume_set", "Adjust Volume & Mute", "Adjust speaker volume or mute status", NORMAL, POLICY_ALLOW, "windows_control"),
+            PermissionEntry("display:config", "Change Display Settings", "Alter display resolution or multi-monitor mode", SENSITIVE, POLICY_ASK, "windows_control"),
+            # Processes & Windows
+            PermissionEntry("process:close_app", "Close External Application", "Politely close a running third-party program", SENSITIVE, POLICY_ASK, "computer_control"),
+            PermissionEntry("process:kill", "Terminate Process", "Forcefully terminate a process", DESTRUCTIVE, POLICY_ASK, "computer_control"),
+            # File operations
+            PermissionEntry("file:read", "Read / Search Files", "Read file contents, inspect directories, search disk", READ_ONLY, POLICY_ALLOW, "file_controller"),
+            PermissionEntry("file:create_write", "Create / Write File", "Write new files or edit files on disk", SENSITIVE, POLICY_ASK, "file_controller"),
+            PermissionEntry("file:move_rename", "Move / Rename File", "Move or rename files and directories", SENSITIVE, POLICY_ASK, "file_controller"),
+            PermissionEntry("file:delete", "Delete File / Folder", "Delete files or directories permanently", DESTRUCTIVE, POLICY_ASK, "file_controller"),
+            PermissionEntry("file:empty_recycle_bin", "Empty Recycle Bin", "Permanently delete contents of Windows Recycle Bin", DESTRUCTIVE, POLICY_ASK, "file_controller"),
+            # Communication
+            PermissionEntry("message:send", "Send Message", "Send message via WhatsApp or messaging tools", SENSITIVE, POLICY_ASK, "send_message"),
+            PermissionEntry("message:read", "Read Messages", "Read received chat messages or notifications", READ_ONLY, POLICY_ALLOW, "notification_center"),
+            # Browser
+            PermissionEntry("browser:navigate", "Browser Navigation & Clicks", "Navigate URLs, click elements, fill web forms", NORMAL, POLICY_ALLOW, "browser_control"),
+            PermissionEntry("browser:close_tab", "Close Browser Tab", "Close open browser tabs matching target", NORMAL, POLICY_ALLOW, "browser_control"),
+            PermissionEntry("browser:payment", "Payments & Checkout", "Interactions on payment, checkout, or banking pages", DESTRUCTIVE, POLICY_ASK, "browser_control"),
+            PermissionEntry("browser:download", "Download File", "Download files from web links to disk", SENSITIVE, POLICY_ASK, "browser_control"),
+            # Coding & Terminal
+            PermissionEntry("code:execute_terminal", "Execute Terminal Command", "Run shell or terminal commands in project terminal", DESTRUCTIVE, POLICY_ASK, "antigravity_ide"),
+            PermissionEntry("code:agent_edit", "AI Agent Code Workspace Edits", "Autonomous agent modifying codebase files", SENSITIVE, POLICY_ASK, "dev_agent"),
+            PermissionEntry("git:commit", "Git Commit Changes", "Stage and commit changes to local repository", NORMAL, POLICY_ALLOW, "version_control"),
+            PermissionEntry("git:push", "Git Push to Remote", "Push commits to remote repository", SENSITIVE, POLICY_ASK, "version_control"),
+            # Productivity & Assistants
+            PermissionEntry("productivity:task_write", "Manage Tasks & Habits", "Create, complete, update, or delete tasks/habits", NORMAL, POLICY_ALLOW, "productivity"),
+            PermissionEntry("reminders:manage", "Manage Reminders", "Create, snooze, edit, or delete reminders", NORMAL, POLICY_ALLOW, "reminder"),
+            PermissionEntry("routines:manage", "Manage Routines", "Configure scheduled routines and quiet hours", NORMAL, POLICY_ALLOW, "routines"),
+            PermissionEntry("jarvis:shutdown", "Shut Down JARVIS", "Completely close and exit the JARVIS assistant", DESTRUCTIVE, POLICY_ASK, "jarvis_control"),
+            PermissionEntry("jarvis:mute_sleep", "Standby / Mute Avatar", "Mute microphone/speaker or put JARVIS to sleep", NORMAL, POLICY_ALLOW, "jarvis_control"),
+        ]
+        for p in core_permissions:
+            self.register(p)
+
+    def register(self, entry: PermissionEntry) -> None:
+        with self._lock:
+            if entry.tier in (READ_ONLY, NORMAL) and entry.default_policy not in VALID_POLICIES:
+                entry.default_policy = POLICY_ALLOW
+            elif entry.tier in (SENSITIVE, DESTRUCTIVE) and entry.default_policy not in VALID_POLICIES:
+                entry.default_policy = POLICY_ASK
+            self._entries[entry.id] = entry
+
+    def get(self, id: str) -> Optional[PermissionEntry]:
+        with self._lock:
+            return self._entries.get(id)
+
+    def all(self) -> list[PermissionEntry]:
+        with self._lock:
+            return list(self._entries.values())
+
+    def by_tier(self) -> dict[str, list[PermissionEntry]]:
+        with self._lock:
+            res: dict[str, list[PermissionEntry]] = {
+                DESTRUCTIVE: [],
+                SENSITIVE: [],
+                NORMAL: [],
+                READ_ONLY: [],
+            }
+            for e in self._entries.values():
+                res.setdefault(e.tier, []).append(e)
+            return res
+
+    def find_by_action(self, action_name: str, parameters: dict | None = None) -> Optional[PermissionEntry]:
+        act = str(action_name or "").lower().strip()
+        params = parameters or {}
+        sub_act = str(params.get("action") or "").lower().strip()
+        target = str(
+            params.get("target")
+            or params.get("device")
+            or params.get("name")
+            or params.get("ssid")
+            or params.get("path")
+            or ""
+        ).strip().lower()
+        sub_act = str(params.get("action") or "").lower().strip()
+
+        if act in self._entries:
+            return self._entries[act]
+
+        if act in ("windows_control", "computer_settings"):
+            if any(k in sub_act for k in ("shutdown", "shutdown_computer", "shutdown_laptop")):
+                return self.get("system:shutdown")
+            if any(k in sub_act for k in ("restart", "reboot")):
+                return self.get("system:restart")
+            if any(k in sub_act for k in ("sleep", "hibernate")):
+                return self.get("system:sleep")
+            if "power_mode" in sub_act:
+                return self.get("system:power_mode")
+            if "airplane" in sub_act:
+                return self.get("system:airplane_mode")
+            if "wifi" in sub_act:
+                if any(k in sub_act for k in ("toggle", "wifi_on", "wifi_off", "enable_wifi", "disable_wifi", "set_wifi_enabled", "status", "list", "check", "get", "current", "available")):
+                    return self.get("network:wifi_toggle")
+                if "forget" in sub_act:
+                    return self.get("network:wifi_forget")
+                if any(k in sub_act for k in ("connect", "switch")):
+                    return self.get("network:wifi_connect")
+            if "bluetooth" in sub_act or "bt" in sub_act:
+                if any(k in sub_act for k in ("toggle", "bluetooth_on", "enable_bluetooth", "status", "list", "check", "get", "paired", "connected")):
+                    return self.get("bluetooth:toggle")
+                if any(k in sub_act for k in ("pair", "unpair", "forget")):
+                    return self.get("bluetooth:pair")
+                if any(k in sub_act for k in ("connect", "disconnect", "switch", "bluetooth_off", "disable_bluetooth")):
+                    return self.get("bluetooth:connect")
+            if any(k in sub_act for k in ("volume", "mute", "unmute", "battery", "power_status", "cpu", "ram", "storage")):
+                return self.get("audio:volume_set")
+            if any(k in sub_act for k in ("audio_device", "audio_input", "audio_output", "sound_device", "switch_audio")):
+                return self.get("audio:device_switch")
+            if any(k in sub_act for k in ("resolution", "display_mode")):
+                return self.get("display:config")
+            if sub_act in ("close_app", "close_window"):
+                return self.get("process:close_app")
+
+        if act == "computer_control":
+            if sub_act in ("close_app", "close_window", "close_application", "quit_app", "exit_app"):
+                return self.get("process:close_app")
+            if sub_act in ("kill", "kill_process", "destroy"):
+                return self.get("process:kill")
+            if sub_act in ("click", "type", "scroll", "press"):
+                return self.get("browser:navigate")
+
+        if act == "file_controller":
+            if sub_act in ("list", "read", "find", "search", "info", "disk_usage", "largest"):
+                return self.get("file:read")
+            if sub_act in ("create_file", "create_folder", "write", "edit_file"):
+                return self.get("file:create_write")
+            if sub_act in ("move", "copy", "rename", "organize_desktop"):
+                return self.get("file:move_rename")
+            if sub_act in ("delete", "delete_file", "delete_folder", "remove"):
+                return self.get("file:delete")
+            if sub_act in ("empty_recycle_bin", "empty_trash"):
+                return self.get("file:empty_recycle_bin")
+
+        if act in ("browser_control", "action_executor"):
+            url = str(params.get("url") or "").lower()
+            if any(k in url for k in ("checkout", "payment", "pay", "cart", "billing", "order", "purchase", "bank")):
+                return self.get("browser:payment")
+            if sub_act in ("download", "download_file"):
+                return self.get("browser:download")
+            if sub_act == "close_tab":
+                return self.get("browser:close_tab")
+            return self.get("browser:navigate")
+
+        if act in ("whatsapp_send", "whatsapp"):
+            return self.get("message:send")
+
+        if act == "whatsapp_read":
+            return self.get("message:read")
+
+        if act == "send_message":
+            return self.get("message:send")
+
+        if act == "antigravity_ide":
+            if sub_act in ("run_terminal_command", "new_terminal"):
+                return self.get("code:execute_terminal")
+            if sub_act in ("create_file", "write_file", "create_folder", "save_file"):
+                return self.get("file:create_write")
+            if sub_act in ("git_push", "push"):
+                return self.get("git:push")
+            if sub_act in ("git_commit", "commit"):
+                return self.get("git:commit")
+            if sub_act in ("accept_all", "reject_all"):
+                return self.get("code:agent_edit")
+
+        if act == "version_control":
+            if sub_act in ("git_push", "push"):
+                return self.get("git:push")
+            if sub_act in ("git_commit", "commit"):
+                return self.get("git:commit")
+
+        if act == "dev_agent":
+            return self.get("code:agent_edit")
+
+        if act == "productivity":
+            return self.get("productivity:task_write")
+
+        if act == "reminder":
+            return self.get("reminders:manage")
+
+        if act in ("create_routine", "edit_routine", "delete_routine", "configure_quiet_hours"):
+            return self.get("routines:manage")
+
+        if act in ("shutdown_jarvis", "kill_jarvis"):
+            return self.get("jarvis:shutdown")
+
+        if act in ("sleep_jarvis", "jarvis_control"):
+            if sub_act == "shutdown_jarvis":
+                return self.get("jarvis:shutdown")
+            return self.get("jarvis:mute_sleep")
+
+        return None
+
+
+_GLOBAL_REGISTRY: Optional[PermissionRegistry] = None
+_REGISTRY_LOCK = Lock()
+
+
+def get_permission_registry() -> PermissionRegistry:
+    global _GLOBAL_REGISTRY
+    if _GLOBAL_REGISTRY is None:
+        with _REGISTRY_LOCK:
+            if _GLOBAL_REGISTRY is None:
+                _GLOBAL_REGISTRY = PermissionRegistry()
+    return _GLOBAL_REGISTRY
+
+
+# ── Configuration Mtime Cache & Decision Logging ─────────────────────────────
+
+_CONFIG_CACHE_LOCK = Lock()
+_LAST_MTIME: float = -1.0
+_CACHED_OVERRIDES: dict[str, str] = {}
+_CACHED_TIMED_ALLOWS: dict[str, float] = {}
+
+
+def _sync_config_cache():
+    global _LAST_MTIME, _CACHED_OVERRIDES, _CACHED_TIMED_ALLOWS
+    try:
+        from memory.config_manager import CONFIG_FILE, ensure_config_dir
+        ensure_config_dir()
+        if not CONFIG_FILE.exists():
+            return
+        current_mtime = CONFIG_FILE.stat().st_mtime
+    except Exception:
+        return
+
+    with _CONFIG_CACHE_LOCK:
+        if current_mtime != _LAST_MTIME:
+            try:
+                data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+                perm_data = data.get("permission_settings", {})
+                _CACHED_OVERRIDES = {str(k): str(v).upper() for k, v in perm_data.get("overrides", {}).items()}
+                _CACHED_TIMED_ALLOWS = {str(k): float(v) for k, v in perm_data.get("timed_allows", {}).items()}
+                _LAST_MTIME = current_mtime
+            except Exception:
+                pass
+
+
+def resolve_permission_policy(permission_id: str) -> str:
+    """Resolve effective policy ('ASK', 'ALLOW', 'DENY') for a permission ID."""
+    clean_id = str(permission_id or "").strip()
+    _sync_config_cache()
+    now = time.time()
+
+    # 1. Timed allow check
+    with _CONFIG_CACHE_LOCK:
+        if clean_id in _CACHED_TIMED_ALLOWS:
+            expiry = _CACHED_TIMED_ALLOWS[clean_id]
+            if now < expiry:
+                return POLICY_ALLOW
+            else:
+                _CACHED_TIMED_ALLOWS.pop(clean_id, None)
+
+    # 2. Config override check
+    with _CONFIG_CACHE_LOCK:
+        if clean_id in _CACHED_OVERRIDES:
+            ov = _CACHED_OVERRIDES[clean_id]
+            if ov in VALID_POLICIES:
+                return ov
+
+    # 3. Default policy from registry
+    reg = get_permission_registry()
+    entry = reg.get(clean_id)
+    if entry:
+        return entry.default_policy
+
+    return POLICY_ASK
+
+
+def resolve_action_policy(action_name: str, parameters: dict | None = None) -> tuple[str, Optional[PermissionEntry]]:
+    """Determine effective policy for action & parameters. Returns (policy, permission_entry)."""
+    act = str(action_name or "").lower().strip()
+    params = parameters or {}
+
+    # Forbidden drive format check -> strictly DENY
+    if ActionPermissionManager.is_drive_format_attempt(act, params):
+        return POLICY_DENY, PermissionEntry("forbidden:drive_format", "Forbidden Drive Format", "Drive format is strictly prohibited", FORBIDDEN, POLICY_DENY, "security")
+
+    reg = get_permission_registry()
+    entry = reg.find_by_action(act, params)
+
+    risk_level = ActionPermissionManager.get_risk_level(act, params)
+
+    if entry:
+        pol = resolve_permission_policy(entry.id)
+        if entry.id not in _CACHED_OVERRIDES and risk_level == ActionRiskLevel.IMMEDIATE:
+            pol = POLICY_ALLOW
+        return pol, entry
+
+    # Generic tool entry in ACTION_PERMISSIONS
+    tier = DESTRUCTIVE if risk_level == ActionRiskLevel.HIGH_IMPACT else (
+        SENSITIVE if risk_level == ActionRiskLevel.CONFIRMATION_REQUIRED else NORMAL
+    )
+    synthetic_id = f"tool:{act}"
+    default_pol = POLICY_ALLOW if risk_level == ActionRiskLevel.IMMEDIATE else POLICY_ASK
+    pol = resolve_permission_policy(synthetic_id)
+    if synthetic_id not in _CACHED_OVERRIDES:
+        pol = default_pol
+
+    synth_entry = PermissionEntry(synthetic_id, act, f"Operational tool {act}", tier, default_pol, act)
+    return pol, synth_entry
+
+
+def set_permission_policy(
+    permission_id: str,
+    policy: str,
+    from_ui: bool = False,
+    request_token: Optional[str] = None,
+) -> None:
+    """Set policy for a permission. Security rule: only allowed from UI or with user confirmation."""
+    if is_untrusted_context():
+        raise SecurityViolationError("Untrusted context cannot alter permission settings.")
+
+    if not from_ui and not request_token:
+        raise SecurityViolationError("Model or untrusted code cannot alter permission settings. Changes require UI confirmation.")
+
+    clean_id = str(permission_id or "").strip()
+    clean_pol = str(policy or "").strip().upper()
+    if clean_pol not in VALID_POLICIES:
+        raise ValueError(f"Invalid policy '{policy}'. Must be ASK, ALLOW, or DENY.")
+
+    from memory import config_manager
+    config_manager.set_permission_policy_override(clean_id, clean_pol)
+    _sync_config_cache()
+
+
+def set_timed_allow(
+    permission_id: str,
+    minutes: float,
+    from_ui: bool = False,
+    request_token: Optional[str] = None,
+) -> None:
+    """Set temporary ALLOW policy for N minutes, reverting to ASK automatically."""
+    if is_untrusted_context():
+        raise SecurityViolationError("Untrusted context cannot alter permission settings.")
+
+    if not from_ui and not request_token:
+        raise SecurityViolationError("Model or untrusted code cannot set timed permissions. Changes require UI confirmation.")
+
+    clean_id = str(permission_id or "").strip()
+    expiry = time.time() + (float(minutes) * 60.0)
+
+    from memory import config_manager
+    settings = dict(config_manager.get_permission_settings())
+    timed = dict(settings.get("timed_allows", {}))
+    timed[clean_id] = expiry
+    settings["timed_allows"] = timed
+    config_manager.save_permission_settings(settings)
+    _sync_config_cache()
+
+
+def get_timed_allows() -> dict[str, float]:
+    """Return dictionary of active timed allows with expiry timestamps."""
+    _sync_config_cache()
+    now = time.time()
+    with _CONFIG_CACHE_LOCK:
+        return {k: v for k, v in _CACHED_TIMED_ALLOWS.items() if v > now}
+
+
+def clear_timed_allow(permission_id: str) -> None:
+    clean_id = str(permission_id or "").strip()
+    from memory import config_manager
+    settings = dict(config_manager.get_permission_settings())
+    timed = dict(settings.get("timed_allows", {}))
+    if clean_id in timed:
+        timed.pop(clean_id, None)
+        settings["timed_allows"] = timed
+        config_manager.save_permission_settings(settings)
+    _sync_config_cache()
+
+
+def reset_permissions_to_defaults(from_ui: bool = False, request_token: Optional[str] = None) -> None:
+    """Reset all permissions and timed allows to defaults."""
+    if is_untrusted_context():
+        raise SecurityViolationError("Untrusted context cannot reset permission settings.")
+
+    if not from_ui and not request_token:
+        raise SecurityViolationError("Model or untrusted code cannot reset permissions. Changes require UI confirmation.")
+
+    from memory import config_manager
+    config_manager.reset_permission_settings()
+    _sync_config_cache()
+
+
+_recent_decisions: list[dict] = []
+_decisions_lock = Lock()
+
+
+def log_permission_decision(
+    permission_id: str,
+    action: str,
+    decision: str,
+    reason: str = "",
+) -> dict:
+    """Log an authoritative permission decision (ALLOWED, DENIED, ASK) for the UI audit trail."""
+    now_str = datetime.now().isoformat()
+    entry = {
+        "timestamp": now_str,
+        "permission_id": str(permission_id),
+        "action": str(action),
+        "decision": str(decision).upper(),
+        "reason": str(reason),
+    }
+    with _decisions_lock:
+        _recent_decisions.append(entry)
+        if len(_recent_decisions) > 100:
+            _recent_decisions.pop(0)
+
+    try:
+        log_action_audit(
+            action=action,
+            parameters={"permission_id": permission_id, "reason": reason},
+            permission_level=decision,
+            status="allowed" if decision == "ALLOWED" else ("denied" if decision == "DENIED" else "ask"),
+            verified=(decision == "ALLOWED"),
+        )
+    except Exception:
+        pass
+
+    return entry
+
+
+def get_recent_permission_decisions(limit: int = 50) -> list[dict]:
+    with _decisions_lock:
+        return list(_recent_decisions[-limit:])
+
+
+def clear_recent_permission_decisions() -> None:
+    with _decisions_lock:
+        _recent_decisions.clear()
+
 
 
 # ── ActionPermissionManager ──────────────────────────────────────────────────
@@ -168,6 +661,15 @@ class ActionPermissionManager:
         """Check if an action or its parameters attempt drive or volume formatting."""
         act = str(action_name or "").lower().strip()
         params = parameters or {}
+        sub_act = str(params.get("action") or "").lower().strip()
+        target = str(
+            params.get("target")
+            or params.get("device")
+            or params.get("name")
+            or params.get("ssid")
+            or params.get("path")
+            or ""
+        ).strip().lower()
         sub_act = str(params.get("action") or "").lower().strip()
 
         # Tools that only display UI, search, or process non-system text cannot format drives
@@ -217,20 +719,19 @@ class ActionPermissionManager:
         """Determine the exact risk level for an action according to the permission matrix."""
         act = str(action_name or "").lower().strip()
         params = parameters or {}
+        sub_act = str(params.get("action") or "").lower().strip()
+        target = str(
+            params.get("target")
+            or params.get("device")
+            or params.get("name")
+            or params.get("ssid")
+            or params.get("path")
+            or ""
+        ).strip().lower()
 
         # 0. Check FORBIDDEN (Drive Formatting)
         if cls.is_drive_format_attempt(act, params):
             return ActionRiskLevel.FORBIDDEN
-
-        from core.risk_tiers import RiskTier, get_action_tier
-        tier = get_action_tier(act, params, context=context)
-        if tier == RiskTier.LOW:
-            return ActionRiskLevel.IMMEDIATE
-        elif tier == RiskTier.MEDIUM:
-            return ActionRiskLevel.CONFIRMATION_REQUIRED
-        else:
-            return ActionRiskLevel.HIGH_IMPACT
-
 
         WINDOW_ADJUST_ACTIONS = (
             "minimize_jarvis",
@@ -753,6 +1254,15 @@ class ActionPermissionManager:
             or params.get("ssid")
             or params.get("path")
             or ""
+        ).strip().lower()
+        sub_act = str(params.get("action") or "").lower().strip()
+        target = str(
+            params.get("target")
+            or params.get("device")
+            or params.get("name")
+            or params.get("ssid")
+            or params.get("path")
+            or ""
         ).strip()
         payment_info: Optional[dict] = None
 
@@ -1009,23 +1519,23 @@ class ActionExecutionGuard:
                 duration_ms=dur,
             )
 
-        # 1.2. Check if recently executed via confirmation to prevent re-asking
-        from core import confirm
-        if confirm.has_recent_execution(name, params=params, seconds=60.0):
-            last_exec = confirm.get_recent_execution(name, params=params, seconds=60.0)
+        # 1.5. Central Permission Policy Evaluation (ALLOW / ASK / DENY)
+        policy, perm_entry = resolve_action_policy(name, params)
+        perm_id = perm_entry.id if perm_entry else f"tool:{name}"
+
+        # If policy is DENY: reject immediately
+        if policy == POLICY_DENY:
             dur = (time.monotonic() - start_time) * 1000
-            res_msg = f"Action '{name}' has already been executed."
-            if last_exec and last_exec.result:
-                if isinstance(last_exec.result, str):
-                    res_msg = last_exec.result
-                elif hasattr(last_exec.result, "message") and last_exec.result.message:
-                    res_msg = last_exec.result.message
+            msg = f"Action '{name}' is denied by permission settings."
+            log_permission_decision(perm_id, name, "DENIED", msg)
+            log_action_audit(name, params, "denied", "blocked", False, error="PERMISSION_DENIED")
             return outcome.ActionResult(
-                status=outcome.STATUS_DONE,
+                status=outcome.STATUS_BLOCKED,
                 action=name,
-                success=True,
-                verified=True,
-                message=res_msg,
+                success=False,
+                verified=False,
+                message=msg,
+                error="PERMISSION_DENIED",
                 duration_ms=dur,
             )
 
@@ -1037,6 +1547,7 @@ class ActionExecutionGuard:
                 raw = _call_handler_safe(handler, clean_params, ctx)
                 dur = (time.monotonic() - start_time) * 1000
                 res = outcome.normalize_result(raw, action_name=name, duration_ms=dur)
+                log_permission_decision(perm_id, name, "ALLOWED", "Human confirmed execution")
                 log_action_audit(name, clean_params, "authorized", res.status, res.verified, res.error)
                 return res
             except Exception as e:
@@ -1052,6 +1563,7 @@ class ActionExecutionGuard:
                     error=str(e),
                     duration_ms=dur,
                 )
+                log_permission_decision(perm_id, name, "ALLOWED", f"Execution failed: {e}")
                 log_action_audit(name, clean_params, "authorized", res.status, res.verified, res.error)
                 return res
 
@@ -1065,6 +1577,7 @@ class ActionExecutionGuard:
                 raw = _call_handler_safe(handler, clean_params, ctx)
                 dur = (time.monotonic() - start_time) * 1000
                 res = outcome.normalize_result(raw, action_name=name, duration_ms=dur)
+                log_permission_decision(perm_id, name, "ALLOWED", f"task_scope_{active_scope.scope_id}")
                 log_action_audit(name, clean_params, f"task_scope_{active_scope.scope_id}", res.status, res.verified, res.error)
                 return res
             except Exception as e:
@@ -1081,26 +1594,20 @@ class ActionExecutionGuard:
                 log_action_audit(name, clean_params, f"task_scope_{active_scope.scope_id}", res.status, res.verified, res.error)
                 return res
 
-        # 3. Check Risk Level from Authoritative Risk Tiers
+        # 3. Check Risk Level from Authoritative Risk Matrix
+        risk_level = ActionPermissionManager.get_risk_level(name, params, context=ctx)
         from core.risk_tiers import RiskTier, get_action_tier
         risk_tier = get_action_tier(name, params, context=ctx)
-        risk_level = (
-            ActionRiskLevel.IMMEDIATE
-            if risk_tier == RiskTier.LOW
-            else (
-                ActionRiskLevel.CONFIRMATION_REQUIRED
-                if risk_tier == RiskTier.MEDIUM
-                else ActionRiskLevel.HIGH_IMPACT
-            )
-        )
 
-        if risk_level == ActionRiskLevel.IMMEDIATE:
-            # Level 1: Immediate execution
+        # If policy is ALLOW, or if risk is IMMEDIATE (Level 1) and policy is not ASK:
+        if policy == POLICY_ALLOW or (risk_level == ActionRiskLevel.IMMEDIATE and policy != POLICY_ASK):
+            clean_params = {k: v for k, v in params.items() if k != "_execution_authorized"}
             try:
-                raw = _call_handler_safe(handler, params, ctx)
+                raw = _call_handler_safe(handler, clean_params, ctx)
                 dur = (time.monotonic() - start_time) * 1000
                 res = outcome.normalize_result(raw, action_name=name, duration_ms=dur)
-                log_action_audit(name, params, str(risk_tier.value), res.status, res.verified, res.error)
+                log_permission_decision(perm_id, name, "ALLOWED", "Policy ALLOW or Immediate action")
+                log_action_audit(name, clean_params, str(risk_tier.value), res.status, res.verified, res.error)
                 return res
             except Exception as e:
                 dur = (time.monotonic() - start_time) * 1000
@@ -1115,7 +1622,8 @@ class ActionExecutionGuard:
                     error=str(e),
                     duration_ms=dur,
                 )
-                log_action_audit(name, params, str(risk_tier.value), res.status, res.verified, res.error)
+                log_permission_decision(perm_id, name, "ALLOWED", f"Execution error: {e}")
+                log_action_audit(name, clean_params, str(risk_tier.value), res.status, res.verified, res.error)
                 return res
 
         # Level 2 (MEDIUM) or Level 3 (HIGH): Confirmation Required

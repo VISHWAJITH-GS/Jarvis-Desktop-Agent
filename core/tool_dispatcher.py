@@ -45,6 +45,22 @@ class ToolDispatcher:
         if live.ui:
             live.ui.set_state("THINKING")
 
+        # Central permission policy gate
+        try:
+            from core.permissions import resolve_action_policy, POLICY_DENY, POLICY_ALLOW, log_permission_decision
+            pol, p_entry = resolve_action_policy(name, args)
+            p_id = p_entry.id if p_entry else f"tool:{name}"
+            if pol == POLICY_DENY:
+                msg = f"Action '{name}' is denied by permission settings."
+                log_permission_decision(p_id, name, "DENIED", msg)
+                return types.FunctionResponse(
+                    id=fc.id,
+                    name=name,
+                    response={"result": msg, "status": "blocked"},
+                )
+        except Exception as pe:
+            print(f"[Permissions] Central check exception: {pe}")
+
         # Safeguard: Keep Jarvis purely observant during learning (no execution, no confirmations)
         if name != "skill_learner":
             try:

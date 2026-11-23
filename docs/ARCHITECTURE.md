@@ -22,14 +22,28 @@ graph TD
 - **`gemini.py`**: Authoritative model ladder, fallback strategies, and retry policies for Gemini APIs (`FAST`, `SMART` tiers).
 - **`action_loader.py`**: Tool discovery and registration (`ActionRegistry`). Dynamically scans `actions/*.py` for self-describing `TOOL` dicts and wraps invocations in normalized `ActionResult` contracts.
 - **`agent_orchestrator.py`**: Autonomous multi-step task execution loop (Observe -> Plan -> Execute -> Verify -> Recover).
-- **`permissions.py`**: `ActionExecutionGuard` enforcing multi-tier safety (`READ_ONLY`, `NORMAL`, `SENSITIVE`, `DESTRUCTIVE`), user confirmations, credential scanning/redaction, and audit logging.
+- **`permissions.py`**: Central permission registry (`PermissionRegistry`) and `ActionExecutionGuard` enforcing multi-tier safety (`READ_ONLY`, `NORMAL`, `SENSITIVE`, `DESTRUCTIVE`), configurable user policies (`ASK`, `ALLOW`, `DENY`), timed allows with automatic reversion, AI tamper-proofing (`SecurityViolationError`), user confirmations, and decision audit logging.
 - **`outcome.py`**: Unified return contract (`ActionResult`) guaranteeing explicit status (`done`, `failed`, `needs_confirmation`, `unverified`, `started`, `unsupported`).
 - **`audio_manager.py` & `audio_devices.py`**: Sounddevice audio I/O streaming, hybrid Bluetooth routing (A2DP stereo playback vs. HFP mic capture), device switching, and audio ducking.
 - **`voice_state.py`**: Voice state machine (`LISTENING`, `THINKING`, `SPEAKING`, `SLEEPING`, `DISABLED`).
 - **`echo.py` & `viseme.py`**: Acoustic self-echo suppression (`EchoGuard`) and formant/viseme lip-sync extraction (`VisemeStream`) driving the avatar mouth.
 - **`wake_word.py`**: Local "Hey Jarvis" wake word detection via OpenWakeWord.
-- **`plugin_loader.py`**: Dynamic discovery of community extensions from `plugins/*.py`.
+- **`plugin_loader.py`**: Dynamic discovery of community extensions from `plugins/*.py` with automatic permission registration.
 - **`undo.py`**: Reversible action stack for filesystem and preference mutations.
+
+### Operating Modes Subsystem (`plugins/modes.py`)
+- **Focus Mode (`plugins/_focus_mode.py`)**:
+  - Distraction & adult content blocking via hosts file `# === BEGIN JARVIS FOCUS MODE ===` markers and local cache (`data/hosts_porn.txt`).
+  - Optional secondary Family DNS filter (Cloudflare `1.1.1.3` / `1.0.0.3`) and browser Secure DNS (DoH) warning.
+  - Background process monitor thread (poll every 2.5s) politely closing blocked applications (Instagram) via `WM_CLOSE` / `SIGTERM` (never kill) while strictly protecting always-allowed tools (VS Code, Antigravity, GitHub Desktop, Notion, Obsidian) and assistant PIDs.
+  - Active browser tab monitoring with pre-warning and verified title change checking.
+  - Crash safety via `data/focus_mode_state.json` restoring hosts and DNS on startup or unexpected shutdown.
+- **English Placement Practice Mode (`plugins/_english_mode.py`)**:
+  - Live session prompt overlay forcing professional English replies regardless of input language.
+  - 6 recruitment scenarios: `self_intro`, `hr_round` (STAR method), `project_explain` (architecture & trade-offs), `code_walkthrough`, `group_discussion` (peer simulation), and `presentation` (2-minute talk).
+  - Strict feedback engine providing at most 2 actionable corrections per answer with Original, Polished Rewrite, and Reason; filler-word tracking; encouraging tone.
+  - Persistent mistake tracking in `memory/english_mistakes.json` with flashcard generation compatible with `player.show_quiz()`.
+
 
 ### Domain Tools (`actions/`)
 - Specialized tools providing real desktop automation: `computer_control`, `windows_control`, `windows_uia`, `browser_control`, `spotify_control`, `reminder`, `system_monitor`, `file_controller`, `file_processor`, etc.

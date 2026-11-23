@@ -1152,9 +1152,123 @@ def set_mute(mute: bool) -> dict:
             return {"success": False, "action": "set_mute", "error": str(e), "message": f"Could not toggle mute: {e}"}
 
 
+def get_app_volumes() -> list[dict]:
+    """Get volume and mute state for all active Windows application audio sessions."""
+    sessions_info = []
+    try:
+        import comtypes
+
+        comtypes.CoInitialize()
+    except Exception:
+        pass
+    try:
+        from pycaw.pycaw import AudioUtilities
+
+        sessions = AudioUtilities.GetAllSessions()
+        for s in sessions:
+            try:
+                proc = s.Process
+                pname = (proc.name() if proc else "").lower()
+                pid = proc.pid if proc else None
+                sav = getattr(s, "SimpleAudioVolume", None)
+                if not sav or not pname:
+                    continue
+                vol = int(round(float(sav.GetMasterVolume()) * 100))
+                mute = bool(sav.GetMute())
+                sessions_info.append({
+                    "name": pname,
+                    "pid": pid,
+                    "volume": vol,
+                    "muted": mute,
+                })
+            except Exception:
+                continue
+    except Exception as e:
+        logger.debug(f"[windows_control] get_app_volumes failed: {e}")
+    return sessions_info
+
+
+def set_app_volume(app_name: str, level: int | None = None, delta: int | None = None) -> dict:
+    """
+    Set or adjust volume level for a specific application or each application.
+    If app_name is 'all', 'each', 'every', or empty, applies to all active audio sessions.
+    """
+    try:
+        import comtypes
+
+        comtypes.CoInitialize()
+    except Exception:
+        pass
+
+    target_app = str(app_name or "").lower().strip()
+    is_all = not target_app or target_app in ("all", "each", "every", "all apps", "all applications", "each application")
+
+    updated = []
+    try:
+        from pycaw.pycaw import AudioUtilities
+
+        sessions = AudioUtilities.GetAllSessions()
+        for s in sessions:
+            try:
+                proc = s.Process
+                pname = (proc.name() if proc else "").lower()
+                if not pname:
+                    continue
+                sav = getattr(s, "SimpleAudioVolume", None)
+                if not sav:
+                    continue
+
+                clean_target = target_app.replace(".exe", "")
+                if is_all or clean_target in pname or target_app in pname:
+                    curr = int(round(float(sav.GetMasterVolume()) * 100))
+                    if delta is not None:
+                        new_lvl = max(0, min(100, curr + delta))
+                    elif level is not None:
+                        new_lvl = max(0, min(100, int(level)))
+                    else:
+                        new_lvl = curr
+
+                    sav.SetMasterVolume(float(new_lvl / 100.0), None)
+                    if sav.GetMute() and new_lvl > 0:
+                        sav.SetMute(0, None)
+                    updated.append({"app": pname, "before": curr, "after": new_lvl})
+            except Exception:
+                continue
+    except Exception as e:
+        return {"success": False, "error": str(e), "message": f"Failed setting application volume: {e}"}
+
+    if updated:
+        if is_all:
+            summary = ", ".join(f"{u['app']} ({u['after']}%)" for u in updated[:4])
+            if len(updated) > 4:
+                summary += f" and {len(updated)-4} more"
+            return {
+                "success": True,
+                "action": "set_app_volume",
+                "updated": updated,
+                "message": f"Adjusted volume for {len(updated)} application session(s): {summary}.",
+            }
+        else:
+            u = updated[0]
+            return {
+                "success": True,
+                "action": "set_app_volume",
+                "app": u["app"],
+                "volume": u["after"],
+                "message": f"Set {u['app']} volume to {u['after']}%.",
+            }
+    else:
+        return {
+            "success": False,
+            "action": "set_app_volume",
+            "message": f"No active audio session found matching '{app_name}'.",
+        }
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # E. CENTRAL ACTION DISPATCHER
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 
 def windows_control(parameters: dict = None, player=None, **kwargs) -> str:
@@ -1398,6 +1512,30 @@ def windows_control(parameters: dict = None, player=None, **kwargs) -> str:
         vol = get_volume()
         return outcome.done("windows_control", volume=vol, verified=True, message=f"Current volume is {vol}%.")
 
+    if action in ("set_app_volume", "app_volume", "increase_app_volume", "decrease_app_volume", "volume_app"):
+        app_target = params.get("app") or params.get("app_name") or target or "all"
+        val = value or params.get("volume") or params.get("level")
+        if action in ("increase_app_volume", "louder_app"):
+            delta = int(val) if val and str(val).lstrip("+-").isdigit() else 10
+            res = set_app_volume(app_target, delta=delta)
+        elif action in ("decrease_app_volume", "quieter_app"):
+            delta = -int(val) if val and str(val).lstrip("+-").isdigit() else -10
+            res = set_app_volume(app_target, delta=delta)
+        else:
+            lvl = int(val) if val and str(val).isdigit() else 50
+            res = set_app_volume(app_target, level=lvl)
+        return outcome.done("windows_control", **res)
+
+    if action in ("list_app_volumes", "get_app_volumes"):
+        vols = get_app_volumes()
+        msg = (
+            "Active application volumes: " + ", ".join(f"{v['name']}: {v['volume']}%" for v in vols)
+            if vols
+            else "No active application audio sessions found."
+        )
+        return outcome.done("windows_control", sessions=vols, message=msg)
+
+
     if action in ("mute", "mute_laptop", "mute_audio"):
         res = set_mute(True)
         return outcome.done("windows_control", **res)
@@ -1484,7 +1622,7 @@ TOOL = {
         "Windows system, hardware, Bluetooth, and Wi-Fi control: "
         "Wi-Fi (check status with get_wifi_status, list available/saved networks with list_available_wifi_networks, connect to network SSID with connect_wifi, disconnect with disconnect_wifi, enable/disable radio with set_wifi_enabled). "
         "Bluetooth (check status with get_bluetooth_status, list paired devices with list_bluetooth_devices, connect device like 'OPPO Enco Buds 2' with connect_bluetooth_device, disconnect with disconnect_bluetooth_device, enable/disable radio with set_bluetooth_enabled). "
-        "Sound & Audio Devices (set volume 0-100, get volume, mute, unmute, "
+        "Sound & Audio Devices (set volume 0-100, get volume, mute, unmute, set_app_volume to adjust volume of an app like 'Spotify' or 'all' applications, list_app_volumes, "
         "list_audio_devices, list_audio_input_devices, list_audio_output_devices, get_audio_status, "
         "set_audio_input to switch microphone e.g. 'OPPO Enco Buds2' or 'laptop microphone', "
         "set_audio_output to switch speakers e.g. 'OPPO Enco Buds2' or 'laptop speakers', "
@@ -1492,7 +1630,7 @@ TOOL = {
         "Display (brightness, display modes duplicate/extend/pc_only), and battery status. "
         "Reading status never needs confirmation; changing connection/state executes immediately or asks for confirmation when switching."
     ),
-    "brief": "Hardware control: Wi-Fi management, Bluetooth management, volume, mute, audio output switching, brightness, display modes.",
+    "brief": "Hardware control: Wi-Fi management, Bluetooth management, volume, app volume, mute, audio output switching, brightness, display modes.",
     "parameters": {
         "type": "OBJECT",
         "properties": {
@@ -1501,14 +1639,18 @@ TOOL = {
                 "description": (
                     "The exact action: get_wifi_status | list_available_wifi_networks | connect_wifi | disconnect_wifi | set_wifi_enabled | "
                     "get_bluetooth_status | list_bluetooth_devices | connect_bluetooth_device | disconnect_bluetooth_device | set_bluetooth_enabled | pair_bluetooth_device | "
-                    "set_volume | get_volume | volume_up | volume_down | mute | unmute | mute_jarvis | unmute_jarvis | minimize_jarvis | maximize_jarvis | manage_memory | manage_actions | "
+                    "set_volume | get_volume | volume_up | volume_down | set_app_volume | increase_app_volume | decrease_app_volume | list_app_volumes | mute | unmute | mute_jarvis | unmute_jarvis | minimize_jarvis | maximize_jarvis | manage_memory | manage_actions | "
                     "list_audio_devices | list_audio_input_devices | list_audio_output_devices | get_audio_status | set_audio_input | set_audio_output | set_audio_device | reset_audio_devices | "
                     "set_brightness | set_display_mode | get_power_status"
                 ),
             },
+            "app": {
+                "type": "STRING",
+                "description": "Application name (e.g. 'Spotify', 'Chrome', or 'all'/'each' for all running applications) when setting or increasing per-app volume.",
+            },
             "target": {
                 "type": "STRING",
-                "description": "Device name (e.g. 'OPPO Enco Buds 2'), Wi-Fi SSID (e.g. 'Vishwa', 'OPPO A6x 5G x3c5'), display mode ('duplicate', 'extend', 'internal'), etc.",
+                "description": "Device name (e.g. 'OPPO Enco Buds 2'), Wi-Fi SSID (e.g. 'Vishwa', 'OPPO A6x 5G x3c5'), display mode ('duplicate', 'extend', 'internal'), or target app name.",
             },
             "value": {
                 "type": "STRING",

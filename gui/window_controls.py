@@ -800,6 +800,22 @@ class WindowControlsMixin:
         ov.raise_()
         self._confirmation_tiers_overlay = ov  # keep reference
 
+    def _open_permissions_drawer(self):
+        cw = self.centralWidget()
+        from gui.settings_overlays import PermissionsDrawerOverlay
+        ov = PermissionsDrawerOverlay(parent=cw)
+        ow = getattr(PermissionsDrawerOverlay, "_OW", 640)
+        oh = min(640, cw.height() - 16)
+        ov.setGeometry(
+            (cw.width() - ow) // 2,
+            (cw.height() - oh) // 2,
+            ow,
+            oh,
+        )
+        ov.show()
+        ov.raise_()
+        self._permissions_drawer_overlay = ov
+
     def _open_plugin_settings(self):
         sections = self.get_plugin_settings() if self.get_plugin_settings else []
         cw = self.centralWidget()

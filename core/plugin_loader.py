@@ -53,6 +53,7 @@ class PluginRecord:
     #          is in force. Nothing is deleted: Gemini still gets the full text.
     tier: Optional[str] = None
     brief: Optional[str] = None
+    permissions: Optional[list] = None
 
 
 class PluginRegistry:
@@ -222,6 +223,10 @@ def _validate(module, filename: str) -> PluginRecord:
     if not (isinstance(settings, dict) and isinstance(settings.get("fields"), list)):
         settings = None
 
+    permissions = plugin_meta.get("permissions") or getattr(module, "PERMISSIONS", None)
+    if not isinstance(permissions, list):
+        permissions = None
+
     return PluginRecord(
         name=name,
         description=description.strip(),
@@ -235,6 +240,7 @@ def _validate(module, filename: str) -> PluginRecord:
         scheduling=_opt_upper(plugin_meta.get("scheduling"), _SCHEDULING),
         tier=_opt_tier(plugin_meta.get("tier")),
         brief=_opt_text(plugin_meta.get("brief")),
+        permissions=permissions,
     )
 
 
@@ -358,6 +364,47 @@ def discover_plugins(
         if rec.valid:
             valid[rec.name] = rec
             logger(f"Plugin loaded: {rec.name} ({path.name})")
+            # Auto-register plugin permissions with central PermissionRegistry
+            try:
+                from core.permissions import (
+                    get_permission_registry,
+                    PermissionEntry,
+                    POLICY_ALLOW,
+                    POLICY_ASK,
+                    READ_ONLY,
+                    NORMAL,
+                    SENSITIVE,
+                )
+                preg = get_permission_registry()
+                if rec.permissions and isinstance(rec.permissions, list):
+                    for p in rec.permissions:
+                        if isinstance(p, dict):
+                            p_id = p.get("id") or f"plugin:{rec.name}"
+                            p_label = p.get("label") or rec.name
+                            p_desc = p.get("description") or rec.description
+                            p_tier = str(p.get("tier") or SENSITIVE).lower()
+                            p_def = POLICY_ALLOW if p_tier in (READ_ONLY, NORMAL) else POLICY_ASK
+                            if "default_policy" in p:
+                                p_def = str(p["default_policy"]).upper()
+                            preg.register(PermissionEntry(p_id, p_label, p_desc, p_tier, p_def, rec.name))
+                        elif isinstance(p, PermissionEntry):
+                            preg.register(p)
+                else:
+                    is_ro = (rec.tier == "read_only" or rec.name.endswith("_read"))
+                    p_tier = READ_ONLY if is_ro else SENSITIVE
+                    p_pol = POLICY_ALLOW if is_ro else POLICY_ASK
+                    preg.register(
+                        PermissionEntry(
+                            id=f"plugin:{rec.name}",
+                            label=f"Plugin: {rec.name}",
+                            description=rec.description or f"Extension tool {rec.name}",
+                            tier=p_tier,
+                            default_policy=p_pol,
+                            owner=rec.name,
+                        )
+                    )
+            except Exception as pe:
+                logger(f"Failed to auto-register permissions for plugin '{rec.name}': {pe}")
         else:
             logger(f"Plugin rejected: {path.name} — {rec.error}")
 

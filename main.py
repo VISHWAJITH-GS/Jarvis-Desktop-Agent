@@ -52,11 +52,19 @@ __all__ = [
 
 def main():
     """Main application entry point: creates UI, starts voice engine, runs Qt event loop."""
+    # Startup crash recovery for Focus Mode (recovers hosts and DNS if previous process died mid-focus)
+    try:
+        from plugins import _focus_mode
+        _focus_mode.restore_crash_state()
+    except Exception as e:
+        print(f"[JARVIS] Focus mode crash recovery note: {e}")
+
     ui = JarvisUI("face.png")
 
     def runner():
         ui.wait_for_api_key()
         jarvis = JarvisLive(ui)
+        platform_hooks.register_hook("request_session_reconnect", jarvis.request_reconnect)
         try:
             asyncio.run(jarvis.run())
         except (KeyboardInterrupt, SystemExit, asyncio.CancelledError):
