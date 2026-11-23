@@ -265,6 +265,8 @@ class WindowAudioMixin:
                 self._drawer_tabs.setCurrentIndex(idx)
                 if idx == 2:
                     self._refresh_audio_tab()
+                elif idx == 3:
+                    self._refresh_brain_btn()
                 elif idx == 4:
                     self._refresh_tasks_tab()
 
@@ -890,6 +892,15 @@ class WindowAudioMixin:
             return b
 
         lay.addWidget(_hdr("NEURAL INTELLIGENCE CONFIGURATION"))
+        self._settings_brain_btn = _action_btn(
+            "BRAIN: ☁ GEMINI LIVE (CLICK TO SWITCH TO LOCAL)",
+            self._toggle_brain_engine,
+            "cpu",
+        )
+        lay.addWidget(self._settings_brain_btn)
+        lay.addWidget(
+            _action_btn("CONFIGURE ENGINE & PROVIDERS (LOCAL / GEMINI)", self._open_providers, "settings")
+        )
         lay.addWidget(_action_btn("OPEN REMINDERS MATRIX", lambda: self._show_reminders("upcoming"), "calendar"))
         lay.addWidget(
             _action_btn("OPEN MEMORY & ACTIONS PLATFORM", lambda: self._show_memory_actions("memory"), "database")

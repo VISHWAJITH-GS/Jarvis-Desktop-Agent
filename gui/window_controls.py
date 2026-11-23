@@ -731,6 +731,36 @@ class WindowControlsMixin:
                 btn.setText(label)
                 btn.setStyleSheet(style)
 
+        s_btn = getattr(self, "_settings_brain_btn", None)
+        if s_btn is not None:
+            if is_local:
+                s_btn.setText(" BRAIN: 🖥 LOCAL OLLAMA (CLICK TO SWITCH TO GEMINI)")
+                s_btn.setIcon(get_uicon("cpu", color="#f4b942", size=15))
+                s_btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background: #1a1200; color: #f4b942;
+                        border: 1px solid #f4b942; border-radius: 4px; padding: 8px 12px;
+                        text-align: left;
+                    }}
+                    QPushButton:hover {{
+                        background: #2a1c00; border: 1px solid #ffd166; color: #ffffff;
+                    }}
+                """)
+            else:
+                s_btn.setText(" BRAIN: ☁ GEMINI LIVE (CLICK TO SWITCH TO LOCAL)")
+                s_btn.setIcon(get_uicon("cpu", color=C.PRI, size=15))
+                s_btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background: {C.PANEL2}; color: {C.TEXT};
+                        border: 1px solid {C.BORDER_B}; border-radius: 4px; padding: 8px 12px;
+                        text-align: left;
+                    }}
+                    QPushButton:hover {{
+                        background: rgba(255, 23, 68, 0.25);
+                        border: 1px solid {C.PRI}; color: #ffffff;
+                    }}
+                """)
+
     def _toggle_brain_engine(self):
         """One-click switch between Gemini Live and Local Brain (Ollama)."""
         from memory import config_manager
