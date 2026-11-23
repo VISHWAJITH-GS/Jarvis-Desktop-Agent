@@ -16,6 +16,7 @@ import logging
 import time
 from typing import Any, Dict, Optional
 
+from core import confirm as confirm_gate
 from core import outcome
 from gui import display_registry
 from memory import config_manager
@@ -268,19 +269,64 @@ def jarvis_control(parameters: Optional[Dict[str, Any]] = None, player=None, ses
             player.write_log(f"SYS: STT Vocabulary: {formatted}")
         return f"Current speech recognition vocabulary contains: {formatted}."
 
+    # ── 9. Engine Switching (Gemini Live <-> Local Pipeline) ───────────────────
+    if action in ("switch_engine", "switch_to_local", "switch_to_gemini", "switch_to_gemini_live", "set_engine"):
+        raw_eng = str(params.get("engine") or params.get("target") or raw_target or "").strip().lower()
+        if action in ("switch_to_local", "local_engine") or raw_eng in ("local", "local_engine", "pipeline", "ollama"):
+            new_engine = config_manager.ENGINE_LOCAL
+            dest_desc = "Local only (Whisper/Ollama/Piper on this computer)"
+        elif action in ("switch_to_gemini", "switch_to_gemini_live") or raw_eng in ("gemini", "gemini_live", "google", "cloud"):
+            new_engine = config_manager.ENGINE_GEMINI_LIVE
+            dest_desc = "Google (Gemini Live cloud WebSocket)"
+        else:
+            return "Please specify whether to switch to 'local' or 'Gemini Live', sir."
+
+        cur_engine = config_manager.get_active_engine()
+        if cur_engine == new_engine:
+            return f"Jarvis is already running on the {new_engine.replace('_', ' ').title()} engine, sir."
+
+        confirmed = bool(
+            params.get("confirmed")
+            or params.get("_execution_authorized")
+            or params.get("force")
+        )
+
+        def _do_switch():
+            config_manager.set_active_engine(new_engine)
+            if player and hasattr(player, "request_engine_switch"):
+                player.request_engine_switch(new_engine)
+            elif player and hasattr(player, "on_audio_device_change") and player.on_audio_device_change:
+                player.on_audio_device_change()
+            if player and hasattr(player, "write_log"):
+                player.write_log(f"SYS: Switched engine to {new_engine.replace('_', ' ').title()}. Audio destination: {dest_desc}.")
+            return f"Switched to {new_engine.replace('_', ' ').title()} engine. Audio now routes to {dest_desc}, sir."
+
+        if not confirmed:
+            return confirm_gate.request_action(
+                action="switch_engine",
+                parameters={"engine": new_engine, "confirmed": True},
+                risk_level="sensitive",
+                title=f"Switch to {new_engine.replace('_', ' ').title()}",
+                detail=f"Audio will route to: {dest_desc}",
+                run=_do_switch,
+                player=player,
+            )
+
+        return _do_switch()
+
     return f"Unknown jarvis_control action: '{raw_action}'."
 
 
 TOOL = {
     "name": "jarvis_control",
     "description": (
-        "JARVIS Self-Control, Display Window Management, and Speech Vocabulary: Controls Jarvis's own "
-        "system state (mute/unmute speaker or microphone, sleep, wake, minimize to taskbar/tray, "
-        "restore back to normal, shutdown Jarvis orderly), controls Jarvis-created display windows, "
-        "and manages custom speech recognition vocabulary (add_hotword, remove_hotword, list_hotwords). "
+        "JARVIS Self-Control, Display Window Management, Speech Vocabulary, and Engine Switching: "
+        "Controls Jarvis's own system state (mute/unmute, sleep, wake, minimize/restore, shutdown), "
+        "controls Jarvis-created display windows, manages speech vocabulary (add_hotword, list_hotwords), "
+        "and switches conversation engines between 'gemini_live' and 'local' with user confirmation. "
         "Strictly operates on Jarvis's own state and displays; never touches external applications."
     ),
-    "brief": "Control Jarvis state, display windows, and speech recognition vocabulary.",
+    "brief": "Control Jarvis state, display windows, speech vocabulary, and engine switching.",
     "parameters": {
         "type": "OBJECT",
         "properties": {
@@ -303,16 +349,23 @@ TOOL = {
                     "add_hotword",
                     "remove_hotword",
                     "list_hotwords",
+                    "switch_engine",
                 ],
-                "description": "The self-control, display, or vocabulary action to perform.",
+                "description": "The self-control, display, vocabulary, or engine action to perform.",
             },
             "target": {
                 "type": "STRING",
                 "description": (
                     "Action target: for mute/unmute specify 'speaker', 'microphone', or 'both'; "
                     "for display commands specify display name or ID; "
-                    "for add_hotword/remove_hotword specify the word or phrase."
+                    "for add_hotword/remove_hotword specify the word or phrase; "
+                    "for switch_engine specify 'local' or 'gemini_live'."
                 ),
+            },
+            "engine": {
+                "type": "STRING",
+                "enum": ["gemini_live", "local"],
+                "description": "The target engine for switch_engine: 'gemini_live' or 'local'.",
             },
             "word": {
                 "type": "STRING",

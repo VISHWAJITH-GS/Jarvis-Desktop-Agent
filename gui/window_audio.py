@@ -566,6 +566,7 @@ class WindowAudioMixin:
         self._lbl_audio_rates = _st_lbl("RATES: IN 16000 Hz · OUT 24000 Hz")
         self._lbl_audio_state = _st_lbl("STATUS: Initializing · Switch: Idle")
         self._lbl_audio_routing = _st_lbl("ROUTING: Automatic Hybrid · A2DP Stereo: Restored")
+        self._lbl_audio_dest = _st_lbl("AUDIO DESTINATION: Initializing...")
         lay.addWidget(self._audio_status_card)
 
         lay.addWidget(_hdr("AUDIO ROUTING ARCHITECTURE"))
@@ -786,6 +787,15 @@ class WindowAudioMixin:
             self._lbl_audio_routing.setStyleSheet(
                 f"color: {C.GREEN if a2dp else '#38BDF8'}; border: none; background: transparent;"
             )
+        if hasattr(self, "_lbl_audio_dest") and self._lbl_audio_dest:
+            try:
+                from memory import config_manager
+                eng = config_manager.get_active_engine().replace('_', ' ').title()
+                dest = config_manager.get_audio_destination_label()
+                self._lbl_audio_dest.setText(f"AUDIO: {eng} · {dest}")
+                self._lbl_audio_dest.setStyleSheet(f"color: {C.PRI if eng.lower().startswith('gemini') else '#38BDF8'}; border: none; background: transparent;")
+            except Exception:
+                pass
 
     def _on_routing_tab_changed(self, idx: int):
         if not hasattr(self, "_combo_routing"):

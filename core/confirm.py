@@ -739,18 +739,19 @@ class ConfirmationManager:
             return f"[CONFIRMATION_PENDING] Still awaiting confirmation for {title}. Say confirm to proceed or no to cancel."
 
         if show_visual:
-            if _show_cb is not None:
+            cb_to_call = _show_cb if _show_cb is not None else (getattr(player, "show_confirm", None) if player else None)
+            if cb_to_call is not None:
                 try:
                     # Pass tier if signature supports it, else title and detail
                     import inspect
-                    sig = inspect.signature(_show_cb)
+                    sig = inspect.signature(cb_to_call)
                     if len(sig.parameters) >= 3:
-                        _show_cb(title, detail, str(parsed_tier.value))
+                        cb_to_call(title, detail, str(parsed_tier.value))
                     else:
-                        _show_cb(title, detail)
+                        cb_to_call(title, detail)
                 except Exception:
                     try:
-                        _show_cb(title, detail)
+                        cb_to_call(title, detail)
                     except Exception:
                         pass
             _log(f"SYS: Awaiting confirmation — {title} [{parsed_tier.value}] (id={p.id})")

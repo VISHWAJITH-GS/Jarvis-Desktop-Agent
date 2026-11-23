@@ -412,6 +412,26 @@ class LiveVoiceMixin:
         if loop and ev is not None:
             loop.call_soon_threadsafe(ev.set)
 
+    def request_engine_switch(self, new_engine: str):
+        """Thread-safe: Switch active engine (gemini_live <-> local) without restart, keeping context."""
+        from memory import config_manager
+        target = config_manager.ENGINE_LOCAL if str(new_engine).lower() in ("local", "pipeline", "ollama") else config_manager.ENGINE_GEMINI_LIVE
+        config_manager.set_active_engine(target)
+        dest = config_manager.get_audio_destination_label()
+        eng_name = target.replace('_', ' ').title()
+        self.ui.write_log(f"SYS: Engine switched to {eng_name}. Audio destination: {dest}")
+        self._just_switched_engine = True
+        self.request_reconnect(keep_context=True, reason=f"engine switch to {target}")
+
+    def _on_engine_change(self):
+        """Engine changed from UI settings drawer. Rebuild session with context preserved."""
+        from memory import config_manager
+        dest = config_manager.get_audio_destination_label()
+        engine = config_manager.get_active_engine().replace('_', ' ').title()
+        self.ui.write_log(f"SYS: Applying engine change ({engine}). Audio destination: {dest}")
+        self._just_switched_engine = True
+        self.request_reconnect(keep_context=True, reason="engine settings change")
+
     def _on_voice_change(self):
         """Voice picker applied.
 

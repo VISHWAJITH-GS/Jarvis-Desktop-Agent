@@ -7,6 +7,7 @@ from gui.hud import *
 from gui.widgets import *
 from gui.overlays import *
 from gui.providers_panel import *
+from gui.providers_panel import _ScrollSafeCombo
 from gui.settings_overlays import *
 from gui.docks import *
 from gui.display_windows import *
@@ -72,5 +73,6 @@ __all__ = [
     "PluginSettingsOverlay",
     "RemoteKeyOverlay",
     "format_visual_content_html",
+    "_ScrollSafeCombo",
     "get_uicon",
 ]

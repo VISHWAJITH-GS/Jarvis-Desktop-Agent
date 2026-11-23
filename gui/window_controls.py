@@ -681,21 +681,23 @@ class WindowControlsMixin:
     # ── Engine & providers ───────────────────────────────────────────────────
 
     def _open_providers(self):
-        """Display engine info: Google Gemini API is the sole reasoning engine."""
-        self._log.append_log(
-            "SYS: Google Gemini API is the sole AI reasoning engine across JARVIS. "
-            "Local and third-party LLM pipelines are disabled by architecture."
-        )
+        """Open the Engine & Providers drawer to configure Gemini Live or Local engine."""
+        ov = ProvidersOverlay(parent=self.centralWidget())
+        ov.changed.connect(self._on_providers_applied)
+        self._centre_overlay(ov)
+        self._providers_overlay = ov
 
     def _on_providers_applied(self):
-        """Rebuild the session so the new engine takes over.
-
-        Reuses the audio-device callback rather than adding a second one: both
-        mean 'the conversation has to be rebuilt', main.py already keeps the
-        transcript across such a rebuild through session resumption, and one
-        path that is known to work is better than two that look alike."""
-        self._log.append_log("SYS: Engine settings saved — reconnecting.")
-        if self.on_audio_device_change:
+        """Rebuild the session so the new engine takes over."""
+        from memory import config_manager
+        eng = config_manager.get_active_engine().replace('_', ' ').title()
+        dest = config_manager.get_audio_destination_label()
+        self._log.append_log(f"SYS: Engine settings applied ({eng}). Audio: {dest} — reconnecting...")
+        if hasattr(self, "on_engine_change") and self.on_engine_change:
+            self.on_engine_change()
+        elif hasattr(self, "request_engine_switch") and self.request_engine_switch:
+            self.request_engine_switch(config_manager.get_active_engine())
+        elif self.on_audio_device_change:
             self.on_audio_device_change()
 
     # ── Memory panel ─────────────────────────────────────────────────────────

@@ -1086,9 +1086,62 @@ def get_providers() -> dict:
     return _upgrade_ids(dict(val)) if isinstance(val, dict) else {}
 
 
+ENGINE_GEMINI_LIVE = "gemini_live"
+ENGINE_LOCAL = "local"
+
+
 def get_provider_mode() -> str:
-    """Which engine holds the conversation. Strictly Google Gemini."""
+    """Which engine holds the conversation: 'gemini' | 'pipeline'. Defaults to Gemini Live."""
+    mode = str(get_providers().get("mode", "") or "").strip().lower()
+    if mode in (ENGINE_LOCAL, "pipeline"):
+        return PROVIDER_MODE_PIPELINE
     return PROVIDER_MODE_GEMINI
+
+
+def get_active_engine() -> str:
+    """Return the active conversation engine: 'gemini_live' | 'local' (defaults to 'gemini_live')."""
+    return ENGINE_LOCAL if get_provider_mode() == PROVIDER_MODE_PIPELINE else ENGINE_GEMINI_LIVE
+
+
+def set_active_engine(engine: str) -> None:
+    """Set the active conversation engine ('gemini_live' | 'local')."""
+    eng = str(engine or "").strip().lower()
+    if eng in (ENGINE_LOCAL, "pipeline", "local_brain", "ollama"):
+        save_provider_mode(PROVIDER_MODE_PIPELINE)
+    else:
+        save_provider_mode(PROVIDER_MODE_GEMINI)
+
+
+def get_audio_destination_label() -> str:
+    """Return honest privacy description of where microphone audio is routed."""
+    if get_active_engine() == ENGINE_GEMINI_LIVE:
+        return "Google (Gemini Live WebSocket)"
+    pipe = get_pipeline()
+    stt_id = str(pipe.get("stt") or "").strip().lower()
+    if not stt_id or "local" in stt_id or "whisper" in stt_id:
+        return "Local only (Whisper on CPU, nothing leaves this machine)"
+    return f"Hosted API ({stt_id})"
+
+
+def ensure_local_pipeline_configured() -> None:
+    """Ensure pipeline slots point to local providers only (Ollama, Whisper, Piper/System).
+    Never points to a hosted third-party provider."""
+    pipe = get_pipeline()
+    updated = False
+    stt = str(pipe.get("stt") or "").strip().lower()
+    if not stt or "eleven" in stt or "cloud" in stt:
+        pipe["stt"] = "whisper"
+        updated = True
+    llm = str(pipe.get("llm") or "").strip().lower()
+    if not llm or not any(x in llm for x in ("ollama", "lmstudio", "llamacpp", "vllm", "jan")):
+        pipe["llm"] = "openai_compat@ollama"
+        updated = True
+    tts = str(pipe.get("tts") or "").strip().lower()
+    if not tts or "eleven" in tts:
+        pipe["tts"] = "piper"
+        updated = True
+    if updated:
+        save_providers(pipeline=pipe)
 
 
 def get_provider_config(provider_id: str) -> dict:

@@ -155,7 +155,7 @@ def _describe_tools(declarations) -> str:
     return "\n".join(lines)
 
 
-def _describe_limits(has_vision: bool, has_mic: bool) -> str:
+def _describe_limits(has_vision: bool, has_mic: bool, can_barge_in: bool = True) -> str:
     out = [
         "- Anything not listed above is outside your reach. Say so in one clause "
         "and offer the nearest thing you can actually do — never mime an action "
@@ -182,6 +182,11 @@ def _describe_limits(has_vision: bool, has_mic: bool) -> str:
         out.append("- You have no sight at all in this build.")
     if has_mic:
         out.append("- You hear nothing while the microphone is muted, and you cannot unmute it yourself.")
+    if not can_barge_in:
+        out.append(
+            "- You cannot hear the user while you are speaking (barge-in is not supported on this engine). "
+            "You only hear input after you finish speaking or when push-to-talk is used."
+        )
     return "\n".join(out)
 
 

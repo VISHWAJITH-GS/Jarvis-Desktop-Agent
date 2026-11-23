@@ -225,6 +225,24 @@ class PipelineEngine:
         return out
 
     # ── history ──────────────────────────────────────────────────────────────
+    def load_history(self, turns: list[str]) -> None:
+        """Seed conversation history from recent session turns for continuity across engine switches."""
+        if not turns:
+            return
+        for t in turns:
+            t = str(t).strip()
+            if not t:
+                continue
+            if t.startswith("User: "):
+                content = t[6:].strip()
+                if content:
+                    self._history.append({"role": "user", "content": content})
+            elif ": " in t:
+                _, content = t.split(": ", 1)
+                content = content.strip()
+                if content:
+                    self._history.append({"role": "assistant", "content": content})
+
     def _messages(self) -> list[dict]:
         msgs = [{"role": "system", "content": self._system}] if self._system else []
         return msgs + self._trimmed()

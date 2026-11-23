@@ -419,8 +419,13 @@ class OpenAICompatLLM:
         max_tools = _int_or(cfg.get("max_tools"), None)
         max_chars = _int_or(cfg.get("max_tool_chars"), None)
         if _is_own_hardware(self.base) and max_tools is None and max_chars is None:
-            max_tools = int(_LOCAL_BUDGET["max_tools"])
-            max_chars = int(_LOCAL_BUDGET["max_tool_chars"])
+            m_low = (self.model or "").lower()
+            if any(s in m_low for s in ("4b", "3b", "2b", "1b")):
+                max_tools = 10
+                max_chars = 8000
+            else:
+                max_tools = int(_LOCAL_BUDGET["max_tools"])
+                max_chars = int(_LOCAL_BUDGET["max_tool_chars"])
 
         self.caps = dict(DEFAULT_CAPS)
         self.caps.update(
