@@ -693,12 +693,60 @@ class WindowControlsMixin:
         eng = config_manager.get_active_engine().replace('_', ' ').title()
         dest = config_manager.get_audio_destination_label()
         self._log.append_log(f"SYS: Engine settings applied ({eng}). Audio: {dest} — reconnecting...")
+        self._refresh_brain_btn()
         if hasattr(self, "on_engine_change") and self.on_engine_change:
             self.on_engine_change()
         elif hasattr(self, "request_engine_switch") and self.request_engine_switch:
             self.request_engine_switch(config_manager.get_active_engine())
         elif self.on_audio_device_change:
             self.on_audio_device_change()
+
+    def _refresh_brain_btn(self):
+        """Update brain switcher button text and glowing style based on active engine."""
+        from memory import config_manager
+        eng = config_manager.get_active_engine()
+        is_local = (eng == config_manager.ENGINE_LOCAL)
+        if is_local:
+            label = "🧠  BRAIN: 🖥 LOCAL (OLLAMA)"
+            style = f"""
+                QPushButton {{
+                    background: #1a1200; color: #f4b942;
+                    border: 1px solid #f4b942; border-radius: 3px;
+                    text-align: left; padding: 0 8px;
+                }}
+                QPushButton:hover {{ background: #2a1c00; border-color: #ffd166; }}
+            """
+        else:
+            label = "🧠  BRAIN: ☁ GEMINI LIVE"
+            style = getattr(self, "_BTN_PRI", "") or f"""
+                QPushButton {{
+                    background: #00091a; color: {C.PRI};
+                    border: 1px solid {C.PRI_DIM}; border-radius: 3px;
+                    text-align: left; padding: 0 8px;
+                }}
+                QPushButton:hover {{ background: {C.PRI_GHO}; border-color: {C.PRI}; }}
+            """
+        for btn in (getattr(self, "_brain_btn", None), getattr(self, "_controls_brain_btn", None)):
+            if btn is not None:
+                btn.setText(label)
+                btn.setStyleSheet(style)
+
+    def _toggle_brain_engine(self):
+        """One-click switch between Gemini Live and Local Brain (Ollama)."""
+        from memory import config_manager
+        cur = config_manager.get_active_engine()
+        target = config_manager.ENGINE_GEMINI_LIVE if cur == config_manager.ENGINE_LOCAL else config_manager.ENGINE_LOCAL
+        if target == config_manager.ENGINE_LOCAL:
+            config_manager.ensure_local_pipeline_configured()
+        config_manager.set_active_engine(target)
+        dest = config_manager.get_audio_destination_label()
+        eng_name = target.replace('_', ' ').title()
+        self._log.append_log(f"SYS: Switched brain to {eng_name}. Audio: {dest} — reconnecting...")
+        self._refresh_brain_btn()
+        if hasattr(self, "request_engine_switch") and self.request_engine_switch:
+            self.request_engine_switch(target)
+        elif hasattr(self, "on_engine_change") and self.on_engine_change:
+            self.on_engine_change()
 
     # ── Memory panel ─────────────────────────────────────────────────────────
 

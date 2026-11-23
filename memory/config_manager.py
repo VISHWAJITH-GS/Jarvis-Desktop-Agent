@@ -1123,6 +1123,26 @@ def get_audio_destination_label() -> str:
     return f"Hosted API ({stt_id})"
 
 
+def _detect_ollama_model(timeout: float = 1.0) -> str:
+    """Detect available models from local Ollama instance, prioritizing qwen3:8b and qwen3.5:4b."""
+    try:
+        import urllib.request
+        import json
+        req = urllib.request.Request("http://127.0.0.1:11434/api/tags", headers={"User-Agent": "Jarvis"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            models = [str(m.get("name", "")).strip() for m in data.get("models", []) if m.get("name")]
+            if not models:
+                return "qwen3:8b"
+            for target in ("qwen3:8b", "qwen3.5:4b", "qwen3:4b", "qwen", "gemma", "llama"):
+                for m in models:
+                    if target in m.lower():
+                        return m
+            return models[0]
+    except Exception:
+        return "qwen3:8b"
+
+
 def ensure_local_pipeline_configured() -> None:
     """Ensure pipeline slots point to local providers only (Ollama, Whisper, Piper/System).
     Never points to a hosted third-party provider."""
@@ -1140,6 +1160,18 @@ def ensure_local_pipeline_configured() -> None:
     if not tts or "eleven" in tts:
         pipe["tts"] = "piper"
         updated = True
+
+    # Ensure Ollama has base_url and model configured in creds
+    ollama_cfg = get_provider_config("openai_compat@ollama")
+    model_name = ollama_cfg.get("model") or _detect_ollama_model() or "qwen3:8b"
+    save_provider_config("openai_compat@ollama", {
+        "base_url": ollama_cfg.get("base_url") or "http://127.0.0.1:11434/v1",
+        "model": model_name,
+        "max_tools": ollama_cfg.get("max_tools") or ("10" if "4b" in model_name else "14"),
+        "max_tool_chars": ollama_cfg.get("max_tool_chars") or ("8000" if "4b" in model_name else "12000"),
+        "timeout": ollama_cfg.get("timeout") or 60.0,
+    })
+
     if updated:
         save_providers(pipeline=pipe)
 
@@ -1148,7 +1180,15 @@ def get_provider_config(provider_id: str) -> dict:
     """Stored settings for one provider — address, model, key, limits."""
     creds = get_providers().get("creds")
     val = creds.get(provider_id) if isinstance(creds, dict) else None
-    return dict(val) if isinstance(val, dict) else {}
+    cfg = dict(val) if isinstance(val, dict) else {}
+    if "ollama" in str(provider_id).lower():
+        if not cfg.get("base_url"):
+            cfg["base_url"] = "http://127.0.0.1:11434/v1"
+        if not cfg.get("model"):
+            cfg["model"] = _detect_ollama_model()
+        if not cfg.get("timeout"):
+            cfg["timeout"] = 60.0
+    return cfg
 
 
 def get_pipeline() -> dict:

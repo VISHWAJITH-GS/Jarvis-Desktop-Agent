@@ -295,6 +295,7 @@ class MainWindow(
         self._quick_drawer = self._build_quick_drawer()
         self._ctrl_drawer = self._build_controls_drawer()
         self._warm_wake_state()
+        self._refresh_brain_btn()
         self._update_autostart_btn(self._check_autostart())
         from memory.config_manager import get_brief_enabled as _gbe
 
@@ -1250,6 +1251,13 @@ class MainWindow(
         )
         lay.addWidget(hdr)
 
+        self._brain_btn = QPushButton("🧠  BRAIN: ☁ GEMINI LIVE")
+        self._brain_btn.setFixedHeight(30)
+        self._brain_btn.setFont(QFont("Montserrat", 8, QFont.Weight.Bold))
+        self._brain_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._brain_btn.clicked.connect(self._toggle_brain_engine)
+        lay.addWidget(self._brain_btn)
+
         remote_btn = QPushButton("◉  REMOTE CONTROL")
         remote_btn.setFixedHeight(30)
         remote_btn.setFont(QFont("Montserrat", 8, QFont.Weight.Bold))
@@ -1356,6 +1364,10 @@ class MainWindow(
             lay.addWidget(button)
             return button
 
+        self._controls_brain_btn = _row(QPushButton(), height=28)
+        self._controls_brain_btn.setFont(QFont("Montserrat", 7, QFont.Weight.Bold))
+        self._controls_brain_btn.clicked.connect(self._toggle_brain_engine)
+
         fs_btn = _row(QPushButton("⛶  FULLSCREEN  [F11]"), self._BTN_DIM)
         fs_btn.clicked.connect(self._toggle_fullscreen)
 
@@ -1415,6 +1427,7 @@ class MainWindow(
         if checked:
             self._close_controls()
             self._position_quick_drawer()
+            self._refresh_brain_btn()
             self._quick_drawer.show()
             self._quick_drawer.raise_()
         else:
@@ -1423,6 +1436,7 @@ class MainWindow(
     def _toggle_controls(self, checked: bool):
         if checked:
             self._close_setup()
+            self._refresh_brain_btn()
             self._refresh_wake_btns()  # cheap now: the state was warmed at boot
             self._position_ctrl_drawer()
             self._ctrl_drawer.show()
