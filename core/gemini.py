@@ -158,7 +158,6 @@ PROVIDER_PREFIX = "prov:"
 _LADDERS = {
     FAST: (
         LIVE,
-        "gemini-2.5-flash-lite",
         "gemini-3.5-flash-lite",
         "gemini-3.1-flash-lite",
         "gemini-flash-lite-latest",
@@ -171,7 +170,6 @@ _LADDERS = {
         LIVE,
         "gemini-2.5-flash",
         "gemini-3.5-flash",
-        "gemini-2.5-flash-lite",
         "gemini-3.5-flash-lite",
         "gemini-3.1-flash-lite",
         "gemini-3.6-flash",
@@ -181,7 +179,7 @@ _LADDERS = {
     # Grounded search needs response.candidates[...].grounding_metadata, which a
     # Live turn does not produce. REST only, and it says so rather than silently
     # returning an answer with no sources behind it.
-    SEARCH: ("gemini-2.5-flash", "gemini-3.5-flash", "gemini-2.5-flash-lite", "gemini-flash-latest"),
+    SEARCH: ("gemini-2.5-flash", "gemini-3.5-flash", "gemini-flash-latest"),
 }
 
 # The conversation's own model, and ONE careful fallback behind it.
