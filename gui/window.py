@@ -102,6 +102,7 @@ class MainWindow(
     _screen_glow_sig = pyqtSignal(int)  # (duration_ms)
     _refresh_audio_sig = pyqtSignal()  # Trigger audio device dropdown refresh
     _audio_status_sig = pyqtSignal(object)  # Thread-safe AudioManager status snapshot
+    _model_picker_sig = pyqtSignal()  # Thread-safe local brain model picker request
 
     def __init__(self, face_path: str):
         super().__init__()
@@ -340,6 +341,7 @@ class MainWindow(
         self._screen_glow_sig.connect(self._on_screen_glow)
         self._refresh_audio_sig.connect(self._refresh_audio_tab)
         self._audio_status_sig.connect(self._apply_audio_status)
+        self._model_picker_sig.connect(self._open_local_model_picker)
         self._screen_glow_overlay = ScreenGlowOverlay(self)
         self._search_dock_minimized_to_bar = False
         self._reminders_dock_minimized_to_bar = False

@@ -417,13 +417,46 @@ class PipelineEngine:
         waits that long assumes it is broken and says it again, which produces
         two overlapping turns.
         """
+        # Warm up local LLM model into VRAM first so inference is instant
+        if self._llm:
+            model_name = getattr(self._llm, "model", "local model")
+            preload = getattr(self._llm, "preload_async", None) or getattr(self._llm, "preload", None)
+            if preload is not None:
+                if self._log:
+                    self._log(f"SYS: Loading local model '{model_name}' into GPU memory...")
+                t0 = time.monotonic()
+                try:
+                    if asyncio.iscoroutinefunction(preload):
+                        ok, msg = await preload(timeout=60.0)
+                    else:
+                        res = preload(timeout=60.0)
+                        if asyncio.iscoroutine(res):
+                            ok, msg = await res
+                        elif isinstance(res, tuple):
+                            ok, msg = res
+                        else:
+                            ok, msg = await asyncio.to_thread(preload, 60.0)
+                    took = time.monotonic() - t0
+                    if ok and self._log:
+                        self._log(f"SYS: Local model '{model_name}' is loaded in VRAM and running ({took:.1f}s).")
+                    elif not ok and self._log:
+                        self._log(f"SYS: Warning: {msg}")
+                except Exception as e:
+                    if self._log:
+                        self._log(f"SYS: Warning: {e}")
+
         # Both ends, concurrently: the speech model and the voice each have a
         # one-off cost, and they do not need each other.
         jobs = []
         for part in (self._stt, self._tts):
             warm = getattr(part, "warmup", None)
             if warm is not None:
-                jobs.append(warm(self._log))
+                try:
+                    res = warm(self._log)
+                    if asyncio.iscoroutine(res):
+                        jobs.append(res)
+                except Exception:
+                    pass
         if jobs:
             await asyncio.gather(*jobs, return_exceptions=True)
 

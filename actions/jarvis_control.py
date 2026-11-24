@@ -272,6 +272,7 @@ def jarvis_control(parameters: Optional[Dict[str, Any]] = None, player=None, ses
     # ── 9. Engine Switching (Gemini Live <-> Local Pipeline) ───────────────────
     if action in ("switch_engine", "switch_to_local", "switch_to_gemini", "switch_to_gemini_live", "set_engine"):
         raw_eng = str(params.get("engine") or params.get("target") or raw_target or "").strip().lower()
+        model_req = str(params.get("model") or "").strip()
         if action in ("switch_to_local", "local_engine") or raw_eng in ("local", "local_engine", "pipeline", "ollama"):
             new_engine = config_manager.ENGINE_LOCAL
             dest_desc = "Local only (Whisper/Ollama/Piper on this computer)"
@@ -282,7 +283,7 @@ def jarvis_control(parameters: Optional[Dict[str, Any]] = None, player=None, ses
             return "Please specify whether to switch to 'local' or 'Gemini Live', sir."
 
         cur_engine = config_manager.get_active_engine()
-        if cur_engine == new_engine:
+        if cur_engine == new_engine and not model_req:
             return f"Jarvis is already running on the {new_engine.replace('_', ' ').title()} engine, sir."
 
         confirmed = bool(
@@ -292,21 +293,32 @@ def jarvis_control(parameters: Optional[Dict[str, Any]] = None, player=None, ses
         )
 
         def _do_switch():
+            if new_engine == config_manager.ENGINE_LOCAL:
+                if model_req:
+                    config_manager.configure_local_ollama_model(model_req)
+                else:
+                    config_manager.ensure_local_pipeline_configured()
             config_manager.set_active_engine(new_engine)
             if player and hasattr(player, "request_engine_switch"):
                 player.request_engine_switch(new_engine)
             elif player and hasattr(player, "on_audio_device_change") and player.on_audio_device_change:
                 player.on_audio_device_change()
+            m_label = f" ({model_req})" if model_req and new_engine == config_manager.ENGINE_LOCAL else ""
             if player and hasattr(player, "write_log"):
-                player.write_log(f"SYS: Switched engine to {new_engine.replace('_', ' ').title()}. Audio destination: {dest_desc}.")
-            return f"Switched to {new_engine.replace('_', ' ').title()} engine. Audio now routes to {dest_desc}, sir."
+                player.write_log(f"SYS: Switched engine to {new_engine.replace('_', ' ').title()}{m_label}. Audio destination: {dest_desc}.")
+            return f"Switched to {new_engine.replace('_', ' ').title()}{m_label} engine. Audio now routes to {dest_desc}, sir."
 
         if not confirmed:
+            if new_engine == config_manager.ENGINE_LOCAL and not model_req:
+                if player and hasattr(player, "show_local_model_picker"):
+                    player.show_local_model_picker()
+            active_m = config_manager.get_provider_config("openai_compat@ollama").get("model") or "qwen3:8b"
+            m_display = f" [{model_req or active_m}]" if new_engine == config_manager.ENGINE_LOCAL else ""
             return confirm_gate.request_action(
                 action="switch_engine",
-                parameters={"engine": new_engine, "confirmed": True},
+                parameters={"engine": new_engine, "model": model_req, "confirmed": True},
                 risk_level="sensitive",
-                title=f"Switch to {new_engine.replace('_', ' ').title()}",
+                title=f"Switch to {new_engine.replace('_', ' ').title()}{m_display}",
                 detail=f"Audio will route to: {dest_desc}",
                 run=_do_switch,
                 player=player,
@@ -366,6 +378,10 @@ TOOL = {
                 "type": "STRING",
                 "enum": ["gemini_live", "local"],
                 "description": "The target engine for switch_engine: 'gemini_live' or 'local'.",
+            },
+            "model": {
+                "type": "STRING",
+                "description": "Optional local model name for switch_engine (e.g. 'qwen3:8b', 'qwen3.5:4b', 'gemma3:1b').",
             },
             "word": {
                 "type": "STRING",

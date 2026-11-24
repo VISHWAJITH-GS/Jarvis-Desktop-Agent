@@ -635,6 +635,10 @@ class JarvisLive(LiveAudioMixin, LiveMonitorsMixin, LiveVoiceMixin):
         # signal and the detector stays out of the way.
         engine.auto_turn = not self._ptt_enabled
         self._engine = engine
+        # Preload and run local model into VRAM before listening begins
+        self.ui.set_state("THINKING")
+        if hasattr(engine, "warmup"):
+            await engine.warmup()
         try:
             yield engine
         finally:

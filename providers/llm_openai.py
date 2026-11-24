@@ -678,6 +678,32 @@ class OpenAICompatLLM:
             note = "  |  can see images" if seen else "  |  text only"
         return True, f"Answered in {took:.2f}s{note}"
 
+    def preload(self, timeout: float = 60.0) -> tuple[bool, str]:
+        """Preload the model into memory/VRAM on local servers (e.g. Ollama) before listening starts."""
+        if not self.base or not self.model:
+            return False, "No address or model specified."
+        # If it's Ollama (11434 or 'ollama' in base):
+        if "11434" in self.base or "ollama" in self.base:
+            root = self.base.replace("/v1", "").rstrip("/")
+            try:
+                with self._httpx.Client(timeout=timeout, trust_env=self._trust_env) as cl:
+                    resp = cl.post(f"{root}/api/generate", json={"model": self.model, "keep_alive": "60m"})
+                    if resp.status_code == 200:
+                        return True, f"Loaded {self.model} into VRAM via Ollama"
+            except Exception:
+                pass
+        # Fallback probe for any OpenAI-compatible server
+        try:
+            self.complete([{"role": "user", "content": "Reply with ok"}], timeout=timeout)
+            return True, f"Warmed up {self.model}"
+        except Exception as e:
+            return False, f"Model preload failed: {e}"
+
+    async def preload_async(self, timeout: float = 60.0) -> tuple[bool, str]:
+        """Async version of preload."""
+        import asyncio
+        return await asyncio.to_thread(self.preload, timeout)
+
 
 def _with_address(exc: Exception, base: str) -> Exception:
     """The same failure, carrying the address it happened at.

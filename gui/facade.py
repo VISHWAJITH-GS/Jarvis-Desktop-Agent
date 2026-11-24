@@ -282,6 +282,12 @@ class JarvisUI:
         self._request_engine_switch_cb = cb
         self._win.request_engine_switch = cb
 
+    def show_local_model_picker(self):
+        """Thread-safe: Request to display the local brain model picker on screen."""
+        sig = getattr(self._win, "_model_picker_sig", None)
+        if sig is not None:
+            sig.emit()
+
     def show_confirm(self, title: str, detail: str, tier: str = "MEDIUM") -> None:
         """Thread-safe: raise the irreversible-action gate. Called from action
         handlers running in executor threads, so it goes through a signal."""

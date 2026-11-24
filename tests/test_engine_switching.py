@@ -3,7 +3,7 @@ tests/test_engine_switching.py — Unit test suite for Seamless Engine Switching
 """
 
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, AsyncMock
 from memory import config_manager
 from actions import jarvis_control
 from providers.engine_pipeline import PipelineEngine
@@ -126,3 +126,50 @@ def test_describe_limits_barge_in():
     limits_local = prompt_builder._describe_limits(has_vision=False, has_mic=True, can_barge_in=False)
     assert "barge-in is not supported" in limits_local
     assert "You have no sight at all" in limits_local
+
+
+def test_configure_local_ollama_model():
+    """Verify configure_local_ollama_model configures model and budgets appropriately."""
+    config_manager.configure_local_ollama_model("qwen3.5:4b")
+    cfg_4b = config_manager.get_provider_config("openai_compat@ollama")
+    assert cfg_4b["model"] == "qwen3.5:4b"
+    assert cfg_4b["max_tools"] == "10"
+    assert cfg_4b["max_tool_chars"] == "8000"
+
+    config_manager.configure_local_ollama_model("qwen3:8b")
+    cfg_8b = config_manager.get_provider_config("openai_compat@ollama")
+    assert cfg_8b["model"] == "qwen3:8b"
+    assert cfg_8b["max_tools"] == "14"
+    assert cfg_8b["max_tool_chars"] == "12000"
+
+
+def test_pipeline_engine_warmup():
+    """Verify PipelineEngine.warmup preloads the model before listening."""
+    import asyncio
+    mock_llm = MagicMock()
+    mock_llm.model = "qwen3:8b"
+    mock_llm.preload_async = AsyncMock(return_value=(True, "Loaded"))
+    log_lines = []
+
+    engine = PipelineEngine(llm=mock_llm, stt=MagicMock(spec=[]), tts=MagicMock(spec=[]), log=log_lines.append)
+    asyncio.run(engine.warmup())
+
+    mock_llm.preload_async.assert_called_once()
+    assert any("Loading local model 'qwen3:8b'" in line for line in log_lines)
+    assert any("is loaded in VRAM" in line for line in log_lines)
+
+
+def test_voice_switch_with_specific_model():
+    """Voice command specifying model should configure that model."""
+    orig_mode = config_manager.get_provider_mode()
+    try:
+        player = MagicMock()
+        res = jarvis_control.jarvis_control(
+            parameters={"action": "switch_engine", "engine": "local", "model": "qwen3.5:4b", "confirmed": True},
+            player=player,
+        )
+        assert "Switched to Local (qwen3.5:4b)" in res
+        cfg = config_manager.get_provider_config("openai_compat@ollama")
+        assert cfg["model"] == "qwen3.5:4b"
+    finally:
+        config_manager.save_provider_mode(orig_mode)

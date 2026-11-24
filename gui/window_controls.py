@@ -762,19 +762,41 @@ class WindowControlsMixin:
                 """)
 
     def _toggle_brain_engine(self):
-        """One-click switch between Gemini Live and Local Brain (Ollama)."""
+        """Switch between Gemini Live and Local Brain (Ollama), asking for model choice."""
         from memory import config_manager
         cur = config_manager.get_active_engine()
-        target = config_manager.ENGINE_GEMINI_LIVE if cur == config_manager.ENGINE_LOCAL else config_manager.ENGINE_LOCAL
-        if target == config_manager.ENGINE_LOCAL:
-            config_manager.ensure_local_pipeline_configured()
-        config_manager.set_active_engine(target)
+        self._open_local_model_picker(can_switch_to_gemini=(cur == config_manager.ENGINE_LOCAL))
+
+    def _open_local_model_picker(self, can_switch_to_gemini: bool = False):
+        """Display the Local Brain Model Picker dialog."""
+        from gui.overlays import LocalModelPickerOverlay
+        ov = LocalModelPickerOverlay(can_switch_to_gemini=can_switch_to_gemini, parent=self.centralWidget())
+        ov.model_selected.connect(self._on_local_model_chosen)
+        ov.switch_to_gemini.connect(self._on_switch_to_gemini)
+        self._centre_overlay(ov)
+        self._local_model_picker_overlay = ov
+
+    def _on_local_model_chosen(self, model_name: str):
+        """Apply chosen local model, ensure pipeline configured, and trigger engine switch."""
+        from memory import config_manager
+        config_manager.configure_local_ollama_model(model_name)
+        config_manager.set_active_engine(config_manager.ENGINE_LOCAL)
         dest = config_manager.get_audio_destination_label()
-        eng_name = target.replace('_', ' ').title()
-        self._log.append_log(f"SYS: Switched brain to {eng_name}. Audio: {dest} — reconnecting...")
+        self._log.append_log(f"SYS: Switched brain to Local ({model_name}). Audio: {dest} — preloading model into VRAM...")
         self._refresh_brain_btn()
         if hasattr(self, "request_engine_switch") and self.request_engine_switch:
-            self.request_engine_switch(target)
+            self.request_engine_switch(config_manager.ENGINE_LOCAL)
+        elif hasattr(self, "on_engine_change") and self.on_engine_change:
+            self.on_engine_change()
+
+    def _on_switch_to_gemini(self):
+        """Switch from local brain back to Gemini Live."""
+        from memory import config_manager
+        config_manager.set_active_engine(config_manager.ENGINE_GEMINI_LIVE)
+        self._log.append_log("SYS: Switched brain to Gemini Live. Audio: Google WebSocket — reconnecting...")
+        self._refresh_brain_btn()
+        if hasattr(self, "request_engine_switch") and self.request_engine_switch:
+            self.request_engine_switch(config_manager.ENGINE_GEMINI_LIVE)
         elif hasattr(self, "on_engine_change") and self.on_engine_change:
             self.on_engine_change()
 

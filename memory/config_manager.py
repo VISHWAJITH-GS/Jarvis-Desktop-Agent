@@ -1143,6 +1143,58 @@ def _detect_ollama_model(timeout: float = 1.0) -> str:
         return "qwen3:8b"
 
 
+def get_ollama_models_details(timeout: float = 1.5) -> list[dict]:
+    """Fetch installed models from local Ollama instance with specs and capabilities."""
+    try:
+        import urllib.request
+        import json
+        req = urllib.request.Request("http://127.0.0.1:11434/api/tags", headers={"User-Agent": "Jarvis"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            out = []
+            for m in data.get("models", []):
+                name = str(m.get("name", "")).strip()
+                if not name:
+                    continue
+                size_bytes = m.get("size", 0)
+                size_gb = f"{size_bytes / (1024**3):.1f} GB" if size_bytes else "Unknown"
+                details = m.get("details", {}) or {}
+                params = details.get("parameter_size", "")
+                quant = details.get("quantization_level", "")
+                caps = m.get("capabilities", []) or []
+                caps_str = ", ".join(c.title() for c in caps if c != "completion") or "General"
+                is_rec = ("qwen3:8b" in name.lower())
+                out.append({
+                    "name": name,
+                    "size": size_gb,
+                    "params": params,
+                    "quant": quant,
+                    "capabilities": caps_str,
+                    "recommended": is_rec,
+                })
+            return out
+    except Exception:
+        return []
+
+
+def configure_local_ollama_model(model_name: str) -> None:
+    """Configure local Ollama provider to run the specified model with appropriate tool budget."""
+    model_name = str(model_name or "").strip()
+    if not model_name:
+        model_name = _detect_ollama_model()
+    ollama_cfg = get_provider_config("openai_compat@ollama")
+    m_low = model_name.lower()
+    is_small = any(s in m_low for s in ("4b", "3b", "2b", "1b"))
+    save_provider_config("openai_compat@ollama", {
+        "base_url": ollama_cfg.get("base_url") or "http://127.0.0.1:11434/v1",
+        "model": model_name,
+        "max_tools": "10" if is_small else "14",
+        "max_tool_chars": "8000" if is_small else "12000",
+        "timeout": 60.0,
+    })
+    ensure_local_pipeline_configured()
+
+
 def ensure_local_pipeline_configured() -> None:
     """Ensure pipeline slots point to local providers only (Ollama, Whisper, Piper/System).
     Never points to a hosted third-party provider."""
