@@ -515,47 +515,69 @@ class PipelineEngine:
         first_word = None
         thinking = _ReasoningFilter()
         pending = ""  # visible text not yet a whole sentence
+        buffered_text = ""
+        is_prompt_tool = (self.caps.get("tool_format") == "prompt")
+        suppress_speech = is_prompt_tool
+
         try:
             async for ev in self._llm.chat(self._messages(), self._tools):
                 if ev.get("text"):
                     visible = thinking.feed(ev["text"])
-                    if visible and first_word is None:
+                    if not visible:
+                        continue
+                    if first_word is None:
                         first_word = time.monotonic() - t0
-                    pending += visible
-                    # Emit and speak a SENTENCE at a time — never a fragment.
-                    #
-                    # main.py joins transcript pieces with a space, because
-                    # Gemini Live sends whole phrases. A chat API sends tokens,
-                    # so emitting them as they arrive produced
-                    # "Hel lo ! How c an I assis t y ou today?" in the activity
-                    # log. Sentences join back together correctly, and they are
-                    # also the unit the voice synthesises, so speech now starts
-                    # at the first full stop instead of at the end of the reply.
-                    ready, pending = _take_sentences(pending)
-                    for sentence in ready:
-                        said.append(sentence)
-                        await self._emit(Msg.said(sentence))
-                        await self._speak(sentence)
+                    buffered_text += visible
+
+                    if not suppress_speech:
+                        stripped_start = buffered_text.lstrip()
+                        if stripped_start.startswith(("{", "```", "[", "`")):
+                            suppress_speech = True
+
+                    if not suppress_speech:
+                        pending += visible
+                        ready, pending = _take_sentences(pending)
+                        for sentence in ready:
+                            said.append(sentence)
+                            await self._emit(Msg.said(sentence))
+                            await self._speak(sentence)
+
                 if ev.get("tool_calls"):
                     calls.extend(ev["tool_calls"])
 
-            pending += thinking.flush()
-            if pending.strip():
+            flush_vis = thinking.flush()
+            if flush_vis:
+                buffered_text += flush_vis
+                if not suppress_speech:
+                    pending += flush_vis
+
+            if thinking.hid:
+                self._timing["thought"] = thinking.hid
+
+            # A model answers with tool calls as text/code instead of an API tool-call field.
+            if not calls:
+                extracted = _extract_all_tool_calls(buffered_text, set(self.tool_names()))
+                if extracted:
+                    calls = extracted
+
+            # If speech was suppressed because we waited for tool call parsing,
+            # but NO tool call was extracted, speak the buffered text now.
+            if suppress_speech and not calls:
+                leftover = buffered_text.strip()
+                if leftover:
+                    said.append(leftover)
+                    if first_word is None:
+                        first_word = time.monotonic() - t0
+                    await self._emit(Msg.said(leftover))
+                    await self._speak(leftover)
+            elif not suppress_speech and pending.strip():
                 said.append(pending.strip())
                 if first_word is None:
                     first_word = time.monotonic() - t0
                 await self._emit(Msg.said(pending.strip()))
                 await self._speak(pending.strip())
-            if thinking.hid:
-                self._timing["thought"] = thinking.hid
 
-            text = "".join(said)
-
-            # A model answers with tool calls as text/code instead of an API tool-call field.
-            if not calls:
-                extracted = _extract_all_tool_calls(text, set(self.tool_names()))
-                if extracted:
-                    calls, text = extracted, ""
+            text = "".join(said) if not calls else ""
 
             if calls:
                 self._rounds += 1
@@ -1262,7 +1284,15 @@ def _parse_prompt_call(text: str, known: set[str]) -> Optional[FunctionCall]:
     name = str(obj.get("tool") or obj.get("name") or "").strip()
     if name not in known:
         return None
-    args = obj.get("args") if isinstance(obj.get("args"), dict) else {}
+    if isinstance(obj.get("args"), dict):
+        args = dict(obj["args"])
+    elif isinstance(obj.get("parameters"), dict):
+        args = dict(obj["parameters"])
+    else:
+        args = {k: v for k, v in obj.items() if k not in ("tool", "name")}
+
+    if name == "browser_control" and "url" in args and "action" not in args:
+        args["action"] = "navigate_to"
     return FunctionCall(id=f"call_{name}", name=name, args=args)
 
 
@@ -1303,10 +1333,20 @@ def _extract_all_tool_calls(text: str, known: set[str]) -> list[FunctionCall]:
                 target_tool = None
                 if obj.get("tool") in known:
                     target_tool = obj["tool"]
-                    args = obj.get("args") or {}
+                    if isinstance(obj.get("args"), dict):
+                        args = dict(obj["args"])
+                    elif isinstance(obj.get("parameters"), dict):
+                        args = dict(obj["parameters"])
+                    else:
+                        args = {k: v for k, v in obj.items() if k not in ("tool", "name")}
                 elif obj.get("name") in known:
                     target_tool = obj["name"]
-                    args = obj.get("args") or obj.get("parameters") or {}
+                    if isinstance(obj.get("args"), dict):
+                        args = dict(obj["args"])
+                    elif isinstance(obj.get("parameters"), dict):
+                        args = dict(obj["parameters"])
+                    else:
+                        args = {k: v for k, v in obj.items() if k not in ("tool", "name")}
                 elif action_val:
                     # Inferred from action name:
                     if (
@@ -1328,6 +1368,8 @@ def _extract_all_tool_calls(text: str, known: set[str]) -> list[FunctionCall]:
                         target_tool = "browser_control"
                         args = obj
                 if target_tool:
+                    if target_tool == "browser_control" and "url" in args and "action" not in args:
+                        args["action"] = "navigate_to"
                     calls.append(FunctionCall(id=f"call_{target_tool}_{len(calls)}", name=target_tool, args=args))
         except Exception:
             pass

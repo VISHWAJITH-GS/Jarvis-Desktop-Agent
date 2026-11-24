@@ -209,9 +209,13 @@ def to_prompt(decls: Iterable[Any]) -> str:
     through `caps["tool_format"] == "prompt"` rather than pretending otherwise.
     """
     lines = [
-        "You can call tools. To call one, reply with ONE JSON object and nothing else:",
+        "You can execute actions on the user's computer using tools. When the user asks you to open an app, close an app, play music, or control the system, you MUST reply ONLY with a JSON tool call and NO conversational text:",
         '  {"tool": "<name>", "args": {<arguments>}}',
-        "To answer the user instead, reply with ordinary text and no JSON.",
+        "Example for opening Spotify:",
+        '  {"tool": "open_app", "args": {"app_name": "Spotify"}}',
+        "Example for playing a song:",
+        '  {"tool": "spotify_control", "args": {"action": "play_track", "query": "starboy"}}',
+        "To answer conversational questions (like greetings, chat, or explanations), reply with ordinary text and NO JSON.",
         "",
         "Available tools:",
     ]
