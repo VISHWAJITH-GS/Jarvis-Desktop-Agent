@@ -429,16 +429,17 @@ class OpenAICompatLLM:
 
         self.caps = dict(DEFAULT_CAPS)
         tools_enabled = bool(cfg.get("tools", True))
-        # Auto-detect models that do not support tools on Ollama/local servers
+        tool_format = "openai"
+        # Auto-detect models that do not support OpenAI tools API on Ollama
         m_low = (self.model or "").lower()
         if "11434" in self.base or "ollama" in self.base:
             if any(k in m_low for k in ("gemma", "phi-2", "deepseek-coder", "tinyllama")):
-                tools_enabled = False
+                tool_format = "prompt"
 
         self.caps.update(
             {
                 "tools": tools_enabled,
-                "tool_format": "openai",
+                "tool_format": tool_format,
                 "vision": bool(cfg.get("vision", False)),
                 "max_tools": max_tools,
                 "max_tool_chars": max_chars,
@@ -468,7 +469,7 @@ class OpenAICompatLLM:
 
     def _body(self, messages: list[dict], tools: list[dict] | None, stream: bool, temperature: float | None) -> dict:
         body: dict[str, Any] = {"model": self.model, "messages": messages, "stream": stream}
-        if tools and self.caps["tools"]:
+        if tools and self.caps.get("tools") and self.caps.get("tool_format") != "prompt":
             body["tools"] = tools
             body["tool_choice"] = "auto"
         if temperature is not None:

@@ -1571,7 +1571,7 @@ class LocalModelPickerOverlay(_HudOverlay):
                 if is_rec:
                     tag_parts.append("[RECOMMENDED]")
                 if not has_tools:
-                    tag_parts.append("[CHAT ONLY]")
+                    tag_parts.append("[PROMPT TOOLS]")
 
                 desc = f"{m.get('params', '')} • {m.get('size', '')} VRAM • {caps}"
 
@@ -1674,8 +1674,8 @@ class LocalModelPickerOverlay(_HudOverlay):
         if hasattr(self, "_note_lbl"):
             m_low = (self._selected_model or "").lower()
             if any(k in m_low for k in ("gemma", "phi-2", "tiny")):
-                self._note_lbl.setText("⚠ Warning: This model is CHAT-ONLY (no tool support). It cannot open applications, control the computer, or execute system actions. For tools & system control, choose qwen3:8b or qwen3.5:4b.")
-                self._note_lbl.setStyleSheet("color: #ff5555; background: rgba(255, 85, 85, 0.1); border: 1px solid #ff5555; border-radius: 4px; padding: 6px 8px;")
+                self._note_lbl.setText("⚡ Lightweight model (1B): Uses prompt-based tool calling for fast small tasks (opening/closing apps, songs, volume). For multi-step workflows & deep reasoning, choose qwen3:8b or qwen3.5:4b.")
+                self._note_lbl.setStyleSheet("color: #f4b942; background: rgba(244, 185, 66, 0.1); border: 1px solid #f4b942; border-radius: 4px; padding: 6px 8px;")
                 self._note_lbl.show()
             else:
                 self._note_lbl.setText("✔ Tool-capable model: Supports full JARVIS computer control, opening apps, and system actions.")
