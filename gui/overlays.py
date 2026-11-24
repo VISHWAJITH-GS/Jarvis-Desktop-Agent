@@ -1508,7 +1508,8 @@ class LocalModelPickerOverlay(_HudOverlay):
         models = config_manager.get_ollama_models_details()
 
         if not self._selected_model:
-            self._selected_model = active_model or (models[0]["name"] if models else "qwen3:8b")
+            rec_model = next((m["name"] for m in models if m.get("recommended")), None)
+            self._selected_model = active_model or rec_model or (models[0]["name"] if models else "qwen3:8b")
 
         # Header
         hdr_row = QHBoxLayout()
@@ -1561,14 +1562,18 @@ class LocalModelPickerOverlay(_HudOverlay):
                 is_sel = (m_name == self._selected_model)
                 is_active = (m_name == active_model)
                 is_rec = m.get("recommended", False)
+                caps = m.get("capabilities", "General")
+                has_tools = ("Tools" in caps)
 
                 tag_parts = []
                 if is_active:
                     tag_parts.append("[CURRENT]")
                 if is_rec:
                     tag_parts.append("[RECOMMENDED]")
+                if not has_tools:
+                    tag_parts.append("[CHAT ONLY]")
 
-                desc = f"{m.get('params', '')} • {m.get('size', '')} VRAM • {m.get('capabilities', 'General')}"
+                desc = f"{m.get('params', '')} • {m.get('size', '')} VRAM • {caps}"
 
                 btn = QPushButton()
                 btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -1581,6 +1586,11 @@ class LocalModelPickerOverlay(_HudOverlay):
                 c_lay.addWidget(btn)
 
             self._lay.addWidget(cards_container)
+            self._note_lbl = QLabel()
+            self._note_lbl.setFont(QFont("Montserrat", 7))
+            self._note_lbl.setWordWrap(True)
+            self._note_lbl.setStyleSheet("color: #ffb86c; background: transparent; padding: 2px 4px;")
+            self._lay.addWidget(self._note_lbl)
             self._update_card_styles()
 
         # Action buttons
@@ -1661,6 +1671,13 @@ class LocalModelPickerOverlay(_HudOverlay):
                     }}
                     QPushButton:hover {{ border-color: #f4b942; background: rgba(244, 185, 66, 0.08); }}
                 """)
+        if hasattr(self, "_note_lbl"):
+            m_low = (self._selected_model or "").lower()
+            if any(k in m_low for k in ("gemma", "phi-2", "tiny")):
+                self._note_lbl.setText("ℹ Note: This model is chat-only (no tools). For system tools & control, choose qwen3:8b.")
+                self._note_lbl.show()
+            else:
+                self._note_lbl.hide()
 
     def _on_run_clicked(self) -> None:
         if self._selected_model:

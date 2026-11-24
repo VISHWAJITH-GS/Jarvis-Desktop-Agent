@@ -428,9 +428,16 @@ class OpenAICompatLLM:
                 max_chars = int(_LOCAL_BUDGET["max_tool_chars"])
 
         self.caps = dict(DEFAULT_CAPS)
+        tools_enabled = bool(cfg.get("tools", True))
+        # Auto-detect models that do not support tools on Ollama/local servers
+        m_low = (self.model or "").lower()
+        if "11434" in self.base or "ollama" in self.base:
+            if any(k in m_low for k in ("gemma", "phi-2", "deepseek-coder", "tinyllama")):
+                tools_enabled = False
+
         self.caps.update(
             {
-                "tools": bool(cfg.get("tools", True)),
+                "tools": tools_enabled,
                 "tool_format": "openai",
                 "vision": bool(cfg.get("vision", False)),
                 "max_tools": max_tools,
@@ -493,7 +500,18 @@ class OpenAICompatLLM:
                     json=self._body(messages, tools, False, temperature),
                 )
                 if r.status_code >= 400:
-                    raise RuntimeError(f"{r.status_code} {_terse(r.text)}")
+                    text_err = r.text
+                    if "does not support tools" in text_err.lower() and tools:
+                        self.caps["tools"] = False
+                        r = cl.post(
+                            f"{self.base}/chat/completions",
+                            headers=self._headers(),
+                            json=self._body(messages, None, False, temperature),
+                        )
+                        if r.status_code >= 400:
+                            raise RuntimeError(f"{r.status_code} {_terse(r.text)}")
+                    else:
+                        raise RuntimeError(f"{r.status_code} {_terse(text_err)}")
                 data = r.json()
         except Exception as e:
             raise _with_address(e, self.base) from None
@@ -542,6 +560,27 @@ class OpenAICompatLLM:
             async with cl.stream("POST", f"{self.base}/chat/completions", headers=self._headers(), json=body) as r:
                 if r.status_code >= 400:
                     detail = _terse((await r.aread()).decode("utf-8", "replace"))
+                    if "does not support tools" in detail.lower() and body.get("tools"):
+                        self.caps["tools"] = False
+                        body.pop("tools", None)
+                        body.pop("tool_choice", None)
+                        async with cl.stream("POST", f"{self.base}/chat/completions", headers=self._headers(), json=body) as r2:
+                            if r2.status_code >= 400:
+                                detail2 = _terse((await r2.aread()).decode("utf-8", "replace"))
+                                raise RuntimeError(f"{r2.status_code} {detail2}")
+                            async for line in r2.aiter_lines():
+                                if not line or not line.startswith("data:"):
+                                    continue
+                                payload = line[5:].strip()
+                                if payload == "[DONE]":
+                                    break
+                                try:
+                                    delta = (json.loads(payload).get("choices") or [{}])[0].get("delta") or {}
+                                except Exception:
+                                    continue
+                                if delta.get("content"):
+                                    yield {"text": delta["content"]}
+                        return
                     raise RuntimeError(f"{r.status_code} {detail}")
                 async for line in r.aiter_lines():
                     if not line or not line.startswith("data:"):

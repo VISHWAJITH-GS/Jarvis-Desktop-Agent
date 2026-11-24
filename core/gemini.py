@@ -469,12 +469,35 @@ def _carries_recording(contents) -> bool:
         if blob is not None:
             mime = getattr(blob, "mime_type", None)
         elif isinstance(item, dict):
-            inline = item.get("inline_data") or item.get("inlineData")
-            if isinstance(inline, dict):
-                mime = inline.get("mime_type") or inline.get("mimeType")
+            mime = item.get("mime_type") or item.get("mimeType")
+            if not mime:
+                inline = item.get("inline_data") or item.get("inlineData")
+                if isinstance(inline, dict):
+                    mime = inline.get("mime_type") or inline.get("mimeType")
         if isinstance(mime, str) and mime.startswith(("audio/", "video/")):
             return True
     return False
+
+
+def _normalize_genai_contents(contents):
+    """Ensure raw dicts like {"data": bytes, "mime_type": ...} become types.Part objects."""
+    if isinstance(contents, str):
+        return contents
+    try:
+        from google.genai import types as gtypes
+    except Exception:
+        return contents
+    items = contents if isinstance(contents, (list, tuple)) else [contents]
+    out = []
+    for item in items:
+        if isinstance(item, dict) and "data" in item and "mime_type" in item:
+            data_bytes = item["data"] if isinstance(item["data"], bytes) else str(item["data"]).encode("utf-8")
+            out.append(gtypes.Part.from_bytes(data=data_bytes, mime_type=item["mime_type"]))
+        elif isinstance(item, dict) and "text" in item and len(item) == 1:
+            out.append(gtypes.Part.from_text(text=item["text"]))
+        else:
+            out.append(item)
+    return out
 
 
 async def _live_turn(parts: list, system: str, key: str, timeout_s: float) -> str:
@@ -789,7 +812,7 @@ def call(
                 return _provider_call(model, contents, config, timeout_ms)
             if cl is None:
                 cl = client(timeout_ms=timeout_ms, key=resolved_key)
-            kwargs = {"model": model, "contents": contents}
+            kwargs = {"model": model, "contents": _normalize_genai_contents(contents)}
             if config is not None:
                 kwargs["config"] = config
             return cl.models.generate_content(**kwargs)
