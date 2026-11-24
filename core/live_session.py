@@ -627,7 +627,7 @@ class JarvisLive(LiveAudioMixin, LiveMonitorsMixin, LiveVoiceMixin):
             cfg["log"] = self.ui.write_log
             return registry.build(pid, cfg)
 
-        engine = PipelineEngine(part("llm"), part("stt"), part("tts"), config=config, log=self.ui.write_log)
+        engine = PipelineEngine(part("llm"), part("stt"), part("tts"), config=config, log=self.ui.write_log, player=self.ui)
         if self._session_log:
             engine.load_history(self._session_log)
         # Without push-to-talk nothing else knows when a sentence ended, so the

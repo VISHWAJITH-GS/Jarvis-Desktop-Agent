@@ -107,11 +107,22 @@ _MAX_TOOL_ROUNDS = 4
 class PipelineEngine:
     """STT -> LLM -> TTS, wearing the Live session's interface."""
 
-    def __init__(self, llm, stt=None, tts=None, *, config=None, log=None, history_chars: int = _DEFAULT_HISTORY_CHARS):
+    def __init__(
+        self,
+        llm,
+        stt=None,
+        tts=None,
+        *,
+        config=None,
+        log=None,
+        player=None,
+        history_chars: int = _DEFAULT_HISTORY_CHARS,
+    ):
         self._llm = llm
         self._stt = stt
         self._tts = tts
         self._log = log or (lambda m: None)
+        self._player = player
         self._history_chars = history_chars
 
         self.caps = dict(DEFAULT_CAPS)
@@ -869,6 +880,26 @@ class PipelineEngine:
                     return text
             except Exception as c_err:
                 print(f"[Confirm] Pipeline interception error: {c_err}")
+
+            # Intercept direct voice engine-switching commands (e.g. "switch the brain to Gemini", "shift the brain to Gemini")
+            t_low = text.lower()
+            if any(verb in t_low for verb in ("switch", "shift", "change", "turn on", "use", "move")):
+                if any(k in t_low for k in ("gemini", "google", "cloud")):
+                    from actions import jarvis_control
+                    res = jarvis_control.run(
+                        {"action": "switch_engine", "engine": "gemini_live"},
+                        player=self._player,
+                    )
+                    await self._emit(Msg.reply(res))
+                    return text
+                elif any(k in t_low for k in ("local", "ollama", "offline", "pipeline")):
+                    from actions import jarvis_control
+                    res = jarvis_control.run(
+                        {"action": "switch_engine", "engine": "local"},
+                        player=self._player,
+                    )
+                    await self._emit(Msg.reply(res))
+                    return text
 
             await self.send_client_content(turns={"role": "user", "parts": [{"text": text}]})
         return text

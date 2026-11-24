@@ -1163,7 +1163,7 @@ def get_ollama_models_details(timeout: float = 1.5) -> list[dict]:
                 quant = details.get("quantization_level", "")
                 caps = m.get("capabilities", []) or []
                 caps_str = ", ".join(c.title() for c in caps if c != "completion") or "General"
-                is_rec = ("qwen3:8b" in name.lower())
+                is_rec = any(r in name.lower() for r in ("qwen3:8b", "qwen3.5:4b"))
                 out.append({
                     "name": name,
                     "size": size_gb,

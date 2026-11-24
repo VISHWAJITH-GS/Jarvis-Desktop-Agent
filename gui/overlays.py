@@ -1674,10 +1674,13 @@ class LocalModelPickerOverlay(_HudOverlay):
         if hasattr(self, "_note_lbl"):
             m_low = (self._selected_model or "").lower()
             if any(k in m_low for k in ("gemma", "phi-2", "tiny")):
-                self._note_lbl.setText("ℹ Note: This model is chat-only (no tools). For system tools & control, choose qwen3:8b.")
+                self._note_lbl.setText("⚠ Warning: This model is CHAT-ONLY (no tool support). It cannot open applications, control the computer, or execute system actions. For tools & system control, choose qwen3:8b or qwen3.5:4b.")
+                self._note_lbl.setStyleSheet("color: #ff5555; background: rgba(255, 85, 85, 0.1); border: 1px solid #ff5555; border-radius: 4px; padding: 6px 8px;")
                 self._note_lbl.show()
             else:
-                self._note_lbl.hide()
+                self._note_lbl.setText("✔ Tool-capable model: Supports full JARVIS computer control, opening apps, and system actions.")
+                self._note_lbl.setStyleSheet("color: #50fa7b; background: rgba(80, 250, 123, 0.1); border: 1px solid #50fa7b; border-radius: 4px; padding: 6px 8px;")
+                self._note_lbl.show()
 
     def _on_run_clicked(self) -> None:
         if self._selected_model:
