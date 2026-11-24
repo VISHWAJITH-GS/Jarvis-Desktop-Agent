@@ -124,6 +124,8 @@ class PipelineEngine:
         self._log = log or (lambda m: None)
         self._player = player
         self._history_chars = history_chars
+        self._silent_action_turn = False
+        self._last_user_prompt = ""
 
         self.caps = dict(DEFAULT_CAPS)
         llm_caps = getattr(llm, "caps", {}) or {}
@@ -370,6 +372,8 @@ class PipelineEngine:
         # there. The engine matches it — the transcript is emitted where speech
         # is actually recognised, in `flush_microphone`.
         self._history.append({"role": "user", "content": content})
+        if isinstance(content, str):
+            self._last_user_prompt = content.lower().strip()
         self._done_calls.clear()
         self._rounds = 0
         self._queue_generation()
@@ -403,6 +407,20 @@ class PipelineEngine:
 
         # Only ask the model again once every call it made has an answer.
         if not self._awaiting:
+            has_error = False
+            for fr in function_responses or []:
+                resp_str = _stringify(getattr(fr, "response", None)).lower()
+                if any(w in resp_str for w in ("error", "invalid", "failed", "missing required")):
+                    has_error = True
+                    break
+
+            if getattr(self, "_silent_action_turn", False) and not has_error:
+                self._silent_action_turn = False
+                self._print_timing()
+                await self._emit(Msg.turn_end())
+                return
+
+            self._silent_action_turn = False
             self._start_generation()
 
     async def receive(self) -> AsyncIterator[Msg]:
@@ -659,6 +677,25 @@ class PipelineEngine:
                 self._history.append(entry)
                 self._awaiting = {c.id: c.name for c in calls}
                 self._pending_sigs = {c.id: _signature(c) for c in calls}
+
+                is_prompt_tool = (self.caps.get("tool_format") == "prompt")
+                if is_prompt_tool:
+                    action_tools = {
+                        "open_app",
+                        "computer_control",
+                        "media_control",
+                        "spotify_control",
+                        "computer_settings",
+                        "windows_control",
+                        "windows_uia",
+                        "takeover_desktop",
+                    }
+                    user_wants_speech = any(
+                        w in getattr(self, "_last_user_prompt", "")
+                        for w in ("tell me", "what is", "what's", "explain", "how", "search", "show me", "read", "why", "list")
+                    )
+                    is_pure_action = all(c.name in action_tools for c in calls)
+                    self._silent_action_turn = (is_pure_action and not user_wants_speech)
                 # Say the acknowledgement before running the tool.
                 #
                 # A model that is about to use a tool usually says something
