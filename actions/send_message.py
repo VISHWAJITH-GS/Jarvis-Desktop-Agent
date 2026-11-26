@@ -396,7 +396,7 @@ def send_message(
             receiver=receiver,
         )
 
-    # Deterministic confirmation gate for WhatsApp: do NOT open WhatsApp before confirmation!
+    # Send-time confirmation gate for WhatsApp: search contact, open chat, and type draft first; confirm ONLY at send time!
     if is_wa and not (params.get("_execution_authorized") or params.get("confirmed")):
         from core import confirm
 
@@ -413,6 +413,30 @@ def send_message(
                 data={"contact": receiver, "text": message_text, "already_sent": True, "id": recent.id},
             )
 
+        # 1. Type message into WhatsApp Web composer first (NO confirmation required for typing)
+        open_contact = receiver
+        composer_txt = message_text
+        try:
+            from plugins import _whatsapp_web
+            driver = _whatsapp_web.get_driver()
+            if hasattr(driver, "prepare_draft"):
+                draft_res = driver.prepare_draft(receiver, message_text)
+                if isinstance(draft_res, outcome.ActionResult) and not draft_res.is_success():
+                    if draft_res.status in (outcome.STATUS_BLOCKED, outcome.STATUS_NEEDS_LOGIN):
+                        return draft_res
+                    if draft_res.status == outcome.STATUS_ASK:
+                        return draft_res
+                    return draft_res
+                if isinstance(draft_res, outcome.ActionResult) and draft_res.data:
+                    open_contact = draft_res.data.get("open_contact") or receiver
+                    composer_txt = draft_res.data.get("composer_text") or message_text
+        except Exception as e:
+            logger.debug("[SendMessage] prepare_draft notice: %s", e)
+
+        # 2. Formulate truthful send-time confirmation prompt
+        from actions.whatsapp_gate import format_confirmation_prompt
+        prompt_msg = format_confirmation_prompt(open_contact, composer_txt, intended_contact=receiver)
+
         def _do_send_msg():
             auth_p = {**params, "_execution_authorized": True, "confirmed": True}
             return send_message(auth_p, response=response, player=player, session_memory=session_memory)
@@ -428,12 +452,13 @@ def send_message(
             },
             run=_do_send_msg,
             expires_in=60.0,
-            title=f"Send {platform} message to {receiver}",
-            detail=f"Message: '{message_text}'",
+            title=f"Send {platform} message to {open_contact}",
+            detail=f"Message: '{composer_txt}'",
+            tier=confirm.RiskTier.MEDIUM,
         )
         return outcome.result_needs_confirmation(
             "send_message",
-            message=f"Shall I send the {platform} message to {receiver}: '{message_text}'? Say confirm to execute, or no to cancel.",
+            message=prompt_msg,
             data={"id": pending.id, "tool": "send_message", "params": {"contact": receiver, "text": message_text}},
         )
 

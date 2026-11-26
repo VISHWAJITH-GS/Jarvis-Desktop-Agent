@@ -129,6 +129,36 @@ ACTION_PERMISSIONS: dict[str, str] = {
     "computer_settings": SENSITIVE,
     "dev_agent": SENSITIVE,
     "game_updater": SENSITIVE,
+    # High-level App Suite tools
+    "whatsapp_open_chat": NORMAL,
+    "whatsapp_close_chat": NORMAL,
+    "whatsapp_draft": NORMAL,
+    "whatsapp_send": SENSITIVE,
+    "whatsapp_read_chat": READ_ONLY,
+    "whatsapp_list_unread": READ_ONLY,
+    "whatsapp_send_file": SENSITIVE,
+    "gmail_search": READ_ONLY,
+    "gmail_read": READ_ONLY,
+    "gmail_draft": NORMAL,
+    "gmail_send": SENSITIVE,
+    "gmail_reply": SENSITIVE,
+    "gmail_manage": NORMAL,
+    "gmail_delete": DESTRUCTIVE,
+    "gmail_download_attachment": NORMAL,
+    "spotify_search_play": NORMAL,
+    "spotify_now_playing": READ_ONLY,
+    "spotify_volume": NORMAL,
+    "spotify_like": NORMAL,
+    "spotify_playlist": NORMAL,
+    "chatgpt_ask": SENSITIVE,
+    "chatgpt_continue": SENSITIVE,
+    "chatgpt_read_last": READ_ONLY,
+    "chatgpt_open_history": READ_ONLY,
+    "chatgpt_upload": SENSITIVE,
+    "antigravity_open": NORMAL,
+    "antigravity_prompt": SENSITIVE,
+    "antigravity_status": READ_ONLY,
+    "tool_performance_report": READ_ONLY,
     # Destructive actions (High-impact)
     "sleep_jarvis": NORMAL,
     "shutdown_jarvis": DESTRUCTIVE,
@@ -918,14 +948,26 @@ class ActionPermissionManager:
         ):
             recip = params.get("contact") or params.get("receiver") or params.get("recipient") or target or "recipient"
             msg_text = params.get("text") or params.get("message") or params.get("message_text") or ""
-            title = f"Send WhatsApp Message to {recip}"
-            detail = f"Send message '{msg_text}' to {recip} via WhatsApp."
+            title = f"Send WhatsApp message to {recip}"
+            detail = f"'{msg_text}'"
         elif act == "send_message":
             plat = params.get("platform", "messaging app")
             recip = params.get("contact") or params.get("receiver") or params.get("recipient") or target or "recipient"
             msg_text = params.get("text") or params.get("message") or params.get("message_text") or ""
-            title = f"Send {plat} Message to {recip}"
-            detail = f"Send message '{msg_text}' to {recip} via {plat}."
+            title = f"Send {plat} message to {recip}"
+            detail = f"'{msg_text}'"
+        elif act in ("gmail_send", "gmail_reply"):
+            recip = params.get("to") or params.get("recipient") or "recipient"
+            subject = params.get("subject", "")
+            body = params.get("body") or params.get("message") or ""
+            preview = body[:60] + ("..." if len(body) > 60 else "")
+            title = f"Send email to {recip}"
+            detail = f"Subject '{subject}': '{preview}'"
+        elif act in ("chatgpt_ask", "chatgpt_continue"):
+            prompt_str = params.get("prompt") or params.get("text") or ""
+            preview = prompt_str[:60] + ("..." if len(prompt_str) > 60 else "")
+            title = "Submit prompt to ChatGPT"
+            detail = f"'{preview}'"
 
         # Antigravity IDE Actions
         elif act == "antigravity_ide":

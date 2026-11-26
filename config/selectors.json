@@ -1,0 +1,115 @@
+{
+  "whatsapp": {
+    "compose_box": [
+      "[data-testid=\"conversation-compose-box-input\"]",
+      "footer div[contenteditable=\"true\"][role=\"textbox\"]",
+      "footer div[contenteditable=\"true\"]",
+      "footer [role=\"textbox\"]"
+    ],
+    "send_button": [
+      "button[aria-label=\"Send\"]",
+      "button:has(span[data-icon=\"send\"])",
+      "span[data-icon=\"send\"]",
+      "[data-testid=\"send\"]"
+    ],
+    "search_input": [
+      "#side [role=\"textbox\"][aria-label*=\"Search\"]",
+      "#side [role=\"textbox\"]",
+      "#side [placeholder*=\"Search\"]",
+      "[data-testid=\"chat-list-search\"]"
+    ],
+    "chat_header_title": [
+      "[data-testid=\"conversation-info-header-chat-title\"]",
+      "#main header span[dir=\"auto\"][title]",
+      "#main header span[title]"
+    ]
+  },
+  "gmail": {
+    "search_input": [
+      "input[aria-label=\"Search mail\"]",
+      "input[placeholder=\"Search mail\"]",
+      "input[name=\"q\"]"
+    ],
+    "compose_button": [
+      "div[role=\"button\"][gh=\"cm\"]",
+      "div:has-text(\"Compose\")[role=\"button\"]",
+      "[aria-label=\"Compose\"]"
+    ],
+    "send_button": [
+      "div[role=\"button\"][data-tooltip*=\"Send\"]",
+      "div[role=\"button\"][aria-label*=\"Send\"]",
+      "div[role=\"button\"]:has-text(\"Send\")"
+    ],
+    "to_input": [
+      "input[peoplekit-id=\"c2\"]",
+      "input[aria-label=\"To recipients\"]",
+      "textarea[name=\"to\"]",
+      "input[name=\"to\"]"
+    ],
+    "subject_input": [
+      "input[name=\"subjectbox\"]",
+      "input[placeholder=\"Subject\"]",
+      "input[aria-label=\"Subject\"]"
+    ],
+    "body_input": [
+      "div[aria-label=\"Message Body\"][role=\"textbox\"]",
+      "div[role=\"textbox\"][g_editable=\"true\"]",
+      "div[contenteditable=\"true\"][aria-label*=\"Message\"]"
+    ]
+  },
+  "spotify": {
+    "play_pause_button": [
+      "button[data-testid=\"control-button-playpause\"]",
+      "button[aria-label=\"Play\"]",
+      "button[aria-label=\"Pause\"]"
+    ],
+    "next_button": [
+      "button[data-testid=\"control-button-skip-forward\"]",
+      "button[aria-label=\"Next\"]"
+    ],
+    "previous_button": [
+      "button[data-testid=\"control-button-skip-back\"]",
+      "button[aria-label=\"Previous\"]"
+    ],
+    "now_playing_title": [
+      "[data-testid=\"now-playing-widget\"] [data-testid=\"context-item-info-title\"] a",
+      "[data-testid=\"context-item-info-title\"] span",
+      "[data-testid=\"now-playing-widget\"] a"
+    ],
+    "now_playing_artist": [
+      "[data-testid=\"now-playing-widget\"] [data-testid=\"context-item-info-subtitles\"] a",
+      "[data-testid=\"context-item-info-artist\"]"
+    ],
+    "search_input": [
+      "[data-testid=\"search-input\"]",
+      "input[role=\"searchbox\"]",
+      "input[data-testid=\"search-input\"]"
+    ]
+  },
+  "chatgpt": {
+    "prompt_textarea": [
+      "#prompt-textarea",
+      "textarea[data-id=\"root\"]",
+      "div[contenteditable=\"true\"][id=\"prompt-textarea\"]",
+      "[data-testid=\"conversation-turn-composer\"] [contenteditable=\"true\"]"
+    ],
+    "send_button": [
+      "button[data-testid=\"send-button\"]",
+      "button[aria-label=\"Send prompt\"]",
+      "button:has(svg[data-icon=\"send\"])"
+    ],
+    "stop_generating_button": [
+      "button[data-testid=\"stop-button\"]",
+      "button[aria-label=\"Stop generating\"]"
+    ],
+    "copy_button": [
+      "button[aria-label=\"Copy\"]",
+      "[data-testid=\"copy-turn-action-button\"]"
+    ],
+    "last_turn_response": [
+      "[data-testid^=\"conversation-turn-\"]:last-child .markdown",
+      ".agent-turn:last-child .markdown",
+      "div[data-message-author-role=\"assistant\"]:last-child"
+    ]
+  }
+}

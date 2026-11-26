@@ -145,15 +145,15 @@ def run(parameters: dict, player=None, session_memory=None) -> outcome.ActionRes
         # Format message formally
         final_message = _polish_message_formal(raw_message) if formal else raw_message
 
-    # 1. Deterministic code-level confirmation gate
-    # Do NOT open WhatsApp before user confirmation!
+    # 1. Send-time confirmation gate (Tasks 4 & 5)
+    # Search contact, open chat, type draft into composer first; confirm ONLY before sending.
     if not is_authorized:
         from core import confirm
 
         # Check if an equivalent action was already executed recently
         recent = confirm.get_recent_execution(
             "whatsapp_send",
-            {"contact": contact, "text": final_message, "formal": formal},
+            {"contact": contact, "text": final_message},
             seconds=60.0,
         )
         if recent is not None:
@@ -164,27 +164,41 @@ def run(parameters: dict, player=None, session_memory=None) -> outcome.ActionRes
                 data={"contact": contact, "text": final_message, "already_sent": True, "id": recent.id},
             )
 
+        # Search contact, open chat, and type message into composer without submitting
+        driver = _whatsapp_web.get_driver()
+        open_contact = contact
+        if hasattr(driver, "prepare_draft"):
+            draft_res = driver.prepare_draft(contact, final_message)
+            if isinstance(draft_res, outcome.ActionResult) and not draft_res.is_success():
+                return draft_res
+            if isinstance(draft_res, outcome.ActionResult) and draft_res.data:
+                open_contact = draft_res.data.get("open_contact") or contact
+
+        if is_draft_request:
+            message_prompt = f"I've drafted the following message for {contact}: '{final_message}'. Shall I send it? Say confirm to proceed or no to cancel."
+        else:
+            from actions.whatsapp_gate import format_confirmation_prompt
+            message_prompt = format_confirmation_prompt(open_contact, final_message, intended_contact=contact)
+
         def _do_send_action() -> outcome.ActionResult:
             return _execute_send(contact, final_message, player=player)
 
         pending = confirm.save_pending(
             tool="whatsapp_send",
             params={
-                "contact": contact,
+                "contact": open_contact or contact,
                 "text": final_message,
                 "formal": formal,
                 "receiver": contact,
                 "message": final_message,
+                "_execution_authorized": True,
+                "confirmed": True,
             },
             run=_do_send_action,
             expires_in=60.0,
-            title=f"Send WhatsApp message to {contact}",
+            title=f"Send WhatsApp message to {open_contact or contact}",
             detail=f"Message: '{final_message}'",
         )
-        if is_draft_request:
-            message_prompt = f"I have drafted the following message for {contact}: '{final_message}'. Shall I send this? Say confirm to execute, or no to cancel."
-        else:
-            message_prompt = f"Shall I proceed with sending WhatsApp message to {contact}: '{final_message}'? Say confirm to execute, or no to cancel."
 
         return outcome.result_needs_confirmation(
             "whatsapp_send",
@@ -192,7 +206,8 @@ def run(parameters: dict, player=None, session_memory=None) -> outcome.ActionRes
             data={
                 "id": pending.id,
                 "tool": "whatsapp_send",
-                "params": {"contact": contact, "text": final_message},
+                "params": {"contact": open_contact or contact, "text": final_message},
+                "contact": open_contact,
                 "is_draft": is_draft_request,
                 "draft": final_message if is_draft_request else None,
             },

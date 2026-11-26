@@ -1,0 +1,20 @@
+[
+  {
+    "name": "Yaswanth TCE",
+    "phone": "+919876543210",
+    "email": "yaswanth@tce.edu",
+    "aliases": ["Yaswanth", "Yashwanth", "Yash", "Yaswanth TCE"]
+  },
+  {
+    "name": "Mom",
+    "phone": "+919876543211",
+    "email": "mom@example.com",
+    "aliases": ["Mother", "Amma"]
+  },
+  {
+    "name": "Rahul",
+    "phone": "+919876543212",
+    "email": "rahul@example.com",
+    "aliases": ["Rahul K", "Rahul Sharma"]
+  }
+]

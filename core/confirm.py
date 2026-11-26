@@ -91,13 +91,9 @@ CONFIRM_WORDS_BY_LANG: dict[str, set[str]] = {
 CONFIRM_WORDS: set[str] = set().union(*CONFIRM_WORDS_BY_LANG.values())
 
 def get_allowed_confirm_words(allowed_langs: Optional[list[str]] = None) -> set[str]:
-    """Return confirmation keywords filtered to configured languages (English is always included)."""
+    """Return confirmation keywords filtered to configured languages (defaults to all supported languages)."""
     if allowed_langs is None:
-        try:
-            from memory import config_manager
-            allowed_langs = config_manager.get_stt_languages()
-        except Exception:
-            allowed_langs = ["en"]
+        return CONFIRM_WORDS
     words = set(CONFIRM_WORDS_BY_LANG.get("en", set()))
     for l in (allowed_langs or ["en"]):
         code = str(l).strip().lower().split("-")[0].split("_")[0]
@@ -162,13 +158,9 @@ CANCEL_WORDS_BY_LANG: dict[str, set[str]] = {
 CANCEL_WORDS: set[str] = set().union(*CANCEL_WORDS_BY_LANG.values())
 
 def get_allowed_cancel_words(allowed_langs: Optional[list[str]] = None) -> set[str]:
-    """Return cancellation keywords filtered to configured languages (English is always included)."""
+    """Return cancellation keywords filtered to configured languages (defaults to all supported languages)."""
     if allowed_langs is None:
-        try:
-            from memory import config_manager
-            allowed_langs = config_manager.get_stt_languages()
-        except Exception:
-            allowed_langs = ["en"]
+        return CANCEL_WORDS
     words = set(CANCEL_WORDS_BY_LANG.get("en", set()))
     for l in (allowed_langs or ["en"]):
         code = str(l).strip().lower().split("-")[0].split("_")[0]
@@ -359,13 +351,8 @@ def canonicalize_params(tool: str, params: Optional[dict]) -> dict:
     if msg:
         clean_params["text"] = re.sub(r"\s+", " ", msg).strip()
 
-    # Canonicalize boolean formal
-    if "formal" in clean_params:
-        f_val = clean_params["formal"]
-        if isinstance(f_val, str):
-            clean_params["formal"] = f_val.lower() not in ("false", "0", "no")
-        else:
-            clean_params["formal"] = bool(f_val)
+    # Canonicalize boolean formal (not distinguishing recipient/message)
+    clean_params.pop("formal", None)
 
     # Canonicalize file path / filename (slashes, whitespace, lowercased on windows)
     for p_key in ("path", "filepath", "filename", "destination", "folder"):
@@ -786,6 +773,15 @@ class ConfirmationManager:
                 f"[CONFIRMATION_PENDING] Shall I proceed with {title}? "
                 f"Note: {detail}. Say confirm AND click CONFIRM on screen to execute, or say no to cancel."
             )
+        elif detail and any(k in action.lower() or k in title.lower() for k in ("message", "whatsapp", "email", "mail", "chat", "send", "prompt", "reply")):
+            msg_body = detail
+            if msg_body.lower().startswith("send message "):
+                msg_body = msg_body[13:].strip()
+            if msg_body.lower().startswith("message: "):
+                msg_body = msg_body[9:].strip()
+            return f"[CONFIRMATION_PENDING] Shall I {title.lower() if title.lower().startswith('send') else f'send to {title}'}: {msg_body}? Say confirm to send, or no to cancel."
+        elif detail:
+            return f"[CONFIRMATION_PENDING] Shall I proceed with {title}: {detail}? Say confirm to execute, or no to cancel."
         else:
             return f"[CONFIRMATION_PENDING] Shall I proceed with {title}? Say confirm to execute, or no to cancel."
 
@@ -1217,7 +1213,6 @@ class ConfirmationManager:
             cls._executed_ids.add(p.id)
             cls._last_executed = p
             cls._active_id = None
-            cls._store.pop(p.id, None)  # Cleared immediately so it is never re-prompted
 
         if _hide_cb:
             try:

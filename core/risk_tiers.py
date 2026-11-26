@@ -318,9 +318,23 @@ def _classify_default_tier(tool_name: str, params: Dict[str, Any]) -> RiskTier:
             # Check if web chat / ChatGPT or web messenger composer
             ai_chat_domains = ("chatgpt.com", "chat.openai.com", "claude.ai", "gemini.google.com")
             if any(dom in target for dom in ai_chat_domains):
+                press_enter = bool(params.get("press_enter") or params.get("enter"))
+                if action in ("type", "input", "smart_type", "fill_form") and not press_enter:
+                    return RiskTier.LOW
                 return RiskTier.MEDIUM
-            if "web.whatsapp.com" in target or "web.telegram.org" in target:
+            if "web.telegram.org" in target:
+                press_enter = bool(params.get("press_enter") or params.get("enter"))
+                if action in ("type", "input", "smart_type", "fill_form") and not press_enter:
+                    return RiskTier.LOW
                 return RiskTier.MEDIUM
+            if "web.whatsapp.com" in target:
+                try:
+                    from actions.whatsapp_gate import is_whatsapp_send_action
+                    if is_whatsapp_send_action(action, params, page_state=target):
+                        return RiskTier.MEDIUM
+                except Exception:
+                    pass
+                return RiskTier.LOW
             return RiskTier.LOW
 
         if action in ("download", "download_file"):
@@ -329,8 +343,30 @@ def _classify_default_tier(tool_name: str, params: Dict[str, Any]) -> RiskTier:
         if action in ("make_payment", "pay", "payment", "purchase", "buy", "place_order"):
             return RiskTier.HIGH
 
-    # 6. Messaging & External Chat Prompts -> MEDIUM
-    if tool in ("whatsapp_send", "whatsapp", "telegram", "telegram_send"):
+    # 6. Messaging & App Suite Tools
+    if tool == "whatsapp_open_chat" or action == "whatsapp_open_chat":
+        return RiskTier.LOW
+    if tool in ("whatsapp_close_chat", "whatsapp_draft", "whatsapp_read_chat", "whatsapp_list_unread"):
+        return RiskTier.LOW
+    if tool in ("whatsapp_send", "whatsapp_send_file", "whatsapp", "telegram", "telegram_send"):
+        return RiskTier.MEDIUM
+    if tool in ("gmail_search", "gmail_read", "gmail_draft", "gmail_manage", "gmail_download_attachment"):
+        return RiskTier.LOW
+    if tool in ("gmail_send", "gmail_reply"):
+        return RiskTier.MEDIUM
+    if tool == "gmail_delete":
+        return RiskTier.HIGH
+    if tool in ("spotify_search_play", "spotify_control", "spotify_volume", "spotify_now_playing", "spotify_like", "spotify_playlist"):
+        if tool == "spotify_playlist" and str(params.get("action", "")).lower() in ("delete", "remove"):
+            return RiskTier.HIGH
+        return RiskTier.LOW
+    if tool in ("chatgpt_read_last", "chatgpt_open_history"):
+        return RiskTier.LOW
+    if tool in ("chatgpt_ask", "chatgpt_continue", "chatgpt_upload"):
+        return RiskTier.MEDIUM
+    if tool in ("antigravity_open", "antigravity_status", "tool_performance_report"):
+        return RiskTier.LOW
+    if tool == "antigravity_prompt":
         return RiskTier.MEDIUM
     if tool == "send_message":
         plat = str(params.get("platform") or "").lower()
@@ -393,7 +429,14 @@ def _classify_default_tier(tool_name: str, params: Dict[str, Any]) -> RiskTier:
     if tool in ("computer_control", "windows_uia", "click_element", "input_text", "scroll_page", "scroll_element", "press_key"):
         if action in ("cmd", "shell", "run", "terminal", "execute", "run_command", "powershell", "execute_code", "execute_script"):
             return RiskTier.HIGH
-        if action in UI_PRIMITIVE_ACTIONS:
+        if action in UI_PRIMITIVE_ACTIONS or tool in ("click_element", "input_text", "scroll_page", "scroll_element", "press_key"):
+            if tool in ("input_text", "press_key", "click_element") or action in ("type", "input", "input_text", "press_key", "click"):
+                try:
+                    from actions.whatsapp_gate import is_whatsapp_send_action
+                    if is_whatsapp_send_action(action or tool, params):
+                        return RiskTier.MEDIUM
+                except Exception:
+                    pass
             return RiskTier.LOW
 
     # 10. System Power / PC Control -> HIGH

@@ -136,7 +136,47 @@ def rank_and_disambiguate_entries(
 
     pool = exact_matches if exact_matches else partial_matches
     if not pool:
-        return ("failed", None, f"Contact '{clean_name}' not found on WhatsApp Web.")
+        # Fuzzy spelling variant matching (e.g. "Yashwanth" vs "Yaswanth")
+        import difflib
+
+        def _fuzzy_score(name_a: str, name_b: str) -> float:
+            a = name_a.strip().lower()
+            b = name_b.strip().lower()
+            if not a or not b:
+                return 0.0
+            direct = difflib.SequenceMatcher(None, a, b).ratio()
+            tokens_a = a.split()
+            tokens_b = b.split()
+            max_token = max(
+                (difflib.SequenceMatcher(None, ta, tb).ratio() for ta in tokens_a for tb in tokens_b),
+                default=0.0,
+            )
+            return max(direct, max_token)
+
+        scored_entries = []
+        for e in valid_entries:
+            disp = e.get("display_name", "")
+            s = max(_fuzzy_score(disp, t_low), _fuzzy_score(disp, c_low))
+            if s >= 0.70:
+                scored_entries.append((s, e))
+
+        if scored_entries:
+            scored_entries.sort(key=lambda x: x[0], reverse=True)
+            top_score = scored_entries[0][0]
+            # If top score is clear winner (score >= 0.75 and >= 0.10 higher than second or only one)
+            if len(scored_entries) == 1 or (top_score >= 0.75 and (top_score - scored_entries[1][0] >= 0.10)):
+                pool = [scored_entries[0][1]]
+                logger.info(
+                    "[WhatsAppWeb] Fuzzy matched spelling variant '%s' -> '%s' (score=%.2f)",
+                    clean_name,
+                    scored_entries[0][1].get("display_name"),
+                    top_score,
+                )
+            else:
+                # Ambiguous: multiple candidates with close scores -> ask user
+                pool = [e for s, e in scored_entries if (top_score - s) < 0.15]
+        else:
+            return ("failed", None, f"Contact '{clean_name}' not found on WhatsApp Web.")
 
     # Filter by explicit kind requirement (Part 3.2)
     if is_group_requested:
@@ -756,7 +796,19 @@ class WhatsAppWebDriver:
             header_text = header_info.get("title", "")
             header_kind = header_info.get("kind", "chat")
 
-        if target_name.lower() not in header_text.lower() and header_text.lower() not in target_name.lower():
+        # Check matching with normalization (ignoring spaces/punctuation) and fuzzy spelling variants
+        t_norm = re.sub(r"[^a-z0-9]", "", target_name.lower())
+        h_norm = re.sub(r"[^a-z0-9]", "", header_text.lower())
+        from difflib import SequenceMatcher
+        sim = SequenceMatcher(None, t_norm, h_norm).ratio()
+        name_matches = (
+            target_name.lower() in header_text.lower()
+            or header_text.lower() in target_name.lower()
+            or (t_norm and t_norm in h_norm)
+            or (h_norm and h_norm in t_norm)
+            or sim >= 0.70
+        )
+        if not name_matches:
             return outcome.result_failed(
                 "resolve_contact",
                 f"Opened chat header '{header_text}' does not match intended contact '{clean_name}'. Refusing to proceed.",
@@ -823,7 +875,18 @@ class WhatsAppWebDriver:
         if header_info:
             open_title = header_info.get("title", "").strip().lower()
             c_low = contact_name.strip().lower()
-            if c_low not in open_title and open_title not in c_low:
+            t_norm = re.sub(r"[^a-z0-9]", "", c_low)
+            h_norm = re.sub(r"[^a-z0-9]", "", open_title)
+            from difflib import SequenceMatcher
+            sim = SequenceMatcher(None, t_norm, h_norm).ratio()
+            name_matches = (
+                c_low in open_title
+                or open_title in c_low
+                or (t_norm and t_norm in h_norm)
+                or (h_norm and h_norm in t_norm)
+                or sim >= 0.70
+            )
+            if not name_matches:
                 return outcome.result_failed(
                     "whatsapp_send",
                     f"Wrong chat open: expected '{contact_name}', but active chat is '{header_info.get('title')}'.",
@@ -850,16 +913,25 @@ class WhatsAppWebDriver:
         await _safe_call(compose_el, "click")
         await asyncio.sleep(0.1)
 
-        # 3. Type message via CDP Input (never pyautogui, never clipboard)
-        bm = self._get_browser_manager()
+        # 3. Type message via CDP Input (if not already drafted in composer)
+        existing_text = ""
         try:
-            cdp = await bm._get_cdp_session()
-            if cdp:
-                await cdp.send("Input.insertText", {"text": message})
-            else:
-                await page.keyboard.type(message)
+            existing_text = await page.evaluate(
+                "() => { const el = document.querySelector('[data-testid=\"conversation-compose-box-input\"], footer [contenteditable=\"true\"], footer [role=\"textbox\"]'); return el ? (el.innerText || el.textContent || '') : ''; }"
+            )
         except Exception:
-            await page.keyboard.type(message)
+            pass
+
+        if not existing_text or message.strip() not in existing_text:
+            bm = self._get_browser_manager()
+            try:
+                cdp = await bm._get_cdp_session()
+                if cdp:
+                    await cdp.send("Input.insertText", {"text": message})
+                else:
+                    await page.keyboard.type(message)
+            except Exception:
+                await page.keyboard.type(message)
 
         await asyncio.sleep(0.3)
 
@@ -958,6 +1030,73 @@ class WhatsAppWebDriver:
             error="No new outgoing message bubble detected after send",
             data={"contact": contact_name, "text": message, "to": contact_name, "verdict": "not_done"},
         )
+
+    async def _prepare_draft_in_page(
+        self, page, contact_name: str, message: str
+    ) -> outcome.ActionResult:
+        """Search contact, open chat, and type message into composer without sending."""
+        res_contact = await self._resolve_contact_in_page(page, contact_name)
+        if not res_contact.is_success():
+            return res_contact
+
+        header_info = await self._inspect_chat_header(page)
+        open_title = header_info.get("title", "").strip() if header_info else contact_name
+
+        compose_el = await _safe_call(page, "wait_for_selector", SELECTORS.compose_box, timeout=10000)
+        if not compose_el:
+            return outcome.result_failed(
+                "whatsapp_send",
+                "WhatsApp Web layout changed: Message composer input box not found.",
+            )
+
+        await _safe_call(compose_el, "click")
+        await asyncio.sleep(0.1)
+
+        bm = self._get_browser_manager()
+        try:
+            cdp = await bm._get_cdp_session()
+            if cdp:
+                await cdp.send("Input.insertText", {"text": message})
+            else:
+                if hasattr(page, "keyboard") and page.keyboard:
+                    await _safe_call(page.keyboard, "type", message)
+        except Exception:
+            if hasattr(page, "keyboard") and page.keyboard:
+                await _safe_call(page.keyboard, "type", message)
+
+        await asyncio.sleep(0.2)
+        return outcome.result_done(
+            "prepare_draft",
+            f"Drafted message for '{open_title}'.",
+            verified=True,
+            data={
+                "open_contact": open_title,
+                "composer_text": message,
+                "contact": contact_name,
+            },
+        )
+
+    def prepare_draft(
+        self,
+        contact_name: str,
+        message: str,
+        background: bool = True,
+    ) -> outcome.ActionResult:
+        """Synchronously resolve contact, open chat, and type draft into composer without sending."""
+        state, page, reason = self.ensure_page_ready(background=background)
+        if state != "ready" or page is None:
+            if state == "blocked":
+                return outcome.result_blocked("whatsapp_send", reason)
+            return outcome.result_failed("whatsapp_send", reason)
+
+        bm = self._get_browser_manager()
+        try:
+            return bm.run_coroutine(
+                self._prepare_draft_in_page(page, contact_name, message),
+                timeout=40.0,
+            )
+        except Exception as e:
+            return outcome.result_failed("whatsapp_send", f"Error drafting WhatsApp message: {e}")
 
     def send_message(
         self,

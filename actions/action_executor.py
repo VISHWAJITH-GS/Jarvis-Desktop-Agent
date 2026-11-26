@@ -459,7 +459,21 @@ def get_action_executor() -> ActionExecutor:
 def tool_click_element(parameters: dict, **kwargs) -> str:
     executor = get_action_executor()
     idx = int(parameters.get("index", 0))
+    is_auth = bool(parameters.get("_execution_authorized") or parameters.get("confirmed"))
+
     try:
+        active_p = executor.session_mgr.active_page
+        if active_p and not active_p.is_closed() and "web.whatsapp.com" in (active_p.url or "").lower() and not is_auth:
+            from actions.whatsapp_gate import is_whatsapp_send_action, get_active_chat_contact, get_active_composer_text, format_confirmation_prompt
+            if is_whatsapp_send_action("click_element", parameters, page_state=active_p):
+                from core import confirm
+                contact = get_active_chat_contact(active_p)
+                txt = get_active_composer_text(active_p)
+                prompt = format_confirmation_prompt(contact, txt)
+                def _do_click():
+                    return executor.session_mgr.run_coroutine(executor.click_element(idx))
+                return confirm.request_action("click_element", parameters, "confirmation", f"Send message to {contact or 'chat'}", prompt, _do_click)
+
         return executor.session_mgr.run_coroutine(executor.click_element(idx))
     except CDPConnectionError as ce:
         return str(ce)
@@ -472,7 +486,21 @@ def tool_input_text(parameters: dict, **kwargs) -> str:
     idx = int(parameters.get("index", 0))
     text = str(parameters.get("text", ""))
     press_enter = bool(parameters.get("press_enter", False))
+    is_auth = bool(parameters.get("_execution_authorized") or parameters.get("confirmed"))
+
     try:
+        active_p = executor.session_mgr.active_page
+        if active_p and not active_p.is_closed() and "web.whatsapp.com" in (active_p.url or "").lower() and not is_auth:
+            from actions.whatsapp_gate import is_whatsapp_send_action, get_active_chat_contact, get_active_composer_text, format_confirmation_prompt
+            if is_whatsapp_send_action("input_text", parameters, page_state=active_p):
+                from core import confirm
+                contact = get_active_chat_contact(active_p)
+                txt = get_active_composer_text(active_p) or text
+                prompt = format_confirmation_prompt(contact, txt)
+                def _do_input():
+                    return executor.session_mgr.run_coroutine(executor.input_text(idx, text, press_enter=press_enter))
+                return confirm.request_action("input_text", parameters, "confirmation", f"Send message to {contact or 'chat'}", prompt, _do_input)
+
         return executor.session_mgr.run_coroutine(executor.input_text(idx, text, press_enter=press_enter))
     except CDPConnectionError as ce:
         return str(ce)
@@ -507,7 +535,21 @@ def tool_scroll_element(parameters: dict, **kwargs) -> str:
 def tool_press_key(parameters: dict, **kwargs) -> str:
     executor = get_action_executor()
     key = str(parameters.get("key", "Enter"))
+    is_auth = bool(parameters.get("_execution_authorized") or parameters.get("confirmed"))
+
     try:
+        active_p = executor.session_mgr.active_page
+        if active_p and not active_p.is_closed() and "web.whatsapp.com" in (active_p.url or "").lower() and not is_auth:
+            from actions.whatsapp_gate import is_whatsapp_send_action, get_active_chat_contact, get_active_composer_text, format_confirmation_prompt
+            if is_whatsapp_send_action("press_key", parameters, page_state=active_p):
+                from core import confirm
+                contact = get_active_chat_contact(active_p)
+                txt = get_active_composer_text(active_p)
+                prompt = format_confirmation_prompt(contact, txt)
+                def _do_press():
+                    return executor.session_mgr.run_coroutine(executor.press_key(key))
+                return confirm.request_action("press_key", parameters, "confirmation", f"Send message to {contact or 'chat'}", prompt, _do_press)
+
         return executor.session_mgr.run_coroutine(executor.press_key(key))
     except CDPConnectionError as ce:
         return str(ce)
