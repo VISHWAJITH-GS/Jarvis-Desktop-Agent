@@ -274,6 +274,29 @@ class JarvisUI:
     def on_audio_device_change(self, cb):
         self._win.on_audio_device_change = cb
 
+    @property
+    def on_engine_change(self):
+        return getattr(self._win, "on_engine_change", None)
+
+    @on_engine_change.setter
+    def on_engine_change(self, cb):
+        self._win.on_engine_change = cb
+
+    @property
+    def request_engine_switch(self):
+        return getattr(self, "_request_engine_switch_cb", None) or getattr(self._win, "request_engine_switch", None)
+
+    @request_engine_switch.setter
+    def request_engine_switch(self, cb):
+        self._request_engine_switch_cb = cb
+        self._win.request_engine_switch = cb
+
+    def show_local_model_picker(self):
+        """Thread-safe: Request to display the local brain model picker on screen."""
+        sig = getattr(self._win, "_model_picker_sig", None)
+        if sig is not None:
+            sig.emit()
+
     def show_confirm(self, title: str, detail: str, tier: str = "MEDIUM") -> None:
         """Thread-safe: raise the irreversible-action gate. Called from action
         handlers running in executor threads, so it goes through a signal."""

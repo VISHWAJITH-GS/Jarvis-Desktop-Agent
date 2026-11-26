@@ -107,12 +107,25 @@ _MAX_TOOL_ROUNDS = 4
 class PipelineEngine:
     """STT -> LLM -> TTS, wearing the Live session's interface."""
 
-    def __init__(self, llm, stt=None, tts=None, *, config=None, log=None, history_chars: int = _DEFAULT_HISTORY_CHARS):
+    def __init__(
+        self,
+        llm,
+        stt=None,
+        tts=None,
+        *,
+        config=None,
+        log=None,
+        player=None,
+        history_chars: int = _DEFAULT_HISTORY_CHARS,
+    ):
         self._llm = llm
         self._stt = stt
         self._tts = tts
         self._log = log or (lambda m: None)
+        self._player = player
         self._history_chars = history_chars
+        self._silent_action_turn = False
+        self._last_user_prompt = ""
 
         self.caps = dict(DEFAULT_CAPS)
         llm_caps = getattr(llm, "caps", {}) or {}
@@ -225,6 +238,24 @@ class PipelineEngine:
         return out
 
     # ── history ──────────────────────────────────────────────────────────────
+    def load_history(self, turns: list[str]) -> None:
+        """Seed conversation history from recent session turns for continuity across engine switches."""
+        if not turns:
+            return
+        for t in turns:
+            t = str(t).strip()
+            if not t:
+                continue
+            if t.startswith("User: "):
+                content = t[6:].strip()
+                if content:
+                    self._history.append({"role": "user", "content": content})
+            elif ": " in t:
+                _, content = t.split(": ", 1)
+                content = content.strip()
+                if content:
+                    self._history.append({"role": "assistant", "content": content})
+
     def _messages(self) -> list[dict]:
         msgs = [{"role": "system", "content": self._system}] if self._system else []
         return msgs + self._trimmed()
@@ -341,6 +372,8 @@ class PipelineEngine:
         # there. The engine matches it — the transcript is emitted where speech
         # is actually recognised, in `flush_microphone`.
         self._history.append({"role": "user", "content": content})
+        if isinstance(content, str):
+            self._last_user_prompt = content.lower().strip()
         self._done_calls.clear()
         self._rounds = 0
         self._queue_generation()
@@ -374,6 +407,20 @@ class PipelineEngine:
 
         # Only ask the model again once every call it made has an answer.
         if not self._awaiting:
+            has_error = False
+            for fr in function_responses or []:
+                resp_str = _stringify(getattr(fr, "response", None)).lower()
+                if any(w in resp_str for w in ("error", "invalid", "failed", "missing required")):
+                    has_error = True
+                    break
+
+            if getattr(self, "_silent_action_turn", False) and not has_error:
+                self._silent_action_turn = False
+                self._print_timing()
+                await self._emit(Msg.turn_end())
+                return
+
+            self._silent_action_turn = False
             self._start_generation()
 
     async def receive(self) -> AsyncIterator[Msg]:
@@ -399,13 +446,46 @@ class PipelineEngine:
         waits that long assumes it is broken and says it again, which produces
         two overlapping turns.
         """
+        # Warm up local LLM model into VRAM first so inference is instant
+        if self._llm:
+            model_name = getattr(self._llm, "model", "local model")
+            preload = getattr(self._llm, "preload_async", None) or getattr(self._llm, "preload", None)
+            if preload is not None:
+                if self._log:
+                    self._log(f"SYS: Loading local model '{model_name}' into GPU memory...")
+                t0 = time.monotonic()
+                try:
+                    if asyncio.iscoroutinefunction(preload):
+                        ok, msg = await preload(timeout=60.0)
+                    else:
+                        res = preload(timeout=60.0)
+                        if asyncio.iscoroutine(res):
+                            ok, msg = await res
+                        elif isinstance(res, tuple):
+                            ok, msg = res
+                        else:
+                            ok, msg = await asyncio.to_thread(preload, 60.0)
+                    took = time.monotonic() - t0
+                    if ok and self._log:
+                        self._log(f"SYS: Local model '{model_name}' is loaded in VRAM and running ({took:.1f}s).")
+                    elif not ok and self._log:
+                        self._log(f"SYS: Warning: {msg}")
+                except Exception as e:
+                    if self._log:
+                        self._log(f"SYS: Warning: {e}")
+
         # Both ends, concurrently: the speech model and the voice each have a
         # one-off cost, and they do not need each other.
         jobs = []
         for part in (self._stt, self._tts):
             warm = getattr(part, "warmup", None)
             if warm is not None:
-                jobs.append(warm(self._log))
+                try:
+                    res = warm(self._log)
+                    if asyncio.iscoroutine(res):
+                        jobs.append(res)
+                except Exception:
+                    pass
         if jobs:
             await asyncio.gather(*jobs, return_exceptions=True)
 
@@ -453,47 +533,69 @@ class PipelineEngine:
         first_word = None
         thinking = _ReasoningFilter()
         pending = ""  # visible text not yet a whole sentence
+        buffered_text = ""
+        is_prompt_tool = (self.caps.get("tool_format") == "prompt")
+        suppress_speech = is_prompt_tool
+
         try:
             async for ev in self._llm.chat(self._messages(), self._tools):
                 if ev.get("text"):
                     visible = thinking.feed(ev["text"])
-                    if visible and first_word is None:
+                    if not visible:
+                        continue
+                    if first_word is None:
                         first_word = time.monotonic() - t0
-                    pending += visible
-                    # Emit and speak a SENTENCE at a time — never a fragment.
-                    #
-                    # main.py joins transcript pieces with a space, because
-                    # Gemini Live sends whole phrases. A chat API sends tokens,
-                    # so emitting them as they arrive produced
-                    # "Hel lo ! How c an I assis t y ou today?" in the activity
-                    # log. Sentences join back together correctly, and they are
-                    # also the unit the voice synthesises, so speech now starts
-                    # at the first full stop instead of at the end of the reply.
-                    ready, pending = _take_sentences(pending)
-                    for sentence in ready:
-                        said.append(sentence)
-                        await self._emit(Msg.said(sentence))
-                        await self._speak(sentence)
+                    buffered_text += visible
+
+                    if not suppress_speech:
+                        stripped_start = buffered_text.lstrip()
+                        if stripped_start.startswith(("{", "```", "[", "`")):
+                            suppress_speech = True
+
+                    if not suppress_speech:
+                        pending += visible
+                        ready, pending = _take_sentences(pending)
+                        for sentence in ready:
+                            said.append(sentence)
+                            await self._emit(Msg.said(sentence))
+                            await self._speak(sentence)
+
                 if ev.get("tool_calls"):
                     calls.extend(ev["tool_calls"])
 
-            pending += thinking.flush()
-            if pending.strip():
+            flush_vis = thinking.flush()
+            if flush_vis:
+                buffered_text += flush_vis
+                if not suppress_speech:
+                    pending += flush_vis
+
+            if thinking.hid:
+                self._timing["thought"] = thinking.hid
+
+            # A model answers with tool calls as text/code instead of an API tool-call field.
+            if not calls:
+                extracted = _extract_all_tool_calls(buffered_text, set(self.tool_names()))
+                if extracted:
+                    calls = extracted
+
+            # If speech was suppressed because we waited for tool call parsing,
+            # but NO tool call was extracted, speak the buffered text now.
+            if suppress_speech and not calls:
+                leftover = buffered_text.strip()
+                if leftover:
+                    said.append(leftover)
+                    if first_word is None:
+                        first_word = time.monotonic() - t0
+                    await self._emit(Msg.said(leftover))
+                    await self._speak(leftover)
+            elif not suppress_speech and pending.strip():
                 said.append(pending.strip())
                 if first_word is None:
                     first_word = time.monotonic() - t0
                 await self._emit(Msg.said(pending.strip()))
                 await self._speak(pending.strip())
-            if thinking.hid:
-                self._timing["thought"] = thinking.hid
 
-            text = "".join(said)
-
-            # A model answers with tool calls as text/code instead of an API tool-call field.
-            if not calls:
-                extracted = _extract_all_tool_calls(text, set(self.tool_names()))
-                if extracted:
-                    calls, text = extracted, ""
+            text = "".join(said) if not calls else ""
 
             if calls:
                 self._rounds += 1
@@ -575,6 +677,25 @@ class PipelineEngine:
                 self._history.append(entry)
                 self._awaiting = {c.id: c.name for c in calls}
                 self._pending_sigs = {c.id: _signature(c) for c in calls}
+
+                is_prompt_tool = (self.caps.get("tool_format") == "prompt")
+                if is_prompt_tool:
+                    action_tools = {
+                        "open_app",
+                        "computer_control",
+                        "media_control",
+                        "spotify_control",
+                        "computer_settings",
+                        "windows_control",
+                        "windows_uia",
+                        "takeover_desktop",
+                    }
+                    user_wants_speech = any(
+                        w in getattr(self, "_last_user_prompt", "")
+                        for w in ("tell me", "what is", "what's", "explain", "how", "search", "show me", "read", "why", "list")
+                    )
+                    is_pure_action = all(c.name in action_tools for c in calls)
+                    self._silent_action_turn = (is_pure_action and not user_wants_speech)
                 # Say the acknowledgement before running the tool.
                 #
                 # A model that is about to use a tool usually says something
@@ -818,6 +939,26 @@ class PipelineEngine:
                     return text
             except Exception as c_err:
                 print(f"[Confirm] Pipeline interception error: {c_err}")
+
+            # Intercept direct voice engine-switching commands (e.g. "switch the brain to Gemini", "shift the brain to Gemini")
+            t_low = text.lower()
+            if any(verb in t_low for verb in ("switch", "shift", "change", "turn on", "use", "move")):
+                if any(k in t_low for k in ("gemini", "google", "cloud")):
+                    from actions import jarvis_control
+                    res = jarvis_control.run(
+                        {"action": "switch_engine", "engine": "gemini_live"},
+                        player=self._player,
+                    )
+                    await self._emit(Msg.reply(res))
+                    return text
+                elif any(k in t_low for k in ("local", "ollama", "offline", "pipeline")):
+                    from actions import jarvis_control
+                    res = jarvis_control.run(
+                        {"action": "switch_engine", "engine": "local"},
+                        player=self._player,
+                    )
+                    await self._emit(Msg.reply(res))
+                    return text
 
             await self.send_client_content(turns={"role": "user", "parts": [{"text": text}]})
         return text
@@ -1180,7 +1321,15 @@ def _parse_prompt_call(text: str, known: set[str]) -> Optional[FunctionCall]:
     name = str(obj.get("tool") or obj.get("name") or "").strip()
     if name not in known:
         return None
-    args = obj.get("args") if isinstance(obj.get("args"), dict) else {}
+    if isinstance(obj.get("args"), dict):
+        args = dict(obj["args"])
+    elif isinstance(obj.get("parameters"), dict):
+        args = dict(obj["parameters"])
+    else:
+        args = {k: v for k, v in obj.items() if k not in ("tool", "name")}
+
+    if name == "browser_control" and "url" in args and "action" not in args:
+        args["action"] = "navigate_to"
     return FunctionCall(id=f"call_{name}", name=name, args=args)
 
 
@@ -1221,10 +1370,20 @@ def _extract_all_tool_calls(text: str, known: set[str]) -> list[FunctionCall]:
                 target_tool = None
                 if obj.get("tool") in known:
                     target_tool = obj["tool"]
-                    args = obj.get("args") or {}
+                    if isinstance(obj.get("args"), dict):
+                        args = dict(obj["args"])
+                    elif isinstance(obj.get("parameters"), dict):
+                        args = dict(obj["parameters"])
+                    else:
+                        args = {k: v for k, v in obj.items() if k not in ("tool", "name")}
                 elif obj.get("name") in known:
                     target_tool = obj["name"]
-                    args = obj.get("args") or obj.get("parameters") or {}
+                    if isinstance(obj.get("args"), dict):
+                        args = dict(obj["args"])
+                    elif isinstance(obj.get("parameters"), dict):
+                        args = dict(obj["parameters"])
+                    else:
+                        args = {k: v for k, v in obj.items() if k not in ("tool", "name")}
                 elif action_val:
                     # Inferred from action name:
                     if (
@@ -1246,6 +1405,8 @@ def _extract_all_tool_calls(text: str, known: set[str]) -> list[FunctionCall]:
                         target_tool = "browser_control"
                         args = obj
                 if target_tool:
+                    if target_tool == "browser_control" and "url" in args and "action" not in args:
+                        args["action"] = "navigate_to"
                     calls.append(FunctionCall(id=f"call_{target_tool}_{len(calls)}", name=target_tool, args=args))
         except Exception:
             pass

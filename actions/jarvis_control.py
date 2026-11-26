@@ -16,8 +16,10 @@ import logging
 import time
 from typing import Any, Dict, Optional
 
+from core import confirm as confirm_gate
 from core import outcome
 from gui import display_registry
+from memory import config_manager
 
 logger = logging.getLogger(__name__)
 
@@ -235,19 +237,108 @@ def jarvis_control(parameters: Optional[Dict[str, Any]] = None, player=None, ses
         disp_cnt = len(display_registry.list_displays())
         return f"Jarvis is operational. Speaker is {spk_st}, microphone is {mic_st}. Active displays: {disp_cnt}."
 
+    # ── 8. STT Custom Vocabulary / Hotwords ───────────────────────────────────
+    if action in ("add_hotword", "add_vocabulary", "add_stt_word"):
+        word = str(params.get("word") or raw_target or "").strip()
+        if not word:
+            return "Please specify a word or phrase to add to the speech vocabulary, sir."
+        added = config_manager.add_stt_hotword(word)
+        if added:
+            if player and hasattr(player, "write_log"):
+                player.write_log(f"SYS: Added '{word}' to STT custom vocabulary.")
+            return f"Added '{word}' to speech recognition vocabulary, sir."
+        return f"'{word}' is already in your speech recognition vocabulary, sir."
+
+    if action in ("remove_hotword", "remove_vocabulary", "delete_hotword"):
+        word = str(params.get("word") or raw_target or "").strip()
+        if not word:
+            return "Please specify a word or phrase to remove, sir."
+        removed = config_manager.remove_stt_hotword(word)
+        if removed:
+            if player and hasattr(player, "write_log"):
+                player.write_log(f"SYS: Removed '{word}' from STT custom vocabulary.")
+            return f"Removed '{word}' from speech recognition vocabulary, sir."
+        return f"'{word}' was not found in your speech recognition vocabulary, sir."
+
+    if action in ("list_hotwords", "list_vocabulary", "get_hotwords"):
+        words = config_manager.get_stt_hotwords()
+        if not words:
+            return "No custom speech vocabulary words configured, sir."
+        formatted = ", ".join(words)
+        if player and hasattr(player, "write_log"):
+            player.write_log(f"SYS: STT Vocabulary: {formatted}")
+        return f"Current speech recognition vocabulary contains: {formatted}."
+
+    # ── 9. Engine Switching (Gemini Live <-> Local Pipeline) ───────────────────
+    if action in ("switch_engine", "switch_to_local", "switch_to_gemini", "switch_to_gemini_live", "set_engine"):
+        raw_eng = str(params.get("engine") or params.get("target") or raw_target or "").strip().lower()
+        model_req = str(params.get("model") or "").strip()
+        if action in ("switch_to_local", "local_engine") or raw_eng in ("local", "local_engine", "pipeline", "ollama"):
+            new_engine = config_manager.ENGINE_LOCAL
+            dest_desc = "Local only (Whisper/Ollama/Piper on this computer)"
+        elif action in ("switch_to_gemini", "switch_to_gemini_live") or raw_eng in ("gemini", "gemini_live", "google", "cloud"):
+            new_engine = config_manager.ENGINE_GEMINI_LIVE
+            dest_desc = "Google (Gemini Live cloud WebSocket)"
+        else:
+            return "Please specify whether to switch to 'local' or 'Gemini Live', sir."
+
+        cur_engine = config_manager.get_active_engine()
+        if cur_engine == new_engine and not model_req:
+            return f"Jarvis is already running on the {new_engine.replace('_', ' ').title()} engine, sir."
+
+        confirmed = bool(
+            params.get("confirmed")
+            or params.get("_execution_authorized")
+            or params.get("force")
+        )
+
+        def _do_switch():
+            if new_engine == config_manager.ENGINE_LOCAL:
+                if model_req:
+                    config_manager.configure_local_ollama_model(model_req)
+                else:
+                    config_manager.ensure_local_pipeline_configured()
+            config_manager.set_active_engine(new_engine)
+            if player and hasattr(player, "request_engine_switch"):
+                player.request_engine_switch(new_engine)
+            elif player and hasattr(player, "on_audio_device_change") and player.on_audio_device_change:
+                player.on_audio_device_change()
+            m_label = f" ({model_req})" if model_req and new_engine == config_manager.ENGINE_LOCAL else ""
+            if player and hasattr(player, "write_log"):
+                player.write_log(f"SYS: Switched engine to {new_engine.replace('_', ' ').title()}{m_label}. Audio destination: {dest_desc}.")
+            return f"Switched to {new_engine.replace('_', ' ').title()}{m_label} engine. Audio now routes to {dest_desc}, sir."
+
+        if not confirmed:
+            if new_engine == config_manager.ENGINE_LOCAL and not model_req:
+                if player and hasattr(player, "show_local_model_picker"):
+                    player.show_local_model_picker()
+            active_m = config_manager.get_provider_config("openai_compat@ollama").get("model") or "qwen3:8b"
+            m_display = f" [{model_req or active_m}]" if new_engine == config_manager.ENGINE_LOCAL else ""
+            return confirm_gate.request_action(
+                action="switch_engine",
+                parameters={"engine": new_engine, "model": model_req, "confirmed": True},
+                risk_level="sensitive",
+                title=f"Switch to {new_engine.replace('_', ' ').title()}{m_display}",
+                detail=f"Audio will route to: {dest_desc}",
+                run=_do_switch,
+                player=player,
+            )
+
+        return _do_switch()
+
     return f"Unknown jarvis_control action: '{raw_action}'."
 
 
 TOOL = {
     "name": "jarvis_control",
     "description": (
-        "JARVIS Self-Control and Display Window Management: Controls Jarvis's own system state "
-        "(mute/unmute speaker or microphone, sleep, wake, minimize to taskbar/tray, restore back to normal, "
-        "shutdown Jarvis orderly) and controls Jarvis-created display windows (list_displays, "
-        "minimize_display, restore_display, close_display, close_all_displays). "
-        "Strictly operates on Jarvis's own windows and displays; never touches external applications."
+        "JARVIS Self-Control, Display Window Management, Speech Vocabulary, and Engine Switching: "
+        "Controls Jarvis's own system state (mute/unmute, sleep, wake, minimize/restore, shutdown), "
+        "controls Jarvis-created display windows, manages speech vocabulary (add_hotword, list_hotwords), "
+        "and switches conversation engines between 'gemini_live' and 'local' with user confirmation. "
+        "Strictly operates on Jarvis's own state and displays; never touches external applications."
     ),
-    "brief": "Control Jarvis state (mute, sleep, minimize, restore, shutdown) and Jarvis display windows.",
+    "brief": "Control Jarvis state, display windows, speech vocabulary, and engine switching.",
     "parameters": {
         "type": "OBJECT",
         "properties": {
@@ -267,15 +358,34 @@ TOOL = {
                     "close_display",
                     "close_all_displays",
                     "status",
+                    "add_hotword",
+                    "remove_hotword",
+                    "list_hotwords",
+                    "switch_engine",
                 ],
-                "description": "The self-control or display action to perform.",
+                "description": "The self-control, display, vocabulary, or engine action to perform.",
             },
             "target": {
                 "type": "STRING",
                 "description": (
                     "Action target: for mute/unmute specify 'speaker', 'microphone', or 'both'; "
-                    "for display commands specify the display name, title, or ID."
+                    "for display commands specify display name or ID; "
+                    "for add_hotword/remove_hotword specify the word or phrase; "
+                    "for switch_engine specify 'local' or 'gemini_live'."
                 ),
+            },
+            "engine": {
+                "type": "STRING",
+                "enum": ["gemini_live", "local"],
+                "description": "The target engine for switch_engine: 'gemini_live' or 'local'.",
+            },
+            "model": {
+                "type": "STRING",
+                "description": "Optional local model name for switch_engine (e.g. 'qwen3:8b', 'qwen3.5:4b', 'gemma3:1b').",
+            },
+            "word": {
+                "type": "STRING",
+                "description": "The vocabulary word or phrase for add_hotword/remove_hotword.",
             },
         },
         "required": ["action"],

@@ -484,26 +484,40 @@ class TestWhatsAppConfirmation(unittest.TestCase):
     # ── Test 17: Browser control cannot bypass confirmation gate on WhatsApp Web
 
     def test_browser_control_cannot_bypass_confirmation_gate_on_whatsapp_web(self):
-        """browser_control type, Enter press, and send button clicks on web.whatsapp.com are blocked."""
+        """browser_control allows normal typing/navigation, but gates Send clicks, Enter, and press_enter."""
         from actions.browser_control import browser_control
 
         with patch("actions.browser_control._get_active_url", return_value="https://web.whatsapp.com"):
             with patch("actions.browser_session.get_browser_session_manager") as mock_bm:
                 mock_mgr = MagicMock()
                 mock_mgr.check_connection.return_value = (True, "")
+                mock_page = MagicMock()
+                mock_page.is_closed.return_value = False
+                mock_mgr.active_page = mock_page
                 mock_bm.return_value = mock_mgr
 
-                # Attempt to type
-                res_type = browser_control({"action": "type", "text": "Sneaky message"})
-                self.assertIn("blocked by the confirmation gate", str(res_type).lower())
+                # 1. Normal typing in search or composer without enter is ALLOWED (Task 2)
+                with patch("actions.action_executor.get_action_executor") as mock_exec_getter:
+                    mock_exec = MagicMock()
+                    mock_exec.input_text.return_value = "Typed 'Search query'"
+                    mock_exec_getter.return_value = mock_exec
+                    res_type = browser_control({"action": "type", "text": "Search query", "index": 1})
+                    self.assertNotIn("blocked by the confirmation gate", str(res_type).lower())
 
-                # Attempt to press Enter
-                res_press = browser_control({"action": "press", "key": "Enter"})
-                self.assertIn("blocked by the confirmation gate", str(res_press).lower())
-
-                # Attempt to click send button
+                # 2. Clicking Send button triggers confirmation gate (Task 3)
                 res_click = browser_control({"action": "click", "text": "Send"})
-                self.assertIn("blocked by the confirmation gate", str(res_click).lower())
+                self.assertEqual(res_click.status, outcome.STATUS_NEEDS_CONFIRMATION)
+                self.assertIn("Send to", res_click.message)
+
+                # 3. Pressing Enter while composer is focused triggers confirmation gate (Task 3)
+                with patch("actions.whatsapp_gate.is_whatsapp_send_action", return_value=True):
+                    res_press = browser_control({"action": "press", "key": "Enter"})
+                    self.assertEqual(res_press.status, outcome.STATUS_NEEDS_CONFIRMATION)
+
+                # 4. Typing with press_enter=True triggers confirmation gate (Task 3)
+                with patch("actions.whatsapp_gate.is_whatsapp_send_action", return_value=True):
+                    res_type_enter = browser_control({"action": "type", "text": "Hi", "press_enter": True})
+                    self.assertEqual(res_type_enter.status, outcome.STATUS_NEEDS_CONFIRMATION)
 
     # ── Test 18: screen_process and recall_memory do not return Unknown tool ──
 

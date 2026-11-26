@@ -1459,3 +1459,234 @@ class MemoryOverlay(_HudOverlay):
         # Qt is entitled to touch the sender after a slot returns; tearing it
         # down mid-emission is how a widget ends up half-alive on screen.
         QTimer.singleShot(0, self._rebuild)
+
+
+class LocalModelPickerOverlay(_HudOverlay):
+    """Ask which local model to run and load into GPU VRAM before listening begins."""
+
+    model_selected = pyqtSignal(str)
+    switch_to_gemini = pyqtSignal()
+    _OW = 480
+
+    def __init__(self, can_switch_to_gemini: bool = False, parent=None):
+        super().__init__(parent)
+        self.can_switch_to_gemini = can_switch_to_gemini
+        self._selected_model = ""
+        self._model_cards: dict[str, QPushButton] = {}
+
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet(f"""
+            LocalModelPickerOverlay {{
+                background: rgba(12, 9, 3, 252);
+                border: 1px solid #f4b942;
+                border-radius: 8px;
+            }}
+        """)
+        self.setFixedWidth(self._OW)
+
+        self._lay = QVBoxLayout(self)
+        self._lay.setContentsMargins(20, 16, 20, 16)
+        self._lay.setSpacing(10)
+        self._rebuild()
+
+    def _rebuild(self) -> None:
+        while self._lay.count():
+            item = self._lay.takeAt(0)
+            w = item.widget()
+            if w:
+                w.deleteLater()
+            l = item.layout()
+            if l:
+                while l.count():
+                    c = l.takeAt(0).widget()
+                    if c:
+                        c.deleteLater()
+
+        from memory import config_manager
+        current_cfg = config_manager.get_provider_config("openai_compat@ollama")
+        active_model = str(current_cfg.get("model") or "").strip()
+        models = config_manager.get_ollama_models_details()
+
+        if not self._selected_model:
+            rec_model = next((m["name"] for m in models if m.get("recommended")), None)
+            self._selected_model = active_model or rec_model or (models[0]["name"] if models else "qwen3:8b")
+
+        # Header
+        hdr_row = QHBoxLayout()
+        hdr_row.setSpacing(8)
+        hdr = QLabel("🧠  CHOOSE LOCAL BRAIN MODEL")
+        hdr.setFont(QFont("Montserrat", 11, QFont.Weight.Bold))
+        hdr.setStyleSheet("color: #f4b942; background: transparent;")
+        hdr_row.addWidget(hdr, stretch=1)
+        self._lay.addLayout(hdr_row)
+
+        sub = QLabel(
+            "Select which Ollama model to load into GPU memory.\n"
+            "The model runs first to warm up VRAM, and then listening begins."
+        )
+        sub.setWordWrap(True)
+        sub.setFont(QFont("Montserrat", 8))
+        sub.setStyleSheet(f"color: {C.TEXT_MED}; background: transparent; line-height: 1.3;")
+        self._lay.addWidget(sub)
+
+        # Model cards
+        self._model_cards = {}
+        if not models:
+            warn_box = QWidget()
+            warn_box.setStyleSheet(f"background: {C.PANEL}; border: 1px dashed {C.ACC}; border-radius: 5px; padding: 10px;")
+            w_lay = QVBoxLayout(warn_box)
+            w_txt = QLabel("⚠ No models detected on http://127.0.0.1:11434.\nMake sure Ollama is running and has models installed.")
+            w_txt.setFont(QFont("Montserrat", 8))
+            w_txt.setStyleSheet("color: #ff9999; background: transparent;")
+            w_lay.addWidget(w_txt)
+            self._lay.addWidget(warn_box)
+
+            ref_btn = QPushButton("↻ REFRESH OLLAMA")
+            ref_btn.setFont(QFont("Montserrat", 8, QFont.Weight.Bold))
+            ref_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            ref_btn.setStyleSheet(f"""
+                QPushButton {{ background: {C.PRI_GHO}; color: {C.PRI}; border: 1px solid {C.PRI_DIM}; border-radius: 4px; padding: 6px; }}
+                QPushButton:hover {{ background: {C.BORDER}; }}
+            """)
+            ref_btn.clicked.connect(self._rebuild)
+            self._lay.addWidget(ref_btn)
+        else:
+            cards_container = QWidget()
+            cards_container.setStyleSheet("background: transparent;")
+            c_lay = QVBoxLayout(cards_container)
+            c_lay.setContentsMargins(0, 4, 0, 4)
+            c_lay.setSpacing(6)
+
+            for m in models:
+                m_name = m["name"]
+                is_sel = (m_name == self._selected_model)
+                is_active = (m_name == active_model)
+                is_rec = m.get("recommended", False)
+                caps = m.get("capabilities", "General")
+                has_tools = ("Tools" in caps)
+
+                tag_parts = []
+                if is_active:
+                    tag_parts.append("[CURRENT]")
+                if is_rec:
+                    tag_parts.append("[RECOMMENDED]")
+                if not has_tools:
+                    tag_parts.append("[PROMPT TOOLS]")
+
+                desc = f"{m.get('params', '')} • {m.get('size', '')} VRAM • {caps}"
+
+                btn = QPushButton()
+                btn.setCursor(Qt.CursorShape.PointingHandCursor)
+                btn.setCheckable(True)
+                btn.setChecked(is_sel)
+                btn.setText(f"{m_name} {' '.join(tag_parts)}\n{desc}")
+                btn.setFont(QFont("Montserrat", 8))
+                btn.clicked.connect(lambda _=False, name=m_name: self._select_card(name))
+                self._model_cards[m_name] = btn
+                c_lay.addWidget(btn)
+
+            self._lay.addWidget(cards_container)
+            self._note_lbl = QLabel()
+            self._note_lbl.setFont(QFont("Montserrat", 7))
+            self._note_lbl.setWordWrap(True)
+            self._note_lbl.setStyleSheet("color: #ffb86c; background: transparent; padding: 2px 4px;")
+            self._lay.addWidget(self._note_lbl)
+            self._update_card_styles()
+
+        # Action buttons
+        btn_box = QVBoxLayout()
+        btn_box.setSpacing(6)
+
+        run_btn = QPushButton("▶  RUN MODEL & START LOCAL BRAIN")
+        run_btn.setFixedHeight(34)
+        run_btn.setFont(QFont("Montserrat", 9, QFont.Weight.Bold))
+        run_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        run_btn.setStyleSheet("""
+            QPushButton {{
+                background: #1a1200; color: #f4b942;
+                border: 1px solid #f4b942; border-radius: 4px;
+            }}
+            QPushButton:hover {{ background: #2a1c00; border-color: #ffd166; color: #ffffff; }}
+        """)
+        run_btn.clicked.connect(self._on_run_clicked)
+        btn_box.addWidget(run_btn)
+
+        row = QHBoxLayout()
+        row.setSpacing(8)
+
+        if self.can_switch_to_gemini:
+            gem_btn = QPushButton("☁  SWITCH TO GEMINI LIVE")
+            gem_btn.setFixedHeight(30)
+            gem_btn.setFont(QFont("Montserrat", 8, QFont.Weight.Bold))
+            gem_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            gem_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background: {C.PRI_GHO}; color: {C.PRI};
+                    border: 1px solid {C.PRI_DIM}; border-radius: 4px;
+                }}
+                QPushButton:hover {{ background: {C.BORDER}; color: #ffffff; }}
+            """)
+            gem_btn.clicked.connect(self._on_switch_gemini_clicked)
+            row.addWidget(gem_btn, 1)
+
+        cancel = QPushButton("CANCEL")
+        cancel.setFixedHeight(30)
+        cancel.setFont(QFont("Montserrat", 8))
+        cancel.setCursor(Qt.CursorShape.PointingHandCursor)
+        cancel.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent; color: {C.TEXT_MED};
+                border: 1px solid {C.BORDER}; border-radius: 4px;
+            }}
+            QPushButton:hover {{ color: {C.TEXT}; border-color: {C.BORDER_B}; }}
+        """)
+        cancel.clicked.connect(self.hide)
+        row.addWidget(cancel, 1)
+        btn_box.addLayout(row)
+
+        self._lay.addLayout(btn_box)
+
+    def _select_card(self, model_name: str) -> None:
+        self._selected_model = model_name
+        self._update_card_styles()
+
+    def _update_card_styles(self) -> None:
+        for m_name, btn in self._model_cards.items():
+            is_sel = (m_name == self._selected_model)
+            btn.setChecked(is_sel)
+            if is_sel:
+                btn.setStyleSheet("""
+                    QPushButton {
+                        background: #2a1c00; color: #ffffff;
+                        border: 1px solid #ffd166; border-radius: 5px;
+                        text-align: left; padding: 8px 12px; font-weight: bold;
+                    }
+                """)
+            else:
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background: {C.PANEL}; color: {C.TEXT};
+                        border: 1px solid {C.BORDER}; border-radius: 5px;
+                        text-align: left; padding: 8px 12px;
+                    }}
+                    QPushButton:hover {{ border-color: #f4b942; background: rgba(244, 185, 66, 0.08); }}
+                """)
+        if hasattr(self, "_note_lbl"):
+            m_low = (self._selected_model or "").lower()
+            if any(k in m_low for k in ("gemma", "phi-2", "tiny")):
+                self._note_lbl.setText("⚡ Lightweight model (1B): Uses prompt-based tool calling for fast small tasks (opening/closing apps, songs, volume). For multi-step workflows & deep reasoning, choose qwen3:8b or qwen3.5:4b.")
+                self._note_lbl.setStyleSheet("color: #f4b942; background: rgba(244, 185, 66, 0.1); border: 1px solid #f4b942; border-radius: 4px; padding: 6px 8px;")
+                self._note_lbl.show()
+            else:
+                self._note_lbl.setText("✔ Tool-capable model: Supports full JARVIS computer control, opening apps, and system actions.")
+                self._note_lbl.setStyleSheet("color: #50fa7b; background: rgba(80, 250, 123, 0.1); border: 1px solid #50fa7b; border-radius: 4px; padding: 6px 8px;")
+                self._note_lbl.show()
+
+    def _on_run_clicked(self) -> None:
+        if self._selected_model:
+            self.model_selected.emit(self._selected_model)
+        self.hide()
+
+    def _on_switch_gemini_clicked(self) -> None:
+        self.switch_to_gemini.emit()
+        self.hide()

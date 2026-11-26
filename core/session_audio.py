@@ -48,6 +48,20 @@ class LiveAudioMixin:
             except Exception:
                 break
 
+    def _enqueue_mic_frame(self, frame: dict) -> None:
+        """Enqueue mic PCM frame safely, discarding oldest frames on buffer congestion."""
+        q = getattr(self, "out_queue", None)
+        if not q:
+            return
+        try:
+            q.put_nowait(frame)
+        except Exception:
+            try:
+                q.get_nowait()
+                q.put_nowait(frame)
+            except Exception:
+                pass
+
     async def _send_realtime(self):
         while True:
             msg = await self.out_queue.get()
@@ -143,7 +157,7 @@ class LiveAudioMixin:
 
             if not self.ui.muted and not self._phone_active:
                 data = indata.tobytes()
-                loop.call_soon_threadsafe(self.out_queue.put_nowait, {"data": data, "mime_type": "audio/pcm"})
+                loop.call_soon_threadsafe(self._enqueue_mic_frame, {"data": data, "mime_type": "audio/pcm"})
                 # Feed the live mic level to the HUD so the waveform reacts to
                 # the user's actual voice while listening. Purely cosmetic — any
                 # failure here must never disturb the mic.

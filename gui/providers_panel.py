@@ -116,6 +116,7 @@ class ProvidersOverlay(_HudOverlay):
     """
 
     changed = pyqtSignal()  # emitted on APPLY when the engine moved
+    applied = changed
     # Emitted from a worker thread when something the machine had to be asked
     # for — the installed voices — has arrived. A signal rather than a direct
     # call because the worker must not touch a widget.
@@ -217,9 +218,8 @@ class ProvidersOverlay(_HudOverlay):
             "gemini",
         )
         self._card_local = self._mode_card(
-            "🖥  MY OWN SETUP",
-            "Your choice of hearing, thinking and speaking. Can run entirely on "
-            "this computer, with nothing leaving it. Slower: 1.5 to 4 seconds.",
+            "🖥  LOCAL BRAIN (OLLAMA)",
+            "Runs Ollama (qwen3:8b) on this computer. 100% private, no internet required. Slower: 1.5 to 4 seconds.",
             "pipeline",
         )
         cards.addWidget(self._card_gemini)
@@ -429,6 +429,13 @@ class ProvidersOverlay(_HudOverlay):
             self._refresh_cards()
             return
         self._mode = value
+        if value == "pipeline":
+            if not self._pipe.get("llm"):
+                self._pipe["llm"] = "openai_compat@ollama"
+            if not self._pipe.get("stt"):
+                self._pipe["stt"] = "whisper"
+            if not self._pipe.get("tts"):
+                self._pipe["tts"] = "piper"
         self._remember_edits()
         self._refresh_cards()
         QTimer.singleShot(0, self._rebuild_body)
@@ -991,7 +998,7 @@ class ProvidersOverlay(_HudOverlay):
 
     def _update_footer(self) -> None:
         if self._mode != "pipeline":
-            self._footer.setText("Gemini Live. Nothing on this panel changes the conversation.")
+            self._footer.setText("Gemini Live active. Audio routes to Google (Gemini Live cloud WebSocket).")
             return
         missing = [name for slot, _n, name, _w in self._SLOTS if not self._pipe.get(slot)]
         if "THINKING" in missing:
@@ -1004,7 +1011,9 @@ class ProvidersOverlay(_HudOverlay):
                 f"Only {words} is missing — it will run, but you will type instead of speak, or read instead of listen."
             )
         else:
-            self._footer.setText("All three set. SAVE & APPLY reconnects; the conversation is kept.")
+            from memory import config_manager
+            dest = config_manager.get_audio_destination_label()
+            self._footer.setText(f"Active engine: Local Setup. Audio destination: {dest}. SAVE & APPLY reconnects; context is kept.")
 
     # ── actions ──────────────────────────────────────────────────────────────
     def _live_choices(self, pid: str, key: str) -> tuple:
@@ -1155,6 +1164,14 @@ class ProvidersOverlay(_HudOverlay):
 
     def _apply(self) -> None:
         from memory.config_manager import save_providers
+
+        if self._mode == "pipeline":
+            if not self._pipe.get("llm"):
+                self._pipe["llm"] = "openai_compat@ollama"
+            if not self._pipe.get("stt"):
+                self._pipe["stt"] = "whisper"
+            if not self._pipe.get("tts"):
+                self._pipe["tts"] = "piper"
 
         # ONE write, not five. See save_providers for what the five cost.
         creds = {sid: self._values(sid) for sid in list(self._edits)}

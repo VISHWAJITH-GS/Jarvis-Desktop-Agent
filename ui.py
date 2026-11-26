@@ -8,5 +8,9 @@ for _k, _v in gui.__dict__.items():
         globals()[_k] = _v
 
 from gui import __all__ as _gui_all
+from gui.providers_panel import _ScrollSafeCombo, ProvidersOverlay
 
-__all__ = list(_gui_all)
+globals()["_ScrollSafeCombo"] = _ScrollSafeCombo
+globals()["ProvidersOverlay"] = ProvidersOverlay
+
+__all__ = list(_gui_all) + ["_ScrollSafeCombo", "ProvidersOverlay"]

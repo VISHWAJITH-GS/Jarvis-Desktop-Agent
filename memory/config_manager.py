@@ -1086,16 +1086,161 @@ def get_providers() -> dict:
     return _upgrade_ids(dict(val)) if isinstance(val, dict) else {}
 
 
+ENGINE_GEMINI_LIVE = "gemini_live"
+ENGINE_LOCAL = "local"
+
+
 def get_provider_mode() -> str:
-    """Which engine holds the conversation. Strictly Google Gemini."""
+    """Which engine holds the conversation: 'gemini' | 'pipeline'. Defaults to Gemini Live."""
+    mode = str(get_providers().get("mode", "") or "").strip().lower()
+    if mode in (ENGINE_LOCAL, "pipeline"):
+        return PROVIDER_MODE_PIPELINE
     return PROVIDER_MODE_GEMINI
+
+
+def get_active_engine() -> str:
+    """Return the active conversation engine: 'gemini_live' | 'local' (defaults to 'gemini_live')."""
+    return ENGINE_LOCAL if get_provider_mode() == PROVIDER_MODE_PIPELINE else ENGINE_GEMINI_LIVE
+
+
+def set_active_engine(engine: str) -> None:
+    """Set the active conversation engine ('gemini_live' | 'local')."""
+    eng = str(engine or "").strip().lower()
+    if eng in (ENGINE_LOCAL, "pipeline", "local_brain", "ollama"):
+        save_provider_mode(PROVIDER_MODE_PIPELINE)
+    else:
+        save_provider_mode(PROVIDER_MODE_GEMINI)
+
+
+def get_audio_destination_label() -> str:
+    """Return honest privacy description of where microphone audio is routed."""
+    if get_active_engine() == ENGINE_GEMINI_LIVE:
+        return "Google (Gemini Live WebSocket)"
+    pipe = get_pipeline()
+    stt_id = str(pipe.get("stt") or "").strip().lower()
+    if not stt_id or "local" in stt_id or "whisper" in stt_id:
+        return "Local only (Whisper on CPU, nothing leaves this machine)"
+    return f"Hosted API ({stt_id})"
+
+
+def _detect_ollama_model(timeout: float = 1.0) -> str:
+    """Detect available models from local Ollama instance, prioritizing qwen3:8b and qwen3.5:4b."""
+    try:
+        import urllib.request
+        import json
+        req = urllib.request.Request("http://127.0.0.1:11434/api/tags", headers={"User-Agent": "Jarvis"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            models = [str(m.get("name", "")).strip() for m in data.get("models", []) if m.get("name")]
+            if not models:
+                return "qwen3:8b"
+            for target in ("qwen3:8b", "qwen3.5:4b", "qwen3:4b", "qwen", "gemma", "llama"):
+                for m in models:
+                    if target in m.lower():
+                        return m
+            return models[0]
+    except Exception:
+        return "qwen3:8b"
+
+
+def get_ollama_models_details(timeout: float = 1.5) -> list[dict]:
+    """Fetch installed models from local Ollama instance with specs and capabilities."""
+    try:
+        import urllib.request
+        import json
+        req = urllib.request.Request("http://127.0.0.1:11434/api/tags", headers={"User-Agent": "Jarvis"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            out = []
+            for m in data.get("models", []):
+                name = str(m.get("name", "")).strip()
+                if not name:
+                    continue
+                size_bytes = m.get("size", 0)
+                size_gb = f"{size_bytes / (1024**3):.1f} GB" if size_bytes else "Unknown"
+                details = m.get("details", {}) or {}
+                params = details.get("parameter_size", "")
+                quant = details.get("quantization_level", "")
+                caps = m.get("capabilities", []) or []
+                caps_str = ", ".join(c.title() for c in caps if c != "completion") or "General"
+                is_rec = any(r in name.lower() for r in ("qwen3:8b", "qwen3.5:4b"))
+                out.append({
+                    "name": name,
+                    "size": size_gb,
+                    "params": params,
+                    "quant": quant,
+                    "capabilities": caps_str,
+                    "recommended": is_rec,
+                })
+            return out
+    except Exception:
+        return []
+
+
+def configure_local_ollama_model(model_name: str) -> None:
+    """Configure local Ollama provider to run the specified model with appropriate tool budget."""
+    model_name = str(model_name or "").strip()
+    if not model_name:
+        model_name = _detect_ollama_model()
+    ollama_cfg = get_provider_config("openai_compat@ollama")
+    m_low = model_name.lower()
+    is_small = any(s in m_low for s in ("4b", "3b", "2b", "1b"))
+    save_provider_config("openai_compat@ollama", {
+        "base_url": ollama_cfg.get("base_url") or "http://127.0.0.1:11434/v1",
+        "model": model_name,
+        "max_tools": "10" if is_small else "14",
+        "max_tool_chars": "8000" if is_small else "12000",
+        "timeout": 60.0,
+    })
+    ensure_local_pipeline_configured()
+
+
+def ensure_local_pipeline_configured() -> None:
+    """Ensure pipeline slots point to local providers only (Ollama, Whisper, Piper/System).
+    Never points to a hosted third-party provider."""
+    pipe = get_pipeline()
+    updated = False
+    stt = str(pipe.get("stt") or "").strip().lower()
+    if not stt or "eleven" in stt or "cloud" in stt:
+        pipe["stt"] = "whisper"
+        updated = True
+    llm = str(pipe.get("llm") or "").strip().lower()
+    if not llm or not any(x in llm for x in ("ollama", "lmstudio", "llamacpp", "vllm", "jan")):
+        pipe["llm"] = "openai_compat@ollama"
+        updated = True
+    tts = str(pipe.get("tts") or "").strip().lower()
+    if not tts or "eleven" in tts:
+        pipe["tts"] = "piper"
+        updated = True
+
+    # Ensure Ollama has base_url and model configured in creds
+    ollama_cfg = get_provider_config("openai_compat@ollama")
+    model_name = ollama_cfg.get("model") or _detect_ollama_model() or "qwen3:8b"
+    save_provider_config("openai_compat@ollama", {
+        "base_url": ollama_cfg.get("base_url") or "http://127.0.0.1:11434/v1",
+        "model": model_name,
+        "max_tools": ollama_cfg.get("max_tools") or ("10" if "4b" in model_name else "14"),
+        "max_tool_chars": ollama_cfg.get("max_tool_chars") or ("8000" if "4b" in model_name else "12000"),
+        "timeout": ollama_cfg.get("timeout") or 60.0,
+    })
+
+    if updated:
+        save_providers(pipeline=pipe)
 
 
 def get_provider_config(provider_id: str) -> dict:
     """Stored settings for one provider — address, model, key, limits."""
     creds = get_providers().get("creds")
     val = creds.get(provider_id) if isinstance(creds, dict) else None
-    return dict(val) if isinstance(val, dict) else {}
+    cfg = dict(val) if isinstance(val, dict) else {}
+    if "ollama" in str(provider_id).lower():
+        if not cfg.get("base_url"):
+            cfg["base_url"] = "http://127.0.0.1:11434/v1"
+        if not cfg.get("model"):
+            cfg["model"] = _detect_ollama_model()
+        if not cfg.get("timeout"):
+            cfg["timeout"] = 60.0
+    return cfg
 
 
 def get_pipeline() -> dict:
@@ -1554,5 +1699,90 @@ def update_mode_settings(mode_id: str, settings: dict) -> None:
     cfg["modes"] = modes
     save_modes_config(cfg)
 
+
+# ── STT Vocabulary & Recognition Settings ────────────────────────────────────
+DEFAULT_STT_HOTWORDS = [
+    "Jarvis",
+    "VS Code",
+    "GitHub",
+    "Antigravity",
+    "Python",
+    "API",
+    "algorithm",
+    "placement interview",
+    "Mark LVI",
+]
+
+
+def get_stt_hotwords() -> list[str]:
+    """Return user-configured custom vocabulary/hotwords for STT prompt priming."""
+    raw = load_api_keys().get("stt_hotwords")
+    if isinstance(raw, list) and raw:
+        cleaned = [str(w).strip() for w in raw if str(w).strip()]
+        if cleaned:
+            return cleaned
+    return list(DEFAULT_STT_HOTWORDS)
+
+
+def save_stt_hotwords(words: list[str]) -> None:
+    """Persist user-configured STT hotwords."""
+    if not isinstance(words, list):
+        raise ValueError("stt_hotwords must be a list of strings")
+    cleaned = []
+    seen = set()
+    for w in words:
+        item = str(w).strip()
+        if item and item.lower() not in seen:
+            seen.add(item.lower())
+            cleaned.append(item)
+    _save_flag("stt_hotwords", cleaned or list(DEFAULT_STT_HOTWORDS))
+
+
+def add_stt_hotword(word: str) -> bool:
+    """Add a new word/phrase to STT vocabulary. Returns True if added, False if duplicate."""
+    w = str(word or "").strip()
+    if not w:
+        return False
+    current = get_stt_hotwords()
+    if any(c.lower() == w.lower() for c in current):
+        return False
+    current.append(w)
+    save_stt_hotwords(current)
+    return True
+
+
+def remove_stt_hotword(word: str) -> bool:
+    """Remove a word/phrase from STT vocabulary. Returns True if removed."""
+    w = str(word or "").strip().lower()
+    if not w:
+        return False
+    current = get_stt_hotwords()
+    filtered = [c for c in current if c.lower() != w]
+    if len(filtered) != len(current):
+        save_stt_hotwords(filtered)
+        return True
+    return False
+
+
+def get_stt_initial_prompt() -> str:
+    """Format configured STT vocabulary into a short prompt for Whisper priming.
+    Kept concise because overly long prompts degrade Whisper transcription accuracy.
+    """
+    words = get_stt_hotwords()
+    if not words:
+        return ""
+    # Cap to first 25 words to avoid prompt degradation
+    trimmed = words[:25]
+    return ", ".join(trimmed) + "."
+
+
+def is_stt_hybrid_mode() -> bool:
+    """Return whether optional hybrid STT mode (cloud fallback) is enabled."""
+    return bool(load_api_keys().get("stt_hybrid_mode", False))
+
+
+def set_stt_hybrid_mode(enabled: bool) -> None:
+    """Configure optional hybrid STT mode."""
+    _save_flag("stt_hybrid_mode", bool(enabled))
 
 

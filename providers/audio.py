@@ -191,3 +191,107 @@ def to_wav(pcm: bytes, rate: int = MIC_RATE, channels: int = CHANNELS) -> bytes:
 
 def duration_s(pcm: bytes, rate: int = MIC_RATE) -> float:
     return len(pcm) / float(rate * SAMPLE_WIDTH * CHANNELS) if rate else 0.0
+
+
+# ── Whisper-specific Preprocessing & Hallucination Suppression ───────────────
+import re
+
+# Known hallucination patterns produced by Whisper on silence/low audio
+WHISPER_HALLUCINATION_PATTERNS = [
+    r"^(?:thank\s+you(?:\s+very\s+much)?(?:\s+for\s+watching)?|thanks\s+for\s+watching)[\.\!\?]?$",
+    r"^(?:please\s+)?(?:like\s+and\s+)?subscribe[\.\!\?]?$",
+    r"^subtitles?\s+by.*$",
+    r"^transcribed\s+by.*$",
+    r"^(?:amara\.org|ted\.com|aljazeera\.net|cnn|bbc)[\.\!\?]?$",
+    r"^[\.\,\!\?\s\-\–\—\…]+$",
+    r"^(?:\[|\()(?:music|applause|laughter|silence|blank_audio|whispering|coughing|sighs?)(?:\]|\))[\.\!\?]?$",
+]
+
+_HALLUCINATION_REGEXES = [re.compile(p, re.IGNORECASE) for p in WHISPER_HALLUCINATION_PATTERNS]
+
+
+def is_whisper_hallucination(text: str) -> bool:
+    """Return True if text matches known Whisper silence/noise hallucination patterns."""
+    t = (text or "").strip()
+    if not t:
+        return True
+    # Strip surrounding quotes and whitespace
+    t_clean = t.strip("\"' \t\r\n")
+    if not t_clean:
+        return True
+
+    # Check pattern matches
+    for rgx in _HALLUCINATION_REGEXES:
+        if rgx.match(t_clean):
+            return True
+
+    # Repetitive hallucination check (e.g. "you you you you you" or "thank you thank you thank you")
+    words = [w.lower() for w in re.findall(r"\b[\w']+\b", t_clean)]
+    if len(words) >= 4:
+        # Check single repeated word
+        if len(set(words)) == 1:
+            return True
+        # Check 2-word phrase repeated 3+ times
+        if len(words) >= 6 and len(words) % 2 == 0:
+            pairs = [f"{words[i]} {words[i+1]}" for i in range(0, len(words), 2)]
+            if len(set(pairs)) == 1:
+                return True
+
+    return False
+
+
+def preprocess_for_whisper(
+    pcm: bytes,
+    sample_rate: int = MIC_RATE,
+    min_duration_s: float = 0.30,
+    pad_start_ms: int = 150,
+    pad_end_ms: int = 250,
+    normalize: bool = True,
+    remove_dc: bool = True,
+):
+    """Clean, resample to 16 kHz mono float32, pad boundaries, and normalize for Whisper.
+
+    Refuses audio shorter than min_duration_s (returns empty float32 array) to prevent
+    hallucinations on brief transient noises.
+    """
+    import numpy as np
+
+    if not pcm:
+        return np.zeros(0, dtype=np.float32)
+
+    # Duration check before processing
+    dur = duration_s(pcm, sample_rate)
+    if dur < min_duration_s:
+        return np.zeros(0, dtype=np.float32)
+
+    # 1. Resample to 16 kHz if necessary
+    pcm_16k = resample(pcm, sample_rate, 16_000) if sample_rate != 16_000 else pcm
+    arr = to_float32(pcm_16k)
+    if arr.size == 0:
+        return np.zeros(0, dtype=np.float32)
+
+    # 2. DC offset removal (centers waveform around 0 to avoid bias)
+    if remove_dc:
+        arr = arr - np.mean(arr)
+
+    # 3. Gentle peak normalization (boost quiet speech without blowing up silence)
+    if normalize:
+        peak = float(np.max(np.abs(arr)))
+        # Only normalize if there is audible signal (peak > 0.02); do not amplify pure room noise
+        if peak > 0.02:
+            scale = 0.88 / peak
+            # Clamp amplification factor to avoid extreme gain on borderline noise
+            scale = min(scale, 20.0)
+            arr = arr * scale
+
+    # 4. Context padding at start and end
+    # Push-to-talk / VAD clippings often truncate the first consonant or trailing syllable.
+    # 150ms start padding and 250ms end padding give Whisper's 30s spectrogram window full context.
+    start_samples = int(16_000 * (pad_start_ms / 1000.0)) if pad_start_ms > 0 else 0
+    end_samples = int(16_000 * (pad_end_ms / 1000.0)) if pad_end_ms > 0 else 0
+
+    if start_samples > 0 or end_samples > 0:
+        arr = np.pad(arr, (start_samples, end_samples), mode="constant", constant_values=0.0)
+
+    return arr.astype(np.float32)
+

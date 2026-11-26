@@ -147,6 +147,10 @@ class JarvisLive(LiveAudioMixin, LiveMonitorsMixin, LiveVoiceMixin):
         self.ui.on_interrupt = self.interrupt
         self.ui.on_voice_change = self._on_voice_change  # voice picker → rebuild session
         self.ui.on_audio_device_change = self._on_audio_device_change
+        self.ui.on_engine_change = self._on_engine_change
+        self.ui.request_engine_switch = self.request_engine_switch
+        self._pending_fallback_speech = None
+        self._just_switched_engine = False
         if hasattr(self.ui, "show_screen_glow"):
             from core import platform_hooks
 
@@ -401,6 +405,7 @@ class JarvisLive(LiveAudioMixin, LiveMonitorsMixin, LiveVoiceMixin):
                 print(f"[JARVIS] {len(_blocked)} tool(s) withheld — this engine cannot serve them")
 
         _names = {(d.get("name") if isinstance(d, dict) else getattr(d, "name", "")) for d in _all_decls}
+        can_barge = True if self._engine_caps is None else bool(self._engine_caps.get("barge_in", False))
         sys_prompt = _render_prompt(
             sys_prompt,
             {
@@ -410,6 +415,7 @@ class JarvisLive(LiveAudioMixin, LiveMonitorsMixin, LiveVoiceMixin):
                 "limits": _describe_limits(
                     has_vision="screen_process" in _names,
                     has_mic=True,
+                    can_barge_in=can_barge,
                 ),
             },
         )
@@ -417,6 +423,15 @@ class JarvisLive(LiveAudioMixin, LiveMonitorsMixin, LiveVoiceMixin):
         parts = [time_ctx, identity_ctx]
         if mem_str:
             parts.append(mem_str)
+        # Conversation continuity when transitioning to Gemini Live
+        if self._session_log and self._engine_caps is None and getattr(self, "_just_switched_engine", False):
+            self._just_switched_engine = False
+            recent = self._session_log[-10:]
+            hist_lines = ["[RECENT CONVERSATION HISTORY - CONTEXT FROM PREVIOUS TURNS]"]
+            for h in recent:
+                hist_lines.append(h)
+            hist_lines.append("[END RECENT HISTORY - Continue conversation naturally based on this context]\n")
+            parts.append("\n".join(hist_lines))
         parts.append(sys_prompt)
 
         cfg = dict(
@@ -612,12 +627,18 @@ class JarvisLive(LiveAudioMixin, LiveMonitorsMixin, LiveVoiceMixin):
             cfg["log"] = self.ui.write_log
             return registry.build(pid, cfg)
 
-        engine = PipelineEngine(part("llm"), part("stt"), part("tts"), config=config, log=self.ui.write_log)
+        engine = PipelineEngine(part("llm"), part("stt"), part("tts"), config=config, log=self.ui.write_log, player=self.ui)
+        if self._session_log:
+            engine.load_history(self._session_log)
         # Without push-to-talk nothing else knows when a sentence ended, so the
         # engine finds it in the audio. With push-to-talk the key release is the
         # signal and the detector stays out of the way.
         engine.auto_turn = not self._ptt_enabled
         self._engine = engine
+        # Preload and run local model into VRAM before listening begins
+        self.ui.set_state("THINKING")
+        if hasattr(engine, "warmup"):
+            await engine.warmup()
         try:
             yield engine
         finally:
@@ -786,6 +807,11 @@ class JarvisLive(LiveAudioMixin, LiveMonitorsMixin, LiveVoiceMixin):
                     if self._engine is not None:
                         tg.create_task(self._engine.warmup())
 
+                    if self._pending_fallback_speech:
+                        fb_msg = self._pending_fallback_speech
+                        self._pending_fallback_speech = None
+                        tg.create_task(self._announce_fallback(fb_msg))
+
                     # Morning briefing — fires once per process launch (if enabled).
                     # Skipped in wake-word mode: it comes up asleep, and a briefing
                     # would mean talking while "asleep".
@@ -843,14 +869,53 @@ class JarvisLive(LiveAudioMixin, LiveMonitorsMixin, LiveVoiceMixin):
                 # limit always arrives mid-conversation.
                 if _gemini.note_live_failure(live_model, err_str):
                     nxt = _gemini.live_model()
-                    self.ui.write_log(
-                        f"SYS: Switching to {nxt.split('/')[-1]} — the previous model is out of quota."
-                        if nxt != live_model
-                        else "SYS: Every live model is rate-limited — retrying."
-                    )
-                    self._conn_backoff = 0 if nxt != live_model else 15
-                    if nxt == live_model:
+                    if nxt != live_model:
+                        self.ui.write_log(
+                            f"SYS: Switching to {nxt.split('/')[-1]} — the previous model is out of quota."
+                        )
+                        self._conn_backoff = 0
+                        continue
+                    # All Gemini Live models are out of quota!
+                    if self._engine_mode() != "pipeline":
+                        from memory import config_manager
+                        config_manager.ensure_local_pipeline_configured()
+                        config_manager.set_active_engine(config_manager.ENGINE_LOCAL)
+                        self.ui.write_log("SYS: Gemini Live quota exhausted on all models. Automatically falling back to local engine (Ollama/Whisper).")
+                        self._pending_fallback_speech = (
+                            "Gemini Live is currently out of quota or unavailable, so I have switched to the local engine. "
+                            "Say 'switch to Gemini' whenever you would like to return to cloud mode."
+                        )
+                        self._reconnect_keep = True
+                        self._reconnect_reason = "quota fallback to local engine"
+                        self._conn_backoff = 0
+                        continue
+                    else:
+                        self.ui.write_log("SYS: Every live model is rate-limited — retrying.")
+                        self._conn_backoff = 15
                         await asyncio.sleep(self._conn_backoff)
+                        continue
+
+                # Direct quota or access loss check for Gemini Live
+                is_quota_or_access = (
+                    "RESOURCE_EXHAUSTED" in err_str
+                    or "429" in err_str
+                    or "quota exceeded" in err_str.lower()
+                    or "rate limit" in err_str.lower()
+                    or "access_denied" in err_str.lower()
+                    or "permission_denied" in err_str.lower()
+                )
+                if is_quota_or_access and self._engine_mode() != "pipeline":
+                    from memory import config_manager
+                    config_manager.ensure_local_pipeline_configured()
+                    config_manager.set_active_engine(config_manager.ENGINE_LOCAL)
+                    self.ui.write_log(f"SYS: Gemini Live access/quota unavailable ({err_str[:60]}). Falling back to Local engine.")
+                    self._pending_fallback_speech = (
+                        "Gemini Live is currently unavailable due to quota or access limits, so I have switched to the local engine. "
+                        "Say 'switch to Gemini' whenever you would like to return to cloud mode."
+                    )
+                    self._reconnect_keep = True
+                    self._reconnect_reason = "quota fallback to local engine"
+                    self._conn_backoff = 0
                     continue
 
                 # Turn-taking / media / thinking knobs rejected by the server
@@ -926,6 +991,11 @@ class JarvisLive(LiveAudioMixin, LiveMonitorsMixin, LiveVoiceMixin):
             delay = getattr(self, "_conn_backoff", 3)
             print(f"[JARVIS] Reconnecting in {delay}s...")
             await asyncio.sleep(delay)
+
+    async def _announce_fallback(self, msg: str):
+        await asyncio.sleep(1.0)
+        if self.session and not getattr(self, "_closed", False):
+            self.speak(msg)
 
     def shutdown_listeners(self) -> None:
         """Cleanly stop audio streams/monitor, global hotkey, and wake-word background threads."""

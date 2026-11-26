@@ -419,14 +419,27 @@ class OpenAICompatLLM:
         max_tools = _int_or(cfg.get("max_tools"), None)
         max_chars = _int_or(cfg.get("max_tool_chars"), None)
         if _is_own_hardware(self.base) and max_tools is None and max_chars is None:
-            max_tools = int(_LOCAL_BUDGET["max_tools"])
-            max_chars = int(_LOCAL_BUDGET["max_tool_chars"])
+            m_low = (self.model or "").lower()
+            if any(s in m_low for s in ("4b", "3b", "2b", "1b")):
+                max_tools = 10
+                max_chars = 8000
+            else:
+                max_tools = int(_LOCAL_BUDGET["max_tools"])
+                max_chars = int(_LOCAL_BUDGET["max_tool_chars"])
 
         self.caps = dict(DEFAULT_CAPS)
+        tools_enabled = bool(cfg.get("tools", True))
+        tool_format = "openai"
+        # Auto-detect models that do not support OpenAI tools API on Ollama
+        m_low = (self.model or "").lower()
+        if "11434" in self.base or "ollama" in self.base:
+            if any(k in m_low for k in ("gemma", "phi-2", "deepseek-coder", "tinyllama")):
+                tool_format = "prompt"
+
         self.caps.update(
             {
-                "tools": bool(cfg.get("tools", True)),
-                "tool_format": "openai",
+                "tools": tools_enabled,
+                "tool_format": tool_format,
                 "vision": bool(cfg.get("vision", False)),
                 "max_tools": max_tools,
                 "max_tool_chars": max_chars,
@@ -456,7 +469,7 @@ class OpenAICompatLLM:
 
     def _body(self, messages: list[dict], tools: list[dict] | None, stream: bool, temperature: float | None) -> dict:
         body: dict[str, Any] = {"model": self.model, "messages": messages, "stream": stream}
-        if tools and self.caps["tools"]:
+        if tools and self.caps.get("tools") and self.caps.get("tool_format") != "prompt":
             body["tools"] = tools
             body["tool_choice"] = "auto"
         if temperature is not None:
@@ -488,7 +501,18 @@ class OpenAICompatLLM:
                     json=self._body(messages, tools, False, temperature),
                 )
                 if r.status_code >= 400:
-                    raise RuntimeError(f"{r.status_code} {_terse(r.text)}")
+                    text_err = r.text
+                    if "does not support tools" in text_err.lower() and tools:
+                        self.caps["tools"] = False
+                        r = cl.post(
+                            f"{self.base}/chat/completions",
+                            headers=self._headers(),
+                            json=self._body(messages, None, False, temperature),
+                        )
+                        if r.status_code >= 400:
+                            raise RuntimeError(f"{r.status_code} {_terse(r.text)}")
+                    else:
+                        raise RuntimeError(f"{r.status_code} {_terse(text_err)}")
                 data = r.json()
         except Exception as e:
             raise _with_address(e, self.base) from None
@@ -537,6 +561,27 @@ class OpenAICompatLLM:
             async with cl.stream("POST", f"{self.base}/chat/completions", headers=self._headers(), json=body) as r:
                 if r.status_code >= 400:
                     detail = _terse((await r.aread()).decode("utf-8", "replace"))
+                    if "does not support tools" in detail.lower() and body.get("tools"):
+                        self.caps["tools"] = False
+                        body.pop("tools", None)
+                        body.pop("tool_choice", None)
+                        async with cl.stream("POST", f"{self.base}/chat/completions", headers=self._headers(), json=body) as r2:
+                            if r2.status_code >= 400:
+                                detail2 = _terse((await r2.aread()).decode("utf-8", "replace"))
+                                raise RuntimeError(f"{r2.status_code} {detail2}")
+                            async for line in r2.aiter_lines():
+                                if not line or not line.startswith("data:"):
+                                    continue
+                                payload = line[5:].strip()
+                                if payload == "[DONE]":
+                                    break
+                                try:
+                                    delta = (json.loads(payload).get("choices") or [{}])[0].get("delta") or {}
+                                except Exception:
+                                    continue
+                                if delta.get("content"):
+                                    yield {"text": delta["content"]}
+                        return
                     raise RuntimeError(f"{r.status_code} {detail}")
                 async for line in r.aiter_lines():
                     if not line or not line.startswith("data:"):
@@ -672,6 +717,32 @@ class OpenAICompatLLM:
             seen = self.ensure_vision_known()
             note = "  |  can see images" if seen else "  |  text only"
         return True, f"Answered in {took:.2f}s{note}"
+
+    def preload(self, timeout: float = 60.0) -> tuple[bool, str]:
+        """Preload the model into memory/VRAM on local servers (e.g. Ollama) before listening starts."""
+        if not self.base or not self.model:
+            return False, "No address or model specified."
+        # If it's Ollama (11434 or 'ollama' in base):
+        if "11434" in self.base or "ollama" in self.base:
+            root = self.base.replace("/v1", "").rstrip("/")
+            try:
+                with self._httpx.Client(timeout=timeout, trust_env=self._trust_env) as cl:
+                    resp = cl.post(f"{root}/api/generate", json={"model": self.model, "keep_alive": "60m"})
+                    if resp.status_code == 200:
+                        return True, f"Loaded {self.model} into VRAM via Ollama"
+            except Exception:
+                pass
+        # Fallback probe for any OpenAI-compatible server
+        try:
+            self.complete([{"role": "user", "content": "Reply with ok"}], timeout=timeout)
+            return True, f"Warmed up {self.model}"
+        except Exception as e:
+            return False, f"Model preload failed: {e}"
+
+    async def preload_async(self, timeout: float = 60.0) -> tuple[bool, str]:
+        """Async version of preload."""
+        import asyncio
+        return await asyncio.to_thread(self.preload, timeout)
 
 
 def _with_address(exc: Exception, base: str) -> Exception:

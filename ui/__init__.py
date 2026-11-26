@@ -13,5 +13,6 @@ for _k, _v in gui.__dict__.items():
 
 from ui.event_bus import UIEventBus, get_ui_event_bus
 from gui import __all__ as _gui_all
+from gui.providers_panel import _ScrollSafeCombo
 
-__all__ = list(_gui_all) + ["UIEventBus", "get_ui_event_bus"]
+__all__ = list(_gui_all) + ["UIEventBus", "get_ui_event_bus", "_ScrollSafeCombo"]

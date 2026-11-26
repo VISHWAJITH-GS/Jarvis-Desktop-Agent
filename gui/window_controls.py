@@ -681,22 +681,124 @@ class WindowControlsMixin:
     # ── Engine & providers ───────────────────────────────────────────────────
 
     def _open_providers(self):
-        """Display engine info: Google Gemini API is the sole reasoning engine."""
-        self._log.append_log(
-            "SYS: Google Gemini API is the sole AI reasoning engine across JARVIS. "
-            "Local and third-party LLM pipelines are disabled by architecture."
-        )
+        """Open the Engine & Providers drawer to configure Gemini Live or Local engine."""
+        ov = ProvidersOverlay(parent=self.centralWidget())
+        ov.changed.connect(self._on_providers_applied)
+        self._centre_overlay(ov)
+        self._providers_overlay = ov
 
     def _on_providers_applied(self):
-        """Rebuild the session so the new engine takes over.
-
-        Reuses the audio-device callback rather than adding a second one: both
-        mean 'the conversation has to be rebuilt', main.py already keeps the
-        transcript across such a rebuild through session resumption, and one
-        path that is known to work is better than two that look alike."""
-        self._log.append_log("SYS: Engine settings saved — reconnecting.")
-        if self.on_audio_device_change:
+        """Rebuild the session so the new engine takes over."""
+        from memory import config_manager
+        eng = config_manager.get_active_engine().replace('_', ' ').title()
+        dest = config_manager.get_audio_destination_label()
+        self._log.append_log(f"SYS: Engine settings applied ({eng}). Audio: {dest} — reconnecting...")
+        self._refresh_brain_btn()
+        if hasattr(self, "on_engine_change") and self.on_engine_change:
+            self.on_engine_change()
+        elif hasattr(self, "request_engine_switch") and self.request_engine_switch:
+            self.request_engine_switch(config_manager.get_active_engine())
+        elif self.on_audio_device_change:
             self.on_audio_device_change()
+
+    def _refresh_brain_btn(self):
+        """Update brain switcher button text and glowing style based on active engine."""
+        from memory import config_manager
+        eng = config_manager.get_active_engine()
+        is_local = (eng == config_manager.ENGINE_LOCAL)
+        if is_local:
+            label = "🧠  BRAIN: 🖥 LOCAL (OLLAMA)"
+            style = f"""
+                QPushButton {{
+                    background: #1a1200; color: #f4b942;
+                    border: 1px solid #f4b942; border-radius: 3px;
+                    text-align: left; padding: 0 8px;
+                }}
+                QPushButton:hover {{ background: #2a1c00; border-color: #ffd166; }}
+            """
+        else:
+            label = "🧠  BRAIN: ☁ GEMINI LIVE"
+            style = getattr(self, "_BTN_PRI", "") or f"""
+                QPushButton {{
+                    background: #00091a; color: {C.PRI};
+                    border: 1px solid {C.PRI_DIM}; border-radius: 3px;
+                    text-align: left; padding: 0 8px;
+                }}
+                QPushButton:hover {{ background: {C.PRI_GHO}; border-color: {C.PRI}; }}
+            """
+        for btn in (getattr(self, "_brain_btn", None), getattr(self, "_controls_brain_btn", None)):
+            if btn is not None:
+                btn.setText(label)
+                btn.setStyleSheet(style)
+
+        s_btn = getattr(self, "_settings_brain_btn", None)
+        if s_btn is not None:
+            if is_local:
+                s_btn.setText(" BRAIN: 🖥 LOCAL OLLAMA (CLICK TO SWITCH TO GEMINI)")
+                s_btn.setIcon(get_uicon("cpu", color="#f4b942", size=15))
+                s_btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background: #1a1200; color: #f4b942;
+                        border: 1px solid #f4b942; border-radius: 4px; padding: 8px 12px;
+                        text-align: left;
+                    }}
+                    QPushButton:hover {{
+                        background: #2a1c00; border: 1px solid #ffd166; color: #ffffff;
+                    }}
+                """)
+            else:
+                s_btn.setText(" BRAIN: ☁ GEMINI LIVE (CLICK TO SWITCH TO LOCAL)")
+                s_btn.setIcon(get_uicon("cpu", color=C.PRI, size=15))
+                s_btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background: {C.PANEL2}; color: {C.TEXT};
+                        border: 1px solid {C.BORDER_B}; border-radius: 4px; padding: 8px 12px;
+                        text-align: left;
+                    }}
+                    QPushButton:hover {{
+                        background: rgba(255, 23, 68, 0.25);
+                        border: 1px solid {C.PRI}; color: #ffffff;
+                    }}
+                """)
+
+    def _toggle_brain_engine(self):
+        """Switch between Gemini Live and Local Brain (Ollama), asking for model choice."""
+        from memory import config_manager
+        cur = config_manager.get_active_engine()
+        self._open_local_model_picker(can_switch_to_gemini=(cur == config_manager.ENGINE_LOCAL))
+
+    def _open_local_model_picker(self, can_switch_to_gemini: bool = False):
+        """Display the Local Brain Model Picker dialog."""
+        from gui.overlays import LocalModelPickerOverlay
+        ov = LocalModelPickerOverlay(can_switch_to_gemini=can_switch_to_gemini, parent=self.centralWidget())
+        ov.model_selected.connect(self._on_local_model_chosen)
+        ov.switch_to_gemini.connect(self._on_switch_to_gemini)
+        self._centre_overlay(ov)
+        self._local_model_picker_overlay = ov
+
+    def _on_local_model_chosen(self, model_name: str):
+        """Apply chosen local model, ensure pipeline configured, and trigger engine switch."""
+        from memory import config_manager
+        config_manager.configure_local_ollama_model(model_name)
+        config_manager.set_active_engine(config_manager.ENGINE_LOCAL)
+        dest = config_manager.get_audio_destination_label()
+        self._log.append_log(f"SYS: Switched brain to Local ({model_name}). Audio: {dest} — preloading model into VRAM...")
+        self._refresh_brain_btn()
+        if hasattr(self, "request_engine_switch") and self.request_engine_switch:
+            self.request_engine_switch(config_manager.ENGINE_LOCAL)
+        elif hasattr(self, "on_engine_change") and self.on_engine_change:
+            self.on_engine_change()
+
+    def _on_switch_to_gemini(self):
+        """Switch from local brain back to Gemini Live."""
+        from memory import config_manager
+        config_manager.set_active_engine(config_manager.ENGINE_GEMINI_LIVE)
+        self._log.append_log("SYS: Switched brain to Gemini Live. Audio: Google WebSocket — reconnecting...")
+        self._refresh_brain_btn()
+        if hasattr(self, "request_engine_switch") and self.request_engine_switch:
+            self.request_engine_switch(config_manager.ENGINE_GEMINI_LIVE)
+        elif hasattr(self, "on_engine_change") and self.on_engine_change:
+            self.on_engine_change()
 
     # ── Memory panel ─────────────────────────────────────────────────────────
 

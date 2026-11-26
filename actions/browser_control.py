@@ -62,28 +62,146 @@ def browser_control(parameters: Optional[Dict[str, Any]] = None, **kwargs: Any) 
         # ── Guard: Messaging & Web Composer Confirmation Bypass Prevention ─────
         active_url = (_get_active_url() or "").lower()
         is_authorized = bool(params.get("_execution_authorized") or params.get("confirmed"))
-        if not is_authorized:
-            if "web.whatsapp.com" in active_url:
-                if action in ("type", "input", "smart_type", "fill_form"):
-                    return outcome.failed(
-                        "browser_control",
-                        "Direct typing into WhatsApp Web is blocked by the confirmation gate. "
-                        "Use the 'whatsapp_send' tool so message delivery requires user confirmation.",
-                    )
-                if action in ("press", "press_key") and str(params.get("key", "")).lower() == "enter":
-                    return outcome.failed(
-                        "browser_control",
-                        "Pressing Enter on WhatsApp Web is blocked by the confirmation gate to prevent unauthorized message sending. "
-                        "Use 'whatsapp_send' instead.",
-                    )
-                if action in ("click", "smart_click", "hint_click"):
-                    target_text = str(params.get("text", "") or params.get("description", "")).lower()
-                    if any(w in target_text for w in ("send", "enviar", "bhejo")):
-                        return outcome.failed(
-                            "browser_control",
-                            "Clicking send on WhatsApp Web is blocked by the confirmation gate. Use 'whatsapp_send' instead.",
-                        )
 
+        # ── Previous confirmation gate flow summary (Task 1):
+        # Previously, any call to 'type' on web.whatsapp.com was blocked upfront with
+        # "Direct typing into WhatsApp Web is blocked by the confirmation gate...".
+        # This prevented searching for contacts, typing in composer, or driving the workflow step-by-step.
+        # Meanwhile, whatsapp_automation returned [CONFIRMATION_PENDING] before opening WhatsApp Web,
+        # and unverified sends were sometimes claimed as delivered without DOM verification.
+        #
+        # ── New send-time confirmation gate flow (Tasks 2 & 3):
+        # Allow typing in contact search box, clicking chat rows, typing in composer (press_enter=False),
+        # Shift+Enter, and scrolling freely on WhatsApp Web. Gate ONLY actions that actually submit
+        # a message: clicking the Send button, pressing Enter in composer, or type with press_enter=True.
+        from actions.whatsapp_gate import (
+            is_whatsapp_send_action,
+            get_active_chat_contact,
+            get_active_composer_text,
+            format_confirmation_prompt,
+            verify_whatsapp_send_async,
+        )
+
+        is_wa_send = is_whatsapp_send_action(action, params, page_state=session_mgr.active_page)
+        if is_wa_send and not is_authorized:
+            from core import confirm
+
+            open_contact = get_active_chat_contact(session_mgr.active_page)
+            composer_text = get_active_composer_text(session_mgr.active_page) or str(params.get("text", "")).strip()
+            intended_contact = str(
+                params.get("contact") or params.get("recipient") or params.get("receiver") or ""
+            ).strip()
+
+            prompt_msg = format_confirmation_prompt(
+                open_contact, composer_text, intended_contact=intended_contact
+            )
+
+            # Record pre-action outgoing bubble IDs
+            pre_ids = set()
+            try:
+                page = session_mgr.active_page
+                if page and not page.is_closed():
+                    from plugins._whatsapp_selectors import SELECTORS
+                    pre_bubbles = session_mgr.run_coroutine(page.query_selector_all(SELECTORS.message_outgoing)) or []
+                    for b in pre_bubbles:
+                        bid = session_mgr.run_coroutine(b.get_attribute("data-id"))
+                        if bid:
+                            pre_ids.add(bid)
+            except Exception:
+                pass
+
+            def _do_confirmed_send() -> outcome.ActionResult:
+                # 1. Execute the gated send action
+                exec_params = {**params, "_execution_authorized": True, "confirmed": True}
+                page = session_mgr.active_page
+                if action in ("click", "smart_click", "hint_click"):
+                    idx = params.get("index")
+                    if idx is not None:
+                        session_mgr.run_coroutine(executor.click_element(int(idx)))
+                    else:
+                        # Find send button by text or selector
+                        lookup = distiller.get_current_lookup_map()
+                        if not lookup:
+                            session_mgr.run_coroutine(executor.observe_page())
+                            lookup = distiller.get_current_lookup_map()
+                        from actions.whatsapp_gate import is_send_button_element
+                        send_idx = None
+                        for s_idx, elem in lookup.items():
+                            if is_send_button_element(elem):
+                                send_idx = s_idx
+                                break
+                        if send_idx is not None:
+                            session_mgr.run_coroutine(executor.click_element(send_idx))
+                        elif page and hasattr(page, "keyboard"):
+                            session_mgr.run_coroutine(page.keyboard.press("Enter"))
+                elif action in ("press", "press_key"):
+                    session_mgr.run_coroutine(executor.press_key(str(params.get("key", "Enter"))))
+                elif action in ("type", "input", "smart_type", "fill_form"):
+                    idx = params.get("index")
+                    txt = str(params.get("text", ""))
+                    if idx is not None:
+                        session_mgr.run_coroutine(executor.input_text(int(idx), txt, press_enter=True))
+                    elif page and hasattr(page, "keyboard"):
+                        session_mgr.run_coroutine(page.keyboard.press("Enter"))
+
+                # 2. Honest Delivery Verification (Task 6)
+                if page and not page.is_closed():
+                    ok, v_msg, v_data = session_mgr.run_coroutine(
+                        verify_whatsapp_send_async(page, composer_text, pre_ids=pre_ids, timeout=8.0)
+                    )
+                    if ok:
+                        return outcome.result_done(
+                            "browser_control",
+                            f"I have sent the message to {open_contact or 'recipient'}: '{composer_text}'",
+                            verified=True,
+                            data={"contact": open_contact, "text": composer_text, "verified": True, **v_data},
+                        )
+                    elif v_data.get("verdict") == "unverifiable":
+                        return outcome.result_unverified(
+                            "browser_control",
+                            message=v_msg,
+                            data={"contact": open_contact, "text": composer_text, "verified": False, **v_data},
+                        )
+                    else:
+                        return outcome.result_failed(
+                            "browser_control",
+                            v_msg,
+                            data={"contact": open_contact, "text": composer_text, "verified": False, **v_data},
+                        )
+                return outcome.result_unverified(
+                    "browser_control",
+                    "Send action dispatched, but browser page is unavailable for verification.",
+                    data={"contact": open_contact, "text": composer_text, "verified": False},
+                )
+
+            pending = confirm.save_pending(
+                tool="browser_control",
+                params={
+                    **params,
+                    "contact": open_contact or intended_contact,
+                    "text": composer_text,
+                    "_execution_authorized": True,
+                    "confirmed": True,
+                },
+                run=_do_confirmed_send,
+                expires_in=60.0,
+                title=f"Send WhatsApp message to {open_contact or 'recipient'}",
+                detail=f"Message: '{composer_text}'",
+            )
+
+            return outcome.result_needs_confirmation(
+                "browser_control",
+                message=prompt_msg,
+                data={
+                    "id": pending.id,
+                    "tool": "browser_control",
+                    "contact": open_contact,
+                    "intended_contact": intended_contact,
+                    "text": composer_text,
+                },
+            )
+
+        if not is_authorized:
             # Guard against typing or submitting into AI chat / web composers (e.g. ChatGPT, Claude, Gemini, Telegram)
             ai_chat_domains = ("chatgpt.com", "chat.openai.com", "claude.ai", "gemini.google.com", "web.telegram.org")
             if any(dom in active_url for dom in ai_chat_domains):
@@ -148,6 +266,14 @@ def browser_control(parameters: Optional[Dict[str, Any]] = None, **kwargs: Any) 
             if "index" in params and params["index"] is not None:
                 idx = int(params["index"])
                 msg = session_mgr.run_coroutine(executor.click_element(idx))
+                if is_wa_send and session_mgr.active_page:
+                    comp_text = str(params.get("text", "")).strip() or get_active_composer_text(session_mgr.active_page) or ""
+                    ok, v_msg, v_data = session_mgr.run_coroutine(
+                        verify_whatsapp_send_async(session_mgr.active_page, comp_text, timeout=6.0)
+                    )
+                    if ok:
+                        return outcome.done("browser_control", message=f"{msg} {v_msg}", action="click", index=idx, verified=True, **v_data)
+                    return outcome.unverified("browser_control", message=f"{msg} {v_msg}", action="click", index=idx, verified=False, **v_data)
                 return outcome.done("browser_control", message=msg, action="click", index=idx)
 
             # If text / description provided, resolve from distilled elements:
@@ -177,6 +303,14 @@ def browser_control(parameters: Optional[Dict[str, Any]] = None, **kwargs: Any) 
 
             if matched_idx is not None:
                 msg = session_mgr.run_coroutine(executor.click_element(matched_idx))
+                if is_wa_send and session_mgr.active_page:
+                    comp_text = str(params.get("text", "")).strip() or get_active_composer_text(session_mgr.active_page) or ""
+                    ok, v_msg, v_data = session_mgr.run_coroutine(
+                        verify_whatsapp_send_async(session_mgr.active_page, comp_text, timeout=6.0)
+                    )
+                    if ok:
+                        return outcome.done("browser_control", message=f"{msg} {v_msg}", action="click", index=matched_idx, verified=True, **v_data)
+                    return outcome.unverified("browser_control", message=f"{msg} {v_msg}", action="click", index=matched_idx, verified=False, **v_data)
                 return outcome.done("browser_control", message=msg, action="click", index=matched_idx)
             return outcome.failed(
                 "browser_control",
@@ -191,6 +325,13 @@ def browser_control(parameters: Optional[Dict[str, Any]] = None, **kwargs: Any) 
             if "index" in params and params["index"] is not None:
                 idx = int(params["index"])
                 msg = session_mgr.run_coroutine(executor.input_text(idx, text, press_enter=press_enter))
+                if is_wa_send and press_enter and session_mgr.active_page:
+                    ok, v_msg, v_data = session_mgr.run_coroutine(
+                        verify_whatsapp_send_async(session_mgr.active_page, text, timeout=6.0)
+                    )
+                    if ok:
+                        return outcome.done("browser_control", message=f"{msg} {v_msg}", action="type", index=idx, verified=True, **v_data)
+                    return outcome.unverified("browser_control", message=f"{msg} {v_msg}", action="type", index=idx, verified=False, **v_data)
                 return outcome.done("browser_control", message=msg, action="type", index=idx)
 
             # Match target field by text/selector/placeholder
@@ -214,6 +355,13 @@ def browser_control(parameters: Optional[Dict[str, Any]] = None, **kwargs: Any) 
 
             if matched_idx is not None:
                 msg = session_mgr.run_coroutine(executor.input_text(matched_idx, text, press_enter=press_enter))
+                if is_wa_send and press_enter and session_mgr.active_page:
+                    ok, v_msg, v_data = session_mgr.run_coroutine(
+                        verify_whatsapp_send_async(session_mgr.active_page, text, timeout=6.0)
+                    )
+                    if ok:
+                        return outcome.done("browser_control", message=f"{msg} {v_msg}", action="type", index=matched_idx, verified=True, **v_data)
+                    return outcome.unverified("browser_control", message=f"{msg} {v_msg}", action="type", index=matched_idx, verified=False, **v_data)
                 return outcome.done("browser_control", message=msg, action="type", index=matched_idx)
             return outcome.failed(
                 "browser_control",
@@ -234,6 +382,14 @@ def browser_control(parameters: Optional[Dict[str, Any]] = None, **kwargs: Any) 
         elif action in ("press", "press_key"):
             key = str(params.get("key", "Enter"))
             msg = session_mgr.run_coroutine(executor.press_key(key))
+            if is_wa_send and session_mgr.active_page:
+                comp_text = str(params.get("text", "")).strip() or get_active_composer_text(session_mgr.active_page) or ""
+                ok, v_msg, v_data = session_mgr.run_coroutine(
+                    verify_whatsapp_send_async(session_mgr.active_page, comp_text, timeout=6.0)
+                )
+                if ok:
+                    return outcome.done("browser_control", message=f"{msg} {v_msg}", action="press", key=key, verified=True, **v_data)
+                return outcome.unverified("browser_control", message=f"{msg} {v_msg}", action="press", key=key, verified=False, **v_data)
             return outcome.done("browser_control", message=msg, action="press", key=key)
 
         # ── Tab Management ────────────────────────────────────────────────────

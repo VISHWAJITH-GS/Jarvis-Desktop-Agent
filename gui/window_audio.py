@@ -265,6 +265,8 @@ class WindowAudioMixin:
                 self._drawer_tabs.setCurrentIndex(idx)
                 if idx == 2:
                     self._refresh_audio_tab()
+                elif idx == 3:
+                    self._refresh_brain_btn()
                 elif idx == 4:
                     self._refresh_tasks_tab()
 
@@ -566,6 +568,7 @@ class WindowAudioMixin:
         self._lbl_audio_rates = _st_lbl("RATES: IN 16000 Hz · OUT 24000 Hz")
         self._lbl_audio_state = _st_lbl("STATUS: Initializing · Switch: Idle")
         self._lbl_audio_routing = _st_lbl("ROUTING: Automatic Hybrid · A2DP Stereo: Restored")
+        self._lbl_audio_dest = _st_lbl("AUDIO DESTINATION: Initializing...")
         lay.addWidget(self._audio_status_card)
 
         lay.addWidget(_hdr("AUDIO ROUTING ARCHITECTURE"))
@@ -786,6 +789,15 @@ class WindowAudioMixin:
             self._lbl_audio_routing.setStyleSheet(
                 f"color: {C.GREEN if a2dp else '#38BDF8'}; border: none; background: transparent;"
             )
+        if hasattr(self, "_lbl_audio_dest") and self._lbl_audio_dest:
+            try:
+                from memory import config_manager
+                eng = config_manager.get_active_engine().replace('_', ' ').title()
+                dest = config_manager.get_audio_destination_label()
+                self._lbl_audio_dest.setText(f"AUDIO: {eng} · {dest}")
+                self._lbl_audio_dest.setStyleSheet(f"color: {C.PRI if eng.lower().startswith('gemini') else '#38BDF8'}; border: none; background: transparent;")
+            except Exception:
+                pass
 
     def _on_routing_tab_changed(self, idx: int):
         if not hasattr(self, "_combo_routing"):
@@ -880,6 +892,15 @@ class WindowAudioMixin:
             return b
 
         lay.addWidget(_hdr("NEURAL INTELLIGENCE CONFIGURATION"))
+        self._settings_brain_btn = _action_btn(
+            "BRAIN: ☁ GEMINI LIVE (CLICK TO SWITCH TO LOCAL)",
+            self._toggle_brain_engine,
+            "cpu",
+        )
+        lay.addWidget(self._settings_brain_btn)
+        lay.addWidget(
+            _action_btn("CONFIGURE ENGINE & PROVIDERS (LOCAL / GEMINI)", self._open_providers, "settings")
+        )
         lay.addWidget(_action_btn("OPEN REMINDERS MATRIX", lambda: self._show_reminders("upcoming"), "calendar"))
         lay.addWidget(
             _action_btn("OPEN MEMORY & ACTIONS PLATFORM", lambda: self._show_memory_actions("memory"), "database")
