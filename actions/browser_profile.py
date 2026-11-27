@@ -36,9 +36,9 @@ def detect_profile_chooser(browser: str = "") -> Optional[Any]:
 
         # Check foreground / active window first
         active = windows_uia.get_active_window()
-        if active.get("status") == "success":
-            title = active.get("title", "").lower()
-            proc = active.get("process_name", "").lower()
+        if isinstance(active, dict) and active.get("status") == "success":
+            title = (active.get("title") or "").lower()
+            proc = (active.get("process_name") or "").lower()
             if any(term in title for term in ("who's using", "profile", "profiles")):
                 return active.get("wrapper")
             if b_filter and b_filter in proc:
