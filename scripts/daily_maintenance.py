@@ -197,15 +197,21 @@ class VerificationNotes(BaseModel):
 class MaintenancePlan(BaseModel):
     audit_summary: AuditSummary
     changes: list[CodeChange] = Field(
-        description="List of 1 to 3 surgical code changes addressing today's maintenance focus."
+        default_factory=list,
+        description="List of 1 to 3 surgical code changes addressing today's maintenance focus.",
     )
     pr_title: str = Field(
-        description="Conventional commit pull request title (e.g. 'fix(cdp): add timeout and fallback locator to browser actions')."
+        default="chore(maintenance): daily code hardening and improvements",
+        description="Conventional commit pull request title (e.g. 'fix(cdp): add timeout and fallback locator to browser actions').",
     )
     pr_body: str = Field(
-        description="Complete markdown description for the Pull Request."
+        default="",
+        description="Complete markdown description for the Pull Request.",
     )
-    verification_notes: VerificationNotes
+    verification_notes: VerificationNotes = Field(
+        default_factory=lambda: VerificationNotes(automated_checks=[], human_review_checklist=[]),
+        description="Verification notes and human review checklist items.",
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -430,12 +436,35 @@ def call_gemini_for_maintenance(
     timeout_ms: int = 120_000,
 ) -> MaintenancePlan:
     """Request structured MaintenancePlan using Gemini SDK or core.gemini ladder."""
+    json_schema_example = """{
+  "audit_summary": {
+    "focus_area": "Async & Live API Resilience",
+    "target_files": ["actions/browser_control.py"],
+    "why_this_matters": "1-2 sentences on concrete reliability gained or bug prevented."
+  },
+  "changes": [
+    {
+      "file_path": "actions/browser_control.py",
+      "original_snippet": "exact snippet from file to replace",
+      "replacement_snippet": "new code to replace original snippet with",
+      "explanation": "concise rationale"
+    }
+  ],
+  "pr_title": "fix(browser): add timeout to cdp action execution",
+  "pr_body": "Detailed PR explanation...",
+  "verification_notes": {
+    "automated_checks": ["python -m py_compile actions/browser_control.py"],
+    "human_review_checklist": ["Verify CDP socket connects cleanly."]
+  }
+}"""
+
     prompt = (
         f"{user_context}\n\n"
         "INSTRUCTIONS:\n"
         "Identify 1 to 3 targeted, high-value, low-risk improvements following the priorities.\n"
         "Provide exact `original_snippet` strings from the files so our automated script can "
-        "apply surgical replacements cleanly. Return valid JSON matching the MaintenancePlan schema."
+        "apply surgical replacements cleanly.\n\n"
+        f"You MUST return valid JSON adhering strictly to this structure:\n{json_schema_example}\n"
     )
 
     # 1. Try google-genai SDK direct structured object generation
@@ -446,38 +475,65 @@ def call_gemini_for_maintenance(
         except Exception:
             client = None
 
-    if client is not None:
-        try:
-            from google.genai import types as gtypes
+    if client is None:
+        env_key = os.environ.get("GEMINI_API_KEY", "").strip()
+        if env_key:
+            try:
+                from google import genai
+                from google.genai import types as gtypes
+                client = genai.Client(
+                    api_key=env_key,
+                    http_options=gtypes.HttpOptions(timeout=max(10_000, int(timeout_ms))),
+                )
+            except Exception:
+                client = None
 
-            # Select model: gemini-2.5-pro or smart tier fallback
-            target_model = "gemini-2.5-pro"
-            config = gtypes.GenerateContentConfig(
-                system_instruction=system_prompt,
-                response_mime_type="application/json",
-                response_schema=MaintenancePlan,
-                temperature=0.2,
-            )
-            response = client.models.generate_content(
-                model=target_model,
-                contents=prompt,
-                config=config,
-            )
-            if response and response.text:
-                data = json.loads(response.text)
-                return MaintenancePlan.model_validate(data)
-        except Exception as exc:
-            print(f"[Daily Maintenance] Direct SDK call failed ({exc}), trying core.gemini fallback ladder...")
+    if client is not None:
+        from google.genai import types as gtypes
+        sdk_models = ("gemini-2.5-flash", "gemini-3.1-pro-preview", "gemini-flash-latest")
+        for target_model in sdk_models:
+            try:
+                config = gtypes.GenerateContentConfig(
+                    system_instruction=system_prompt,
+                    response_mime_type="application/json",
+                    response_schema=MaintenancePlan,
+                    temperature=0.2,
+                )
+                response = client.models.generate_content(
+                    model=target_model,
+                    contents=prompt,
+                    config=config,
+                )
+                if response and response.text:
+                    data = json.loads(response.text)
+                    return MaintenancePlan.model_validate(data)
+            except Exception as exc:
+                print(f"[Daily Maintenance] Direct SDK call with model '{target_model}' failed ({exc})")
+
+        print("[Daily Maintenance] Falling back to core.gemini ladder...")
 
     # 2. Fallback to core.gemini ladder (as_json)
     if gemini is not None:
-        combined_prompt = f"{system_prompt}\n\n{prompt}\n\nOutput strictly JSON conforming to the schema."
-        data = gemini.as_json(combined_prompt, tier=model_tier, timeout_ms=timeout_ms)
+        combined_prompt = (
+            f"{system_prompt}\n\n{prompt}\n\n"
+            "Return strictly the JSON object matching the schema. No markdown fences, no extra text."
+        )
+        data = gemini.as_json(
+            combined_prompt,
+            tier=model_tier,
+            timeout_ms=timeout_ms,
+            config={"response_mime_type": "application/json", "response_schema": MaintenancePlan},
+        )
         if isinstance(data, dict):
             try:
                 return MaintenancePlan.model_validate(data)
             except Exception as val_err:
                 print(f"[Daily Maintenance] Schema validation error on returned JSON: {val_err}")
+
+    raise RuntimeError(
+        "Failed to generate structured maintenance plan from Gemini. "
+        "Check your GEMINI_API_KEY and network connection."
+    )
 
     raise RuntimeError(
         "Failed to generate structured maintenance plan from Gemini. "

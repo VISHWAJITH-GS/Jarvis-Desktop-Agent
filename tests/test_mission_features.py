@@ -17,11 +17,20 @@ from __future__ import annotations
 
 import json
 import shutil
+import sys
 import tempfile
 import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+# Ensure clean mock on non-Windows platforms without win32gui
+if "win32gui" not in sys.modules:
+    try:
+        import win32gui  # noqa: F401
+    except ImportError:
+        mock_win32gui = MagicMock()
+        sys.modules["win32gui"] = mock_win32gui
 
 from core import outcome
 from actions import (
