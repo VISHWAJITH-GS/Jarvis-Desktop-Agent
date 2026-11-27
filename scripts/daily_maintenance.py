@@ -839,7 +839,7 @@ def create_github_pr(repo_root: Path, plan: MaintenancePlan, branch: str) -> boo
         subprocess.run(["git", "push", "-u", "origin", branch], cwd=str(repo_root), check=True)
         # Create PR
         pr_res = subprocess.run(
-            ["gh", "pr", "create", "--title", plan.pr_title, "--body", plan.pr_body],
+            ["gh", "pr", "create", "--base", "main", "--head", branch, "--title", plan.pr_title, "--body", plan.pr_body],
             cwd=str(repo_root),
             capture_output=True,
             text=True,
