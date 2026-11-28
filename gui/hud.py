@@ -949,7 +949,7 @@ class HudCanvas(QWidget):
         y = cy + 150
         now = time.time()
         live = [(text, born) for text, born in self.cards if now - born <= 7]
-        p.setFont(keena_font(7.5, True, 0.8))
+        p.setFont(keena_font(8, True, 0.8))
         fm = p.fontMetrics()
         max_w = max(140.0, w_d - 24)
         for text, born in live:
