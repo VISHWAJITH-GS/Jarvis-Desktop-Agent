@@ -277,8 +277,8 @@ def verify_written_file(path: Path, expected_messages: List[Dict[str, str]], min
         )
 
     if expected_messages:
-        first_sample = expected_messages[0]["text"][:25].strip()
-        last_sample = expected_messages[-1]["text"][:25].strip()
+        first_sample = (expected_messages[0].get("text") or "")[:25].strip()
+        last_sample = (expected_messages[-1].get("text") or "")[:25].strip()
         if first_sample and first_sample not in file_text:
             return False, f"Verification failed: initial message content missing from file."
         if last_sample and last_sample not in file_text:
