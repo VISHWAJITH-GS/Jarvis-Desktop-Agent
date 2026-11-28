@@ -126,7 +126,7 @@ def _resolve_windows_known_app(app_name: str) -> tuple[list[str] | None, list[st
             if os.path.exists(path):
                 profile_dir = config_manager.get_default_browser_profile_dir("edge")
                 os.makedirs(profile_dir, exist_ok=True)
-                port = get_default_cdp_port("edge")
+                port = 9222
                 cmd = build_browser_launch_command(path, profile_dir, port, engine="edge")
                 return [path], cmd[1:]
 

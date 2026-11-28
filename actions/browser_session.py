@@ -318,7 +318,7 @@ class BrowserSessionState:
     active_title: str
     active_url: str
     tab_count: int
-    browser_type: str = "chrome_cdp"
+    browser_type: str = "edge_cdp"
     profile_dir: str = "live_jarvis_profile"
     console_errors_count: int = 0
     network_errors_count: int = 0
@@ -418,6 +418,56 @@ class BrowserSessionManager:
         future = asyncio.run_coroutine_threadsafe(coro, self._loop)
         return future.result(timeout=timeout)
 
+    def launch_browser(self, browser_type: str = "chrome", headless: bool = False, isolated: bool = True) -> bool:
+        """Compatibility helper launching browser session."""
+        if hasattr(self, "_try_auto_launch"):
+            return bool(self._try_auto_launch(headless=headless))
+        return False
+
+    def navigate(self, url: str, timeout: float = 30.0):
+        """Compatibility navigation helper returning ActionResult."""
+        from core import outcome
+        try:
+            ok, err_msg = self.check_connection(timeout=2.0)
+            if not ok:
+                return outcome.ActionResult(
+                    status=outcome.STATUS_FAILED,
+                    action="browser_session",
+                    success=False,
+                    verified=False,
+                    message=f"Navigation failed: {err_msg}",
+                    error=err_msg,
+                )
+            page = self.active_page
+            if not page or page.is_closed():
+                return outcome.ActionResult(
+                    status=outcome.STATUS_FAILED,
+                    action="browser_session",
+                    success=False,
+                    verified=False,
+                    message="Navigation failed: No active page context",
+                    error="No active page context",
+                )
+            async def _do_goto():
+                await page.goto(url, timeout=timeout * 1000.0)
+            self.run_coroutine(_do_goto(), timeout=timeout + 2.0)
+            return outcome.ActionResult(
+                status=outcome.STATUS_DONE,
+                action="browser_session",
+                success=True,
+                verified=True,
+                message=f"Navigated to {url}",
+            )
+        except Exception as e:
+            return outcome.ActionResult(
+                status=outcome.STATUS_FAILED,
+                action="browser_session",
+                success=False,
+                verified=False,
+                message=f"Navigation failed: {e}",
+                error=str(e),
+            )
+
     # ── Graceful Connection Guard ─────────────────────────────────────────────
 
     def check_connection(self, timeout: float = 2.0) -> Tuple[bool, str]:
@@ -448,8 +498,9 @@ class BrowserSessionManager:
             f"[CDP Connection Error] Cannot connect to browser at {self.cdp_url}.\n"
             f"Please ensure Google Chrome or Microsoft Edge is running with remote debugging enabled:\n"
             f"  1. Start Chrome: chrome.exe --remote-debugging-port={self.port}\n"
-            f"  2. Or start Edge: msedge.exe --remote-debugging-port={self.port}\n"
-            f"  3. Set BROWSER_CDP_URL environment variable if using a custom port."
+            f"  2. Or start Edge: msedge.exe --remote-debugging-port=9222 (port {self.port})\n"
+            f"  3. Set BROWSER_CDP_URL environment variable if using a custom port.\n"
+            f"  4. Or visit edge://inspect/#remote-debugging or chrome://inspect to verify."
         )
         return False, err_msg
 

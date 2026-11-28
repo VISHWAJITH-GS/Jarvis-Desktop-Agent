@@ -7,7 +7,7 @@ import stat
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -1434,6 +1434,67 @@ def save_browser_engine(engine: str) -> None:
     """Persist browser engine selection ('chrome' | 'edge')."""
     e = str(engine or "").strip().lower()
     _save_flag("browser_engine", e if e in VALID_BROWSER_ENGINES else DEFAULT_BROWSER_ENGINE)
+
+
+# ── Hybrid Browser Provider Configuration (Ego Lite + CDP) ───────────────────
+DEFAULT_BROWSER_PROVIDER = "ego"
+DEFAULT_BROWSER_FALLBACK = "cdp"
+VALID_BROWSER_PROVIDERS = ("ego", "chrome", "edge", "cdp")
+VALID_BROWSER_MODES = ("auto", "manual")
+
+
+def get_browser_provider_config() -> dict[str, Any]:
+    """
+    Return browser provider configuration:
+      preferred: 'ego' | 'chrome' | 'edge' | 'cdp' (default: 'ego')
+      fallback: 'cdp' | 'chrome' | 'edge' (default: 'cdp')
+      auto_fallback: bool (default: True)
+      mode: 'auto' | 'manual' (default: 'auto')
+    """
+    cfg = load_api_keys().get("browser_provider")
+    if not isinstance(cfg, dict):
+        cfg = {}
+    preferred = str(cfg.get("preferred", DEFAULT_BROWSER_PROVIDER)).strip().lower()
+    if preferred not in VALID_BROWSER_PROVIDERS:
+        preferred = DEFAULT_BROWSER_PROVIDER
+    fallback = str(cfg.get("fallback", DEFAULT_BROWSER_FALLBACK)).strip().lower()
+    if fallback not in VALID_BROWSER_PROVIDERS:
+        fallback = DEFAULT_BROWSER_FALLBACK
+    auto_fallback = bool(cfg.get("auto_fallback", True))
+    mode = str(cfg.get("mode", "auto")).strip().lower()
+    if mode not in VALID_BROWSER_MODES:
+        mode = "auto"
+    return {
+        "preferred": preferred,
+        "fallback": fallback,
+        "auto_fallback": auto_fallback,
+        "mode": mode,
+    }
+
+
+def save_browser_provider_config(
+    preferred: Optional[str] = None,
+    fallback: Optional[str] = None,
+    auto_fallback: Optional[bool] = None,
+    mode: Optional[str] = None,
+) -> None:
+    """Persist browser provider configuration changes."""
+    current = get_browser_provider_config()
+    if preferred is not None:
+        p = str(preferred).strip().lower()
+        if p in VALID_BROWSER_PROVIDERS:
+            current["preferred"] = p
+    if fallback is not None:
+        f = str(fallback).strip().lower()
+        if f in VALID_BROWSER_PROVIDERS:
+            current["fallback"] = f
+    if auto_fallback is not None:
+        current["auto_fallback"] = bool(auto_fallback)
+    if mode is not None:
+        m = str(mode).strip().lower()
+        if m in VALID_BROWSER_MODES:
+            current["mode"] = m
+    _save_flag("browser_provider", current)
 
 
 def get_default_browser_profile_dir(engine: Optional[str] = None) -> Path:

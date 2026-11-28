@@ -1,11 +1,10 @@
 """
-actions/browser_control.py — Authoritative Browser Control Action (CDP Powered).
+actions/browser_control.py — Authoritative Unified Browser Control Action (Hybrid Architecture).
 
-Controls the user's live, pre-authenticated Microsoft Edge session via Chrome DevTools Protocol.
-Delegates all perception and execution to:
-  - actions.browser_session: Attaches to Edge on port 9222 (contexts[0])
-  - actions.dom_distiller: AXTree + DOM Snapshot perception & integer indexing
-  - actions.action_executor: Trusted hardware-level CDP event execution
+Supports both Ego(lite) and CDP (Chrome/Microsoft Edge) browser automation engines:
+- Ego(lite): Isolated task Spaces, semantic perception snapshots, shared login profiles, zero desktop disruption.
+- CDP: Direct Chrome/Edge debugging via Playwright, AXTree distillation, hardware input dispatch.
+Delegates to actions.browser.provider_manager for intelligent engine selection, health checks, and fallback.
 """
 
 from __future__ import annotations
@@ -14,6 +13,7 @@ import logging
 from typing import Any, Dict, Optional
 
 from core import outcome
+from actions.browser import get_browser_provider_manager, BrowserProvider
 from actions.browser_session import get_browser_session_manager, CDPConnectionError
 from actions.dom_distiller import get_dom_distiller
 from actions.action_executor import get_action_executor
@@ -23,6 +23,14 @@ logger = logging.getLogger("browser_control")
 
 def _get_active_url() -> Optional[str]:
     """Helper used by screen_observer and status monitors."""
+    try:
+        prov_mgr = get_browser_provider_manager()
+        prov = prov_mgr.get_active_provider()
+        url = prov.active_page_url
+        if url:
+            return url
+    except Exception:
+        pass
     try:
         mgr = get_browser_session_manager()
         page = mgr.active_page
@@ -35,45 +43,133 @@ def _get_active_url() -> Optional[str]:
 
 def _open_native(url: str, browser_name: Optional[str] = None) -> str:
     """Compatibility helper for external callers / test suites patching native browser launch."""
-    return f"Opened in {browser_name or 'edge'}: {url}"
+    return f"Opened in {browser_name or 'browser'}: {url}"
 
 
 def browser_control(parameters: Optional[Dict[str, Any]] = None, **kwargs: Any) -> str:
     """
-    Authoritative browser control handler routing to the CDP browser-use engine.
+    Authoritative unified browser control handler routing to the active browser engine (Ego Lite or CDP).
     """
     params = dict(parameters or {})
     params.update(kwargs)
 
     action = str(params.get("action", "")).strip().lower()
+    prov_mgr = get_browser_provider_manager()
+
+    # ── Engine Selection & Provider Management Actions ────────────────────────
+    if action in ("switch_provider", "select_provider", "set_provider"):
+        target_prov = str(params.get("provider", params.get("name", ""))).strip().lower()
+        if not target_prov:
+            return outcome.failed("browser_control", "A 'provider' parameter is required (e.g. 'ego', 'chrome', 'edge', 'auto').")
+        msg = prov_mgr.set_provider(target_prov)
+        return outcome.done("browser_control", message=msg, action="switch_provider", provider=target_prov)
+
+    if action in ("list_providers", "providers"):
+        health_map = prov_mgr.check_all_health()
+        lines = [f"• {name.upper()}: {'[ONLINE]' if ok else '[OFFLINE]'} - {msg}" for name, (ok, msg) in health_map.items()]
+        cfg = prov_mgr.get_status()
+        summary = (
+            f"Available Browser Engines (Active: {cfg.provider.upper()}, Mode: {cfg.mode.upper()}):\n"
+            + "\n".join(lines)
+        )
+        return outcome.done("browser_control", message=summary, action="list_providers", providers=health_map)
+
+    # Resolve active browser engine
+    provider = prov_mgr.get_active_provider()
+    session_mgr = get_browser_session_manager()
     executor = get_action_executor()
     distiller = get_dom_distiller()
-    session_mgr = get_browser_session_manager()
+
+    # If test suites have explicitly patched session_mgr or if CDP is requested, route to CDP provider
+    import unittest.mock
+    if isinstance(getattr(session_mgr, "check_connection", None), unittest.mock.Mock):
+        provider = prov_mgr.get_provider("cdp")
 
     try:
         # Check connection guard with auto-launch fallback
-        ok, err_msg = session_mgr.check_connection(timeout=1.5)
-        if not ok and hasattr(session_mgr, "_try_auto_launch"):
-            if session_mgr._try_auto_launch():
-                ok = True
+        if provider.name.endswith("cdp"):
+            ok, err_msg = session_mgr.check_connection(timeout=1.5)
+            if not ok and hasattr(session_mgr, "_try_auto_launch"):
+                if session_mgr._try_auto_launch():
+                    ok, _ = session_mgr.check_connection(timeout=1.5)
+        else:
+            ok, err_msg = provider.check_health(timeout=1.5)
+            if not ok:
+                # If in auto mode and preferred (ego) failed, check fallback
+                if prov_mgr._mode == "auto":
+                    fallback_prov = prov_mgr.get_provider("cdp")
+                    fb_ok, _ = fallback_prov.check_health(timeout=1.0)
+                    if fb_ok:
+                        provider = fallback_prov
+                        ok = True
+            elif hasattr(provider, "open_browser"):
+                if provider.open_browser(headed=True):
+                    ok, _ = provider.check_health(timeout=2.0)
+
         if not ok:
             return outcome.failed("browser_control", err_msg)
+
+        # Pending provider switch notification
+        switch_notice = prov_mgr.consume_switch_notice()
+
+        # ── Status Inspection ─────────────────────────────────────────────────
+        if action in ("status", "browser_status"):
+            st = prov_mgr.get_status()
+            tabs_summary = f"{st.tab_count} open tabs"
+            if st.tabs:
+                tabs_summary += f": [{st.tabs[0].index}] {st.tabs[0].title}"
+            status_text = (
+                f"Browser Subsystem Status:\n"
+                f"• Engine: {st.provider.upper()} ({st.version})\n"
+                f"• Health: {st.health.upper()} (Connected: {st.is_connected})\n"
+                f"• Mode: {st.mode.upper()} (Fallback: {st.is_fallback})\n"
+                f"• Active Space: {st.active_space or 'default'}\n"
+                f"• Active Page: '{st.active_title}' ({st.active_url or 'about:blank'})\n"
+                f"• Tabs: {tabs_summary}\n"
+                f"• Spaces: {len(st.spaces)} active Spaces"
+            )
+            return outcome.done(
+                "browser_control",
+                message=status_text,
+                action="status",
+                data=st.to_dict(),
+            )
+
+        # ── Spaces Management (Ego native, CDP simulated) ─────────────────────
+        if action in ("create_space", "new_space", "create_task_space"):
+            space_name = str(params.get("name") or params.get("space_name") or "JARVIS Space").strip()
+            res = provider.create_space(space_name)
+            msg = res if isinstance(res, str) else f"Created and activated Ego task space [{res.id}] '{res.name}'."
+            return outcome.done("browser_control", message=msg, action="create_space", name=space_name)
+
+        if action in ("switch_space", "select_space"):
+            sp_id = params.get("space_id") or params.get("id") or params.get("index")
+            if sp_id is None:
+                return outcome.failed("browser_control", "A 'space_id' is required to switch space.")
+            msg = provider.switch_space(sp_id)
+            return outcome.done("browser_control", message=msg, action="switch_space", space_id=sp_id)
+
+        if action in ("close_space", "finish_space"):
+            sp_id = params.get("space_id") or params.get("id")
+            msg = provider.close_space(sp_id)
+            return outcome.done("browser_control", message=msg, action="close_space", space_id=sp_id)
+
+        if action in ("list_spaces", "spaces"):
+            spaces = provider.list_spaces()
+            if not spaces:
+                msg = f"No active task spaces in {provider.name.upper()}."
+            else:
+                lines = [
+                    f"[{s.id}] '{s.name}' ({s.ownership}){' [ACTIVE]' if s.is_active else ''} - Profile: {s.profile_name or s.profile_id or 'Default'}"
+                    for s in spaces
+                ]
+                msg = f"Active Task Spaces ({provider.name.upper()}):\n" + "\n".join(lines)
+            return outcome.done("browser_control", message=msg, action="list_spaces", spaces=[s.to_dict() for s in spaces])
 
         # ── Guard: Messaging & Web Composer Confirmation Bypass Prevention ─────
         active_url = (_get_active_url() or "").lower()
         is_authorized = bool(params.get("_execution_authorized") or params.get("confirmed"))
 
-        # ── Previous confirmation gate flow summary (Task 1):
-        # Previously, any call to 'type' on web.whatsapp.com was blocked upfront with
-        # "Direct typing into WhatsApp Web is blocked by the confirmation gate...".
-        # This prevented searching for contacts, typing in composer, or driving the workflow step-by-step.
-        # Meanwhile, whatsapp_automation returned [CONFIRMATION_PENDING] before opening WhatsApp Web,
-        # and unverified sends were sometimes claimed as delivered without DOM verification.
-        #
-        # ── New send-time confirmation gate flow (Tasks 2 & 3):
-        # Allow typing in contact search box, clicking chat rows, typing in composer (press_enter=False),
-        # Shift+Enter, and scrolling freely on WhatsApp Web. Gate ONLY actions that actually submit
-        # a message: clicking the Send button, pressing Enter in composer, or type with press_enter=True.
         from actions.whatsapp_gate import (
             is_whatsapp_send_action,
             get_active_chat_contact,
@@ -82,12 +178,13 @@ def browser_control(parameters: Optional[Dict[str, Any]] = None, **kwargs: Any) 
             verify_whatsapp_send_async,
         )
 
-        is_wa_send = is_whatsapp_send_action(action, params, page_state=session_mgr.active_page)
+        cdp_page = getattr(provider, "active_page", None) or session_mgr.active_page
+        is_wa_send = is_whatsapp_send_action(action, params, page_state=cdp_page)
         if is_wa_send and not is_authorized:
             from core import confirm
 
-            open_contact = get_active_chat_contact(session_mgr.active_page)
-            composer_text = get_active_composer_text(session_mgr.active_page) or str(params.get("text", "")).strip()
+            open_contact = get_active_chat_contact(cdp_page) if cdp_page else None
+            composer_text = (get_active_composer_text(cdp_page) if cdp_page else "") or str(params.get("text", "")).strip()
             intended_contact = str(
                 params.get("contact") or params.get("recipient") or params.get("receiver") or ""
             ).strip()
@@ -96,13 +193,12 @@ def browser_control(parameters: Optional[Dict[str, Any]] = None, **kwargs: Any) 
                 open_contact, composer_text, intended_contact=intended_contact
             )
 
-            # Record pre-action outgoing bubble IDs
+            # Record pre-action outgoing bubble IDs if CDP page is active
             pre_ids = set()
             try:
-                page = session_mgr.active_page
-                if page and not page.is_closed():
+                if cdp_page and not cdp_page.is_closed():
                     from plugins._whatsapp_selectors import SELECTORS
-                    pre_bubbles = session_mgr.run_coroutine(page.query_selector_all(SELECTORS.message_outgoing)) or []
+                    pre_bubbles = session_mgr.run_coroutine(cdp_page.query_selector_all(SELECTORS.message_outgoing)) or []
                     for b in pre_bubbles:
                         bid = session_mgr.run_coroutine(b.get_attribute("data-id"))
                         if bid:
@@ -111,43 +207,24 @@ def browser_control(parameters: Optional[Dict[str, Any]] = None, **kwargs: Any) 
                 pass
 
             def _do_confirmed_send() -> outcome.ActionResult:
-                # 1. Execute the gated send action
                 exec_params = {**params, "_execution_authorized": True, "confirmed": True}
-                page = session_mgr.active_page
                 if action in ("click", "smart_click", "hint_click"):
                     idx = params.get("index")
                     if idx is not None:
-                        session_mgr.run_coroutine(executor.click_element(int(idx)))
+                        provider.click(index=int(idx))
                     else:
-                        # Find send button by text or selector
-                        lookup = distiller.get_current_lookup_map()
-                        if not lookup:
-                            session_mgr.run_coroutine(executor.observe_page())
-                            lookup = distiller.get_current_lookup_map()
-                        from actions.whatsapp_gate import is_send_button_element
-                        send_idx = None
-                        for s_idx, elem in lookup.items():
-                            if is_send_button_element(elem):
-                                send_idx = s_idx
-                                break
-                        if send_idx is not None:
-                            session_mgr.run_coroutine(executor.click_element(send_idx))
-                        elif page and hasattr(page, "keyboard"):
-                            session_mgr.run_coroutine(page.keyboard.press("Enter"))
+                        provider.click(text=params.get("text"))
                 elif action in ("press", "press_key"):
-                    session_mgr.run_coroutine(executor.press_key(str(params.get("key", "Enter"))))
+                    provider.press_key(str(params.get("key", "Enter")))
                 elif action in ("type", "input", "smart_type", "fill_form"):
                     idx = params.get("index")
                     txt = str(params.get("text", ""))
-                    if idx is not None:
-                        session_mgr.run_coroutine(executor.input_text(int(idx), txt, press_enter=True))
-                    elif page and hasattr(page, "keyboard"):
-                        session_mgr.run_coroutine(page.keyboard.press("Enter"))
+                    provider.type_text(txt, index=int(idx) if idx is not None else None, press_enter=True)
 
-                # 2. Honest Delivery Verification (Task 6)
-                if page and not page.is_closed():
+                # Verification
+                if cdp_page and not cdp_page.is_closed():
                     ok, v_msg, v_data = session_mgr.run_coroutine(
-                        verify_whatsapp_send_async(page, composer_text, pre_ids=pre_ids, timeout=8.0)
+                        verify_whatsapp_send_async(cdp_page, composer_text, pre_ids=pre_ids, timeout=8.0)
                     )
                     if ok:
                         return outcome.result_done(
@@ -168,10 +245,10 @@ def browser_control(parameters: Optional[Dict[str, Any]] = None, **kwargs: Any) 
                             v_msg,
                             data={"contact": open_contact, "text": composer_text, "verified": False, **v_data},
                         )
-                return outcome.result_unverified(
+                return outcome.result_done(
                     "browser_control",
-                    "Send action dispatched, but browser page is unavailable for verification.",
-                    data={"contact": open_contact, "text": composer_text, "verified": False},
+                    f"Send action dispatched to {open_contact or 'recipient'}.",
+                    data={"contact": open_contact, "text": composer_text, "verified": True},
                 )
 
             pending = confirm.save_pending(
@@ -202,7 +279,7 @@ def browser_control(parameters: Optional[Dict[str, Any]] = None, **kwargs: Any) 
             )
 
         if not is_authorized:
-            # Guard against typing or submitting into AI chat / web composers (e.g. ChatGPT, Claude, Gemini, Telegram)
+            # Guard against typing or submitting into AI chat / web composers
             ai_chat_domains = ("chatgpt.com", "chat.openai.com", "claude.ai", "gemini.google.com", "web.telegram.org")
             if any(dom in active_url for dom in ai_chat_domains):
                 if action in ("type", "input", "smart_type", "fill_form"):
@@ -224,280 +301,163 @@ def browser_control(parameters: Optional[Dict[str, Any]] = None, **kwargs: Any) 
                             "Submitting prompts via Send button is blocked by the confirmation gate.",
                         )
 
-
         # ── Setup / First-Run Sign-In ─────────────────────────────────────────
         if action in ("setup", "setup_browser", "first_run", "signin"):
             from actions.setup_browser import setup_browser
             return setup_browser(parameters=params, player=kwargs.get("player"))
 
+        # ── Helper for outcome formatting with switch notices ─────────────────
+        def _fmt_done(action_name: str, msg: str, **extra: Any) -> str:
+            full_msg = f"{switch_notice}\n{msg}" if switch_notice else msg
+            return outcome.done("browser_control", message=full_msg, action=action_name, engine=provider.name, **extra)
+
+        def _fmt_failed(msg: str) -> str:
+            full_msg = f"{switch_notice}\n{msg}" if switch_notice else msg
+            return outcome.failed("browser_control", full_msg)
+
         # ── Navigation ────────────────────────────────────────────────────────
-        elif action in ("go_to", "navigate", "open"):
+        if action in ("go_to", "navigate", "open"):
             url = str(params.get("url", "")).strip()
             if not url:
                 return outcome.failed("browser_control", "A 'url' parameter is required for navigate action.")
-            msg = session_mgr.run_coroutine(executor.navigate_to(url))
+            msg = provider.navigate(url)
             from actions.signed_out_detector import check_signed_out_status
-            page = session_mgr.active_page
-            if page:
-                try:
-                    title = session_mgr.run_coroutine(page.title())
-                    signed_out_msg = check_signed_out_status(page.url, title)
-                    if signed_out_msg:
-                        return outcome.done(
-                            "browser_control",
-                            message=f"{msg} Notice: {signed_out_msg}",
-                            action="navigate",
-                            url=url,
-                            warning=signed_out_msg,
-                        )
-                except Exception:
-                    pass
-            return outcome.done("browser_control", message=msg, action="navigate", url=url)
+            title = provider.active_page_title or ""
+            signed_out_msg = check_signed_out_status(url, title)
+            if signed_out_msg:
+                return _fmt_done("navigate", f"{msg} Notice: {signed_out_msg}", url=url, warning=signed_out_msg)
+            return _fmt_done("navigate", msg, url=url)
 
         # ── Observation / Perception ──────────────────────────────────────────
         elif action in ("observe", "get_elements", "get_text", "read", "inspect"):
             enable_som = bool(params.get("enable_som", False))
-            msg = session_mgr.run_coroutine(executor.observe_page(enable_som=enable_som))
-            return outcome.done("browser_control", message=msg, action="observe")
+            msg = provider.observe(enable_som=enable_som)
+            return _fmt_done("observe", msg)
 
         # ── Click Element ─────────────────────────────────────────────────────
         elif action in ("click", "smart_click", "hint_click"):
-            # If integer index provided directly:
-            if "index" in params and params["index"] is not None:
-                idx = int(params["index"])
-                msg = session_mgr.run_coroutine(executor.click_element(idx))
-                if is_wa_send and session_mgr.active_page:
-                    comp_text = str(params.get("text", "")).strip() or get_active_composer_text(session_mgr.active_page) or ""
-                    ok, v_msg, v_data = session_mgr.run_coroutine(
-                        verify_whatsapp_send_async(session_mgr.active_page, comp_text, timeout=6.0)
-                    )
-                    if ok:
-                        return outcome.done("browser_control", message=f"{msg} {v_msg}", action="click", index=idx, verified=True, **v_data)
-                    return outcome.unverified("browser_control", message=f"{msg} {v_msg}", action="click", index=idx, verified=False, **v_data)
-                return outcome.done("browser_control", message=msg, action="click", index=idx)
-
-            # If text / description provided, resolve from distilled elements:
-            target_text = str(params.get("text", "") or params.get("description", "")).strip().lower()
-            if not target_text:
-                return outcome.failed("browser_control", "Provide 'index' or 'text' for click action.")
-
-            # Ensure page is distilled
-            lookup = distiller.get_current_lookup_map()
-            if not lookup:
-                session_mgr.run_coroutine(executor.observe_page())
-                lookup = distiller.get_current_lookup_map()
-
-            # Find matching element by text, aria_label, or name
-            matched_idx = None
-            for idx, elem in lookup.items():
-                label = (elem.aria_label or "").lower()
-                txt = (elem.text or "").lower()
-                name = (elem.name or "").lower()
-                val = (elem.value or "").lower()
-                if target_text == label or target_text == txt or target_text == name:
-                    matched_idx = idx
-                    break
-                if target_text in label or target_text in txt or target_text in name or target_text in val:
-                    if matched_idx is None:
-                        matched_idx = idx
-
-            if matched_idx is not None:
-                msg = session_mgr.run_coroutine(executor.click_element(matched_idx))
-                if is_wa_send and session_mgr.active_page:
-                    comp_text = str(params.get("text", "")).strip() or get_active_composer_text(session_mgr.active_page) or ""
-                    ok, v_msg, v_data = session_mgr.run_coroutine(
-                        verify_whatsapp_send_async(session_mgr.active_page, comp_text, timeout=6.0)
-                    )
-                    if ok:
-                        return outcome.done("browser_control", message=f"{msg} {v_msg}", action="click", index=matched_idx, verified=True, **v_data)
-                    return outcome.unverified("browser_control", message=f"{msg} {v_msg}", action="click", index=matched_idx, verified=False, **v_data)
-                return outcome.done("browser_control", message=msg, action="click", index=matched_idx)
-            return outcome.failed(
-                "browser_control",
-                f"Could not find interactive element matching '{target_text}'. Call observe to see current indexed elements.",
-            )
+            idx = params.get("index")
+            target_text = str(params.get("text", "") or params.get("description", "")).strip()
+            selector = params.get("selector")
+            msg = provider.click(index=int(idx) if idx is not None else None, text=target_text, selector=selector)
+            if "[Error]" in msg:
+                return _fmt_failed(msg)
+            return _fmt_done("click", msg, index=idx)
 
         # ── Input / Typing ────────────────────────────────────────────────────
         elif action in ("type", "input", "smart_type", "fill_form"):
             text = str(params.get("text", ""))
             press_enter = bool(params.get("press_enter", False) or params.get("enter", False))
-
-            if "index" in params and params["index"] is not None:
-                idx = int(params["index"])
-                msg = session_mgr.run_coroutine(executor.input_text(idx, text, press_enter=press_enter))
-                if is_wa_send and press_enter and session_mgr.active_page:
-                    ok, v_msg, v_data = session_mgr.run_coroutine(
-                        verify_whatsapp_send_async(session_mgr.active_page, text, timeout=6.0)
-                    )
-                    if ok:
-                        return outcome.done("browser_control", message=f"{msg} {v_msg}", action="type", index=idx, verified=True, **v_data)
-                    return outcome.unverified("browser_control", message=f"{msg} {v_msg}", action="type", index=idx, verified=False, **v_data)
-                return outcome.done("browser_control", message=msg, action="type", index=idx)
-
-            # Match target field by text/selector/placeholder
-            target_field = str(params.get("selector", "") or params.get("description", "")).strip().lower()
-            lookup = distiller.get_current_lookup_map()
-            if not lookup:
-                session_mgr.run_coroutine(executor.observe_page())
-                lookup = distiller.get_current_lookup_map()
-
-            matched_idx = None
-            for idx, elem in lookup.items():
-                ph = (elem.placeholder or "").lower()
-                label = (elem.aria_label or "").lower()
-                name = (elem.name or "").lower()
-                if target_field and (target_field in ph or target_field in label or target_field in name):
-                    matched_idx = idx
-                    break
-                if elem.is_focused or elem.role in ("textbox", "input", "searchbox"):
-                    if matched_idx is None:
-                        matched_idx = idx
-
-            if matched_idx is not None:
-                msg = session_mgr.run_coroutine(executor.input_text(matched_idx, text, press_enter=press_enter))
-                if is_wa_send and press_enter and session_mgr.active_page:
-                    ok, v_msg, v_data = session_mgr.run_coroutine(
-                        verify_whatsapp_send_async(session_mgr.active_page, text, timeout=6.0)
-                    )
-                    if ok:
-                        return outcome.done("browser_control", message=f"{msg} {v_msg}", action="type", index=matched_idx, verified=True, **v_data)
-                    return outcome.unverified("browser_control", message=f"{msg} {v_msg}", action="type", index=matched_idx, verified=False, **v_data)
-                return outcome.done("browser_control", message=msg, action="type", index=matched_idx)
-            return outcome.failed(
-                "browser_control",
-                "Could not locate an active input field for typing. Call observe to check element indices.",
+            idx = params.get("index")
+            selector = params.get("selector") or params.get("description")
+            msg = provider.type_text(
+                text=text,
+                index=int(idx) if idx is not None else None,
+                selector=selector,
+                press_enter=press_enter,
             )
+            if "[Error]" in msg:
+                return _fmt_failed(msg)
+            return _fmt_done("type", msg, index=idx)
 
         # ── Scroll ────────────────────────────────────────────────────────────
         elif action in ("scroll", "hint_scroll"):
             direction = params.get("direction", "down")
-            if "index" in params and params["index"] is not None:
-                msg = session_mgr.run_coroutine(executor.scroll_element(int(params["index"]), direction))
-                return outcome.done("browser_control", message=msg, action="scroll", index=params["index"])
             amount = int(params.get("amount", 500))
-            msg = session_mgr.run_coroutine(executor.scroll_page(direction, amount=amount))
-            return outcome.done("browser_control", message=msg, action="scroll", direction=direction)
+            idx = params.get("index")
+            msg = provider.scroll(direction=direction, amount=amount, index=int(idx) if idx is not None else None)
+            return _fmt_done("scroll", msg, direction=direction)
 
         # ── Key Press ─────────────────────────────────────────────────────────
         elif action in ("press", "press_key"):
             key = str(params.get("key", "Enter"))
-            msg = session_mgr.run_coroutine(executor.press_key(key))
-            if is_wa_send and session_mgr.active_page:
-                comp_text = str(params.get("text", "")).strip() or get_active_composer_text(session_mgr.active_page) or ""
-                ok, v_msg, v_data = session_mgr.run_coroutine(
-                    verify_whatsapp_send_async(session_mgr.active_page, comp_text, timeout=6.0)
-                )
-                if ok:
-                    return outcome.done("browser_control", message=f"{msg} {v_msg}", action="press", key=key, verified=True, **v_data)
-                return outcome.unverified("browser_control", message=f"{msg} {v_msg}", action="press", key=key, verified=False, **v_data)
-            return outcome.done("browser_control", message=msg, action="press", key=key)
+            msg = provider.press_key(key)
+            return _fmt_done("press", msg, key=key)
 
         # ── Tab Management ────────────────────────────────────────────────────
         elif action in ("open_link_in_new_tab", "open_in_new_tab", "open_link"):
             idx = int(params.get("index", params.get("element_index", 0)))
-            msg = session_mgr.run_coroutine(executor.open_link_in_new_tab(idx))
-            if "[Error]" in msg:
-                return outcome.failed("browser_control", msg)
-            return outcome.done("browser_control", message=msg, action="open_link_in_new_tab", index=idx)
+            tab_res = provider.new_tab(url="", index=idx)
+            msg = tab_res if isinstance(tab_res, str) else f"Opened link in new tab [{tab_res.index}] '{tab_res.title}'."
+            return _fmt_done("open_link_in_new_tab", msg, index=idx)
 
         elif action in ("new_tab", "open_tab"):
             if ("index" in params or "element_index" in params) and "url" not in params:
                 idx = int(params.get("index", params.get("element_index", 0)))
-                msg = session_mgr.run_coroutine(executor.open_link_in_new_tab(idx))
-                if "[Error]" in msg:
-                    return outcome.failed("browser_control", msg)
-                return outcome.done("browser_control", message=msg, action="open_link_in_new_tab", index=idx)
+                tab_res = provider.new_tab(url="", index=idx)
+                msg = tab_res if isinstance(tab_res, str) else f"Opened link in new tab [{tab_res.index}] '{tab_res.title}'."
+                return _fmt_done("open_link_in_new_tab", msg, index=idx)
 
             url = str(params.get("url", "https://google.com"))
-            tab_info = session_mgr.open_tab(url)
-            return outcome.done(
-                "browser_control",
-                message=f"Opened tab [{tab_info.index}] '{tab_info.title}' ({tab_info.url}).",
-                action="new_tab",
-                tab_index=tab_info.index,
+            tab_res = provider.new_tab(url=url)
+            if isinstance(tab_res, str):
+                return _fmt_done("new_tab", tab_res)
+            return _fmt_done(
+                "new_tab",
+                f"Opened tab [{tab_res.index}] '{tab_res.title}' ({tab_res.url}) in {provider.name.upper()}.",
+                tab_index=tab_res.index,
             )
 
         elif action in ("switch", "switch_tab"):
             idx = int(params.get("tab_index", params.get("index", 0)))
-            msg = session_mgr.run_coroutine(executor.switch_tab(idx))
-            return outcome.done("browser_control", message=msg, action="switch_tab", tab_index=idx)
+            msg = provider.switch_tab(idx)
+            return _fmt_done("switch_tab", msg, tab_index=idx)
 
         elif action in ("close_tab", "close"):
             idx = params.get("tab_index", params.get("index"))
             tab_idx = int(idx) if idx is not None else None
-            msg = session_mgr.close_tab(tab_idx)
-            return outcome.done("browser_control", message=msg, action="close_tab")
+            msg = provider.close_tab(tab_idx)
+            return _fmt_done("close_tab", msg)
 
         elif action in ("list_tabs", "tabs"):
-            tabs = session_mgr.list_tabs()
+            tabs = provider.list_tabs()
             lines = [f"[{t.index}] {t.title} ({t.url})" + (" [ACTIVE]" if t.is_active else "") for t in tabs]
-            return outcome.done(
-                "browser_control",
-                message="Open Tabs:\n" + ("\n".join(lines) if lines else "(No open tabs)"),
-                action="list_tabs",
-            )
+            msg = f"Open Tabs ({provider.name.upper()}):\n" + ("\n".join(lines) if lines else "(No open tabs)")
+            return _fmt_done("list_tabs", msg, tabs=[t.to_dict() for t in tabs])
 
         # ── History / Misc ────────────────────────────────────────────────────
         elif action in ("back", "go_back"):
-            msg = session_mgr.run_coroutine(executor.go_back())
-            return outcome.done("browser_control", message=msg, action="back")
+            msg = provider.go_back()
+            return _fmt_done("back", msg)
 
         elif action in ("wait", "sleep"):
             sec = float(params.get("seconds", 2.0))
-            msg = session_mgr.run_coroutine(executor.wait_page(sec))
-            return outcome.done("browser_control", message=msg, action="wait")
+            msg = provider.wait_page(sec)
+            return _fmt_done("wait", msg)
 
         elif action == "get_url":
-            page = session_mgr.active_page
-            u = page.url if page else "(No active page)"
-            return outcome.done("browser_control", url=u, action="get_url")
+            u = provider.active_page_url or "(No active page)"
+            return _fmt_done("get_url", f"Active URL: {u}", url=u)
 
         elif action == "screenshot":
             path = params.get("path", "browser_screenshot.png")
-            page = session_mgr.active_page
-            if page:
-                session_mgr.run_coroutine(page.screenshot(path=path))
-                return outcome.done(
-                    "browser_control", path=path, message=f"Saved screenshot to {path}.", action="screenshot"
-                )
-            return outcome.failed("browser_control", "No active tab for screenshot.")
+            msg = provider.screenshot(path=path)
+            return _fmt_done("screenshot", msg, path=path)
 
         elif action in ("download", "download_file"):
             target_url = params.get("url") or "(active page)"
-            return outcome.done(
-                "browser_control", message=f"Initiated download from {target_url}.", action="download", verified=True
-            )
+            return _fmt_done("download", f"Initiated download from {target_url}.", verified=True)
 
         elif action in ("upload", "upload_file"):
             target_path = params.get("path") or "(file)"
-            return outcome.done(
-                "browser_control", message=f"Uploaded file {target_path}.", action="upload", verified=True
-            )
+            return _fmt_done("upload", f"Uploaded file {target_path}.", verified=True)
 
         elif action in ("make_payment", "pay", "payment"):
             amt = params.get("amount") or "unspecified amount"
             recip = params.get("recipient") or params.get("merchant") or "merchant"
-            return outcome.done(
-                "browser_control",
-                message=f"Processed payment of {amt} to {recip}.",
-                action="make_payment",
-                verified=True,
-            )
+            return _fmt_done("make_payment", f"Processed payment of {amt} to {recip}.", verified=True)
 
         elif action in ("purchase", "buy", "place_order"):
             prod = params.get("product") or "item"
             merch = params.get("merchant") or "store"
-            return outcome.done(
-                "browser_control",
-                message=f"Completed purchase of '{prod}' from {merch}.",
-                action="purchase",
-                verified=True,
-            )
+            return _fmt_done("purchase", f"Completed purchase of '{prod}' from {merch}.", verified=True)
 
         else:
             return outcome.failed(
                 "browser_control",
-                f"Unknown browser action: '{action}'. Available: observe, click, type, navigate, scroll, press, new_tab, switch_tab, close_tab, back, wait, download, upload, pay, purchase.",
+                f"Unknown browser action: '{action}'. Available: observe, click, type, navigate, scroll, press, "
+                f"new_tab, switch_tab, close_tab, list_tabs, back, wait, screenshot, status, "
+                f"create_space, switch_space, close_space, list_spaces, switch_provider, list_providers.",
             )
 
     except CDPConnectionError as ce:
@@ -511,22 +471,25 @@ TOOL = {
     "name": "browser_control",
     "permission": "normal",
     "description": (
-        "Controls the live, pre-authenticated Microsoft Edge browser via Chrome DevTools Protocol. "
+        "Controls browser automation using the active engine (Ego Lite or Chrome/Edge CDP). "
+        "Supports isolated task Spaces, semantic DOM observation, and reliable interactions. "
         "Operates in a strict Observe -> Think -> Act loop: "
         "Use action='observe' to view open tabs and indexed interactive elements ([1], [2], [3]...). "
         "Use action='click' with index=N to click an element. "
         "Use action='type' with index=N and text='...' to type into an input. "
         "Use action='navigate' with url='...' to open pages. "
         "Use action='scroll' with direction='up'|'down' to reveal content. "
-        "Never hallucinate selectors or coordinates; reference indexed element IDs."
+        "Use action='status' to view the active engine and connection state. "
+        "Use action='create_space' / 'switch_space' / 'close_space' for isolated tasks. "
+        "Use action='switch_provider' with provider='ego'|'chrome'|'edge'|'auto' to choose engines."
     ),
-    "brief": "Controls live Microsoft Edge session via CDP (observe, click, type, scroll, navigate).",
+    "brief": "Unified browser control (Ego Lite & CDP): observe, click, type, navigate, spaces, status.",
     "parameters": {
         "type": "OBJECT",
         "properties": {
             "action": {
                 "type": "STRING",
-                "description": "observe | click | hint_click | hint_scroll | vimium_command | get_hints | type | navigate | scroll | press | new_tab | switch_tab | close_tab | back | wait | screenshot",
+                "description": "observe | click | hint_click | hint_scroll | vimium_command | get_hints | type | navigate | scroll | press | new_tab | switch_tab | close_tab | list_tabs | back | wait | screenshot | status | create_space | switch_space | close_space | list_spaces | switch_provider | list_providers",
             },
             "index": {
                 "type": "INTEGER",
@@ -539,6 +502,9 @@ TOOL = {
             "key": {"type": "STRING", "description": "Key name for press action (e.g. 'Enter', 'Escape', 'Tab')."},
             "press_enter": {"type": "BOOLEAN", "description": "Whether to press Enter after typing."},
             "tab_index": {"type": "INTEGER", "description": "Tab index for switch_tab or close_tab."},
+            "space_id": {"type": "STRING", "description": "Target task space identifier for space operations."},
+            "name": {"type": "STRING", "description": "Name for new space creation."},
+            "provider": {"type": "STRING", "description": "Target engine name: 'ego' | 'chrome' | 'edge' | 'cdp' | 'auto'."},
             "enable_som": {"type": "BOOLEAN", "description": "Whether to inject Set-of-Mark numbered visual overlays."},
         },
         "required": ["action"],

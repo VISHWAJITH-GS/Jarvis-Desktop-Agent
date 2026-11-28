@@ -1584,28 +1584,142 @@ class DashboardServer:
                 return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
         # ══════════════════════════════════════════════════════════════════════
-        # Browser Session & QA Endpoints
+        # Browser Session & QA Endpoints (Hybrid: Ego Lite & CDP)
         # ══════════════════════════════════════════════════════════════════════
         @app.get("/api/browser/status")
         async def browser_status_endpoint(req: Request):
             if not _auth(req):
                 return JSONResponse({"error": "Unauthorized"}, status_code=401)
             try:
-                from actions.browser_session_manager import get_browser_session_manager
+                from actions.browser import get_browser_provider_manager
 
-                bm = get_browser_session_manager()
-                st = bm.get_session_state()
+                bm = get_browser_provider_manager()
+                st = bm.get_status()
                 return JSONResponse(
                     {
                         "ok": True,
-                        "browser_type": st.browser_type,
+                        "provider": st.provider,
+                        "browser_type": st.provider,
                         "is_connected": st.is_connected,
+                        "version": st.version,
+                        "active_space": st.active_space,
+                        "active_title": st.active_title,
                         "active_url": st.active_url,
                         "tab_count": st.tab_count,
+                        "tabs": [t.to_dict() for t in st.tabs],
+                        "current_task": st.current_task or "Idle",
+                        "health": st.health,
+                        "last_error": st.last_error or "None",
+                        "spaces": [s.to_dict() for s in st.spaces],
+                        "mode": st.mode,
+                        "is_fallback": st.is_fallback,
                         "console_errors": st.console_errors_count,
                         "network_errors": st.network_errors_count,
                     }
                 )
+            except Exception as e:
+                return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+        @app.post("/api/browser/connect")
+        async def browser_connect_endpoint(req: Request):
+            if not _auth(req):
+                return JSONResponse({"error": "Unauthorized"}, status_code=401)
+            try:
+                from actions.browser import get_browser_provider_manager
+
+                bm = get_browser_provider_manager()
+                prov = bm.get_active_provider()
+                ok, msg = prov.check_health(timeout=3.0)
+                return JSONResponse({"ok": ok, "message": msg, "provider": prov.name})
+            except Exception as e:
+                return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+        @app.post("/api/browser/disconnect")
+        async def browser_disconnect_endpoint(req: Request):
+            if not _auth(req):
+                return JSONResponse({"error": "Unauthorized"}, status_code=401)
+            try:
+                from actions.browser import get_browser_provider_manager
+
+                bm = get_browser_provider_manager()
+                bm.disconnect_all()
+                return JSONResponse({"ok": True, "message": "Disconnected browser sessions."})
+            except Exception as e:
+                return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+        @app.post("/api/browser/restart")
+        async def browser_restart_endpoint(req: Request):
+            if not _auth(req):
+                return JSONResponse({"error": "Unauthorized"}, status_code=401)
+            try:
+                from actions.browser import get_browser_provider_manager
+
+                bm = get_browser_provider_manager()
+                msg = bm.restart_active_provider()
+                return JSONResponse({"ok": True, "message": msg})
+            except Exception as e:
+                return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+        @app.post("/api/browser/open")
+        async def browser_open_endpoint(req: Request):
+            if not _auth(req):
+                return JSONResponse({"error": "Unauthorized"}, status_code=401)
+            try:
+                from actions.browser import get_browser_provider_manager
+
+                bm = get_browser_provider_manager()
+                prov = bm.get_active_provider()
+                ok = prov.open_browser(headed=True)
+                return JSONResponse({"ok": ok, "provider": prov.name})
+            except Exception as e:
+                return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+        @app.post("/api/browser/switch-provider")
+        async def browser_switch_provider_endpoint(req: Request):
+            if not _auth(req):
+                return JSONResponse({"error": "Unauthorized"}, status_code=401)
+            try:
+                body = await req.json() if req.headers.get("content-type") == "application/json" else {}
+                target = body.get("provider") or "auto"
+                from actions.browser import get_browser_provider_manager
+
+                bm = get_browser_provider_manager()
+                msg = bm.set_provider(target)
+                st = bm.get_status()
+                return JSONResponse({"ok": True, "message": msg, "provider": st.provider, "mode": st.mode})
+            except Exception as e:
+                return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+        @app.post("/api/browser/create-space")
+        async def browser_create_space_endpoint(req: Request):
+            if not _auth(req):
+                return JSONResponse({"error": "Unauthorized"}, status_code=401)
+            try:
+                body = await req.json() if req.headers.get("content-type") == "application/json" else {}
+                name = body.get("name") or "New Task Space"
+                from actions.browser import get_browser_provider_manager
+
+                bm = get_browser_provider_manager()
+                prov = bm.get_active_provider()
+                res = prov.create_space(name)
+                msg = res if isinstance(res, str) else f"Created Space [{res.id}] '{res.name}'."
+                return JSONResponse({"ok": True, "message": msg})
+            except Exception as e:
+                return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+        @app.post("/api/browser/close-space")
+        async def browser_close_space_endpoint(req: Request):
+            if not _auth(req):
+                return JSONResponse({"error": "Unauthorized"}, status_code=401)
+            try:
+                body = await req.json() if req.headers.get("content-type") == "application/json" else {}
+                sp_id = body.get("space_id")
+                from actions.browser import get_browser_provider_manager
+
+                bm = get_browser_provider_manager()
+                prov = bm.get_active_provider()
+                msg = prov.close_space(sp_id)
+                return JSONResponse({"ok": True, "message": msg})
             except Exception as e:
                 return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 

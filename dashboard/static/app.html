@@ -222,19 +222,55 @@
       </div>
 
       <!-- Live Desktop State -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-        <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px;font-size:12px;">
-          <h3 style="font-size:13px;color:var(--muted);margin-top:0;margin-bottom:8px;">Active Window & Cursor</h3>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px;font-size:12px;">
+        <h3 style="font-size:13px;color:var(--muted);margin-top:0;margin-bottom:8px;">Active Window & Cursor</h3>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
           <div>Title: <strong id="desk-title" style="color:#f8fafc;">-</strong></div>
           <div>Process: <strong id="desk-proc">-</strong></div>
           <div>Cursor: <strong id="desk-cursor">(0, 0)</strong></div>
           <div>Monitors: <strong id="desk-monitors">-</strong></div>
         </div>
-        <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px;font-size:12px;">
-          <h3 style="font-size:13px;color:var(--muted);margin-top:0;margin-bottom:8px;">Browser Testing Session</h3>
-          <div>Status: <strong id="br-status" style="color:#38bdf8;">Idle</strong></div>
-          <div>URL: <strong id="br-url" style="word-break:break-all;">about:blank</strong></div>
-          <div>Errors: <span id="br-errors" style="color:#f87171;">0 console / 0 network</span></div>
+      </div>
+
+      <!-- Browser Engine (Hybrid: Ego Lite & CDP) -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:12px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(255,255,255,0.06);padding-bottom:8px;flex-wrap:wrap;gap:8px;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <h3 style="font-size:14px;color:#38bdf8;margin:0;font-weight:700;">Browser Engine</h3>
+            <span id="br-conn-badge" style="font-size:10px;padding:2px 8px;border-radius:99px;background:rgba(239,68,68,0.2);color:#ef4444;border:1px solid rgba(239,68,68,0.4);font-weight:bold;">DISCONNECTED</span>
+          </div>
+          <!-- Provider Selector Buttons -->
+          <div style="display:flex;gap:4px;flex-wrap:wrap;" id="br-provider-pills">
+            <button class="pill" onclick="switchBrowserProvider('auto')" id="btn-prov-auto" style="font-size:11px;padding:2px 8px;cursor:pointer;">Automatic</button>
+            <button class="pill" onclick="switchBrowserProvider('ego')" id="btn-prov-ego" style="font-size:11px;padding:2px 8px;cursor:pointer;">Ego(lite)</button>
+            <button class="pill" onclick="switchBrowserProvider('chrome')" id="btn-prov-chrome" style="font-size:11px;padding:2px 8px;cursor:pointer;">Chrome / CDP</button>
+            <button class="pill" onclick="switchBrowserProvider('edge')" id="btn-prov-edge" style="font-size:11px;padding:2px 8px;cursor:pointer;">Edge / CDP</button>
+          </div>
+        </div>
+
+        <!-- Telemetry & Details Grid -->
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;font-size:12px;">
+          <div>Provider: <strong id="br-provider" style="color:#f8fafc;">Ego(lite)</strong> <span id="br-mode" style="color:var(--muted);font-size:10px;">(Auto)</span></div>
+          <div>Health: <strong id="br-health" style="color:#22c55e;">Healthy</strong></div>
+          <div>Version: <span id="br-version" style="color:var(--muted);">-</span></div>
+
+          <div>Active Space: <strong id="br-space" style="color:#38bdf8;">default</strong></div>
+          <div>Open Tabs: <strong id="br-tabs">0 open</strong></div>
+          <div>Current Task: <span id="br-task" style="color:var(--muted);">Idle</span></div>
+
+          <div style="grid-column: span 2;">Active Page: <strong id="br-page" style="word-break:break-all;color:#f8fafc;">about:blank</strong></div>
+          <div>Last Error: <span id="br-error" style="color:#94a3b8;">None</span></div>
+        </div>
+
+        <!-- Action Control Buttons -->
+        <div style="display:flex;flex-wrap:wrap;gap:6px;padding-top:4px;border-top:1px solid rgba(255,255,255,0.06);">
+          <button class="btn" onclick="browserConnect()" style="font-size:11px;padding:4px 10px;background:rgba(34,197,94,0.15);color:#22c55e;border:1px solid rgba(34,197,94,0.3);cursor:pointer;">⚡ Connect</button>
+          <button class="btn" onclick="browserDisconnect()" style="font-size:11px;padding:4px 10px;background:rgba(239,68,68,0.15);color:#ef4444;border:1px solid rgba(239,68,68,0.3);cursor:pointer;">Disconnect</button>
+          <button class="btn" onclick="browserRestart()" style="font-size:11px;padding:4px 10px;background:rgba(56,189,248,0.15);color:#38bdf8;border:1px solid rgba(56,189,248,0.3);cursor:pointer;">↻ Restart Browser</button>
+          <button class="btn" onclick="browserOpen()" style="font-size:11px;padding:4px 10px;background:rgba(168,85,247,0.15);color:#c084fc;border:1px solid rgba(168,85,247,0.3);cursor:pointer;">🗔 Open Browser</button>
+          <button class="btn" onclick="promptSwitchProvider()" style="font-size:11px;padding:4px 10px;background:#1e293b;color:#f8fafc;border:1px solid var(--border);cursor:pointer;">⇄ Switch Provider</button>
+          <button class="btn" onclick="promptCreateSpace()" style="font-size:11px;padding:4px 10px;background:rgba(234,179,8,0.15);color:#facc15;border:1px solid rgba(234,179,8,0.3);cursor:pointer;">+ Create Space</button>
+          <button class="btn" onclick="browserCloseSpace()" style="font-size:11px;padding:4px 10px;background:#1e293b;color:#f87171;border:1px solid var(--border);cursor:pointer;">✕ Close Space</button>
         </div>
       </div>
 
@@ -969,11 +1005,145 @@
           document.getElementById('desk-monitors').textContent = `${(pData.monitors || []).length} connected`;
         }
         if (bData.ok) {
-          document.getElementById('br-status').textContent = bData.is_connected ? 'Active Session' : 'Idle';
-          document.getElementById('br-url').textContent = bData.active_url || 'about:blank';
-          document.getElementById('br-errors').textContent = `${bData.console_errors || 0} console / ${bData.network_errors || 0} network`;
+          const provName = bData.provider || bData.browser_type || 'ego';
+          const isConn = !!bData.is_connected;
+          const badge = document.getElementById('br-conn-badge');
+          if (badge) {
+            badge.textContent = isConn ? 'CONNECTED' : 'DISCONNECTED';
+            badge.style.background = isConn ? 'rgba(34,197,94,0.2)' : 'rgba(239,68,68,0.2)';
+            badge.style.color = isConn ? '#22c55e' : '#ef4444';
+            badge.style.borderColor = isConn ? 'rgba(34,197,94,0.4)' : 'rgba(239,68,68,0.4)';
+          }
+          if (document.getElementById('br-provider')) {
+            document.getElementById('br-provider').textContent = provName.toUpperCase();
+          }
+          if (document.getElementById('br-mode')) {
+            document.getElementById('br-mode').textContent = bData.mode ? `(${bData.mode.toUpperCase()})` : '';
+          }
+          if (document.getElementById('br-health')) {
+            document.getElementById('br-health').textContent = (bData.health || 'healthy').toUpperCase();
+            document.getElementById('br-health').style.color = (bData.health === 'healthy') ? '#22c55e' : '#f87171';
+          }
+          if (document.getElementById('br-version')) {
+            document.getElementById('br-version').textContent = bData.version || '-';
+          }
+          if (document.getElementById('br-space')) {
+            document.getElementById('br-space').textContent = bData.active_space ? `#${bData.active_space}` : 'default';
+          }
+          if (document.getElementById('br-tabs')) {
+            document.getElementById('br-tabs').textContent = `${bData.tab_count || 0} open`;
+          }
+          if (document.getElementById('br-task')) {
+            document.getElementById('br-task').textContent = bData.current_task || 'Idle';
+          }
+          if (document.getElementById('br-page')) {
+            document.getElementById('br-page').textContent = `${bData.active_title ? `'${bData.active_title}' ` : ''}(${bData.active_url || 'about:blank'})`;
+          }
+          if (document.getElementById('br-error')) {
+            document.getElementById('br-error').textContent = bData.last_error || 'None';
+          }
+
+          // Active provider highlight
+          ['auto', 'ego', 'chrome', 'edge'].forEach(p => {
+            const btn = document.getElementById(`btn-prov-${p}`);
+            if (btn) {
+              const active = (bData.mode === 'auto' && p === 'auto') || (bData.mode !== 'auto' && provName.includes(p));
+              btn.style.borderColor = active ? '#38bdf8' : 'var(--border)';
+              btn.style.color = active ? '#38bdf8' : 'var(--muted)';
+              btn.style.background = active ? 'rgba(56,189,248,0.15)' : 'transparent';
+            }
+          });
         }
       } catch (e) {}
+    }
+
+    // ── Browser Engine Dashboard Actions ──
+    async function switchBrowserProvider(prov) {
+      try {
+        const res = await _authFetch('/api/browser/switch-provider', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ provider: prov })
+        });
+        const data = await res.json();
+        toast(data.message || 'Switched provider');
+        loadDesktopData();
+      } catch (e) {
+        toast('Failed to switch provider: ' + e);
+      }
+    }
+
+    async function browserConnect() {
+      toast('Testing browser engine connection...');
+      try {
+        const res = await _authFetch('/api/browser/connect', { method: 'POST' });
+        const data = await res.json();
+        toast(data.message || (data.ok ? 'Connected' : 'Failed to connect'));
+        loadDesktopData();
+      } catch (e) { toast('Error connecting: ' + e); }
+    }
+
+    async function browserDisconnect() {
+      try {
+        const res = await _authFetch('/api/browser/disconnect', { method: 'POST' });
+        const data = await res.json();
+        toast(data.message || 'Disconnected');
+        loadDesktopData();
+      } catch (e) { toast('Error disconnecting: ' + e); }
+    }
+
+    async function browserRestart() {
+      toast('Restarting browser engine...');
+      try {
+        const res = await _authFetch('/api/browser/restart', { method: 'POST' });
+        const data = await res.json();
+        toast(data.message || 'Restarted');
+        loadDesktopData();
+      } catch (e) { toast('Error restarting: ' + e); }
+    }
+
+    async function browserOpen() {
+      toast('Opening browser window...');
+      try {
+        const res = await _authFetch('/api/browser/open', { method: 'POST' });
+        const data = await res.json();
+        toast(data.ok ? 'Browser opened' : 'Could not open browser');
+        loadDesktopData();
+      } catch (e) { toast('Error opening: ' + e); }
+    }
+
+    function promptSwitchProvider() {
+      const choice = prompt("Enter browser provider ('auto', 'ego', 'chrome', 'edge'):");
+      if (choice) switchBrowserProvider(choice.trim());
+    }
+
+    async function promptCreateSpace() {
+      const name = prompt("Enter new Ego task space name:", "JARVIS Task");
+      if (!name) return;
+      try {
+        const res = await _authFetch('/api/browser/create-space', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name })
+        });
+        const data = await res.json();
+        toast(data.message || 'Created Space');
+        loadDesktopData();
+      } catch (e) { toast('Error creating space: ' + e); }
+    }
+
+    async function browserCloseSpace() {
+      const spId = prompt("Enter space ID to close (leave blank for active space):");
+      try {
+        const res = await _authFetch('/api/browser/close-space', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ space_id: spId ? spId.trim() : null })
+        });
+        const data = await res.json();
+        toast(data.message || 'Closed space');
+        loadDesktopData();
+      } catch (e) { toast('Error closing space: ' + e); }
     }
 
     async function refreshScreenshot() {
