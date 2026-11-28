@@ -20,7 +20,10 @@ def get_config() -> dict:
 
 def get_os() -> str:
     """Returns: 'windows' | 'mac' | 'linux'"""
-    return get_config().get("os_system", _platform_os()).lower()
+    cfg_os = get_config().get("os_system")
+    if not cfg_os or not isinstance(cfg_os, str):
+        cfg_os = _platform_os()
+    return cfg_os.lower()
 
 
 def is_windows() -> bool:

@@ -166,12 +166,20 @@ async def extract_messages_from_page(page: Any, selector: Optional[str] = None) 
     """
     Extract conversation messages from live Playwright Page or local HTML.
     """
-    url = (getattr(page, "url", "") or "").lower()
+    try:
+        url_attr = getattr(page, "url", "")
+        url = (url_attr() if callable(url_attr) else url_attr or "").lower()
+    except Exception:
+        url = ""
 
     # If selector explicitly provided:
     if selector:
-        raw = await page.evaluate(GENERIC_PAGE_EXTRACTOR_JS, selector)
-        return raw or []
+        try:
+            raw = await page.evaluate(GENERIC_PAGE_EXTRACTOR_JS, selector)
+            return raw or []
+        except Exception as e:
+            logger.warning("Error evaluating selector extraction: %s", e)
+            return []
 
     # Check if ChatGPT or page has chat structure
     is_chatgpt = "chatgpt.com" in url or "chat.openai.com" in url
@@ -183,23 +191,33 @@ async def extract_messages_from_page(page: Any, selector: Optional[str] = None) 
 
     if is_chatgpt or has_chat_roles:
         await scroll_to_stabilize(page, max_passes=6)
-        raw = await page.evaluate(CHATGPT_EXTRACTOR_JS)
-        if raw:
-            return raw
+        try:
+            raw = await page.evaluate(CHATGPT_EXTRACTOR_JS)
+            if raw:
+                return raw
+        except Exception as e:
+            logger.warning("Error evaluating ChatGPT extraction: %s", e)
 
     # Check if Claude
     if "claude.ai" in url:
         await scroll_to_stabilize(page, max_passes=4)
-        raw = await page.evaluate(CHATGPT_EXTRACTOR_JS)
-        if raw:
-            for item in raw:
-                if item.get("author") == "ChatGPT":
-                    item["author"] = "Claude"
-            return raw
+        try:
+            raw = await page.evaluate(CHATGPT_EXTRACTOR_JS)
+            if raw:
+                for item in raw:
+                    if item.get("author") == "ChatGPT":
+                        item["author"] = "Claude"
+                return raw
+        except Exception as e:
+            logger.warning("Error evaluating Claude extraction: %s", e)
 
     # Fallback: generic extraction
-    raw = await page.evaluate(GENERIC_PAGE_EXTRACTOR_JS, None)
-    return raw or []
+    try:
+        raw = await page.evaluate(GENERIC_PAGE_EXTRACTOR_JS, None)
+        return raw or []
+    except Exception as e:
+        logger.warning("Error evaluating generic extraction fallback: %s", e)
+        return []
 
 
 def format_conversation_text(messages: List[Dict[str, str]], title: str = "", format_type: str = "txt") -> str:
