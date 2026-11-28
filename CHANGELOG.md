@@ -7,7 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased] - Phase 6: Macro Recorder, Deep Research, and Task Checkpointing
+## [Unreleased] - Phase 7: Security Toolkit, MCP Client & Complete Verification Suite
+
+### Added
+- **Security & Privacy Toolkit (`actions/security_privacy.py`)**:
+  - Instant workstation lock (`security_lock`) across Windows, macOS, and Linux.
+  - Process inspector (`security_processes`) and safe process termination (`security_kill`) with self-protection and confirmation gating.
+  - Network surveillance: `privacy_net_audit` (active outbound connections) and `privacy_listening_ports` (listening server ports).
+  - DNS resolution lookup (`privacy_dns_lookup`).
+  - Credential security: local entropy evaluation (`credential_check_password`), HaveIBeenPwned k-anonymity breach check (`credential_check_reuse`), and cryptographically secure password generator (`credential_generate`).
+- **Model Context Protocol (MCP) Client (`plugins/mcp_client.py`)**:
+  - Server discovery catalog (`mcp_catalogue`), connectivity status check (`mcp_status`), and tool dispatch (`mcp_call`).
+- **Full Verification Suite**:
+  - Dedicated unit tests `tests/test_phase7_security_mcp.py` covering process auditing, password entropy, breach check mocking, and MCP client cataloging.
+  - Full multi-phase regression suite verification across 32 comprehensive test suites.
+
+---
+
+## [1.7.0] - 2026-11-28 - Phase 6: Macro Recorder, Deep Research, and Task Checkpointing
 
 ### Added
 - **Desktop Macro Recorder & Playback (`actions/workflow_recorder.py`)**:

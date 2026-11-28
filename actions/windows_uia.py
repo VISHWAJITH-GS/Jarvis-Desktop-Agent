@@ -50,8 +50,8 @@ win32con = None
 if _IS_WINDOWS:
     try:
         try:
-            import pythoncom
-            import pywintypes
+            import pythoncom  # noqa: F401
+            import pywintypes  # noqa: F401
         except ImportError:
             pass
 
@@ -223,19 +223,19 @@ def validate_coordinates(
 
     # Check bounding box if provided
     if bounding_box:
-        l = bounding_box.get("left", vx)
-        t = bounding_box.get("top", vy)
-        r = bounding_box.get("right", vx + vw)
-        b = bounding_box.get("bottom", vy + vh)
+        box_l = bounding_box.get("left", vx)
+        box_t = bounding_box.get("top", vy)
+        box_r = bounding_box.get("right", vx + vw)
+        box_b = bounding_box.get("bottom", vy + vh)
 
-        if not (l <= x <= r and t <= y <= b):
+        if not (box_l <= x <= box_r and box_t <= y <= box_b):
             return (
                 x,
                 y,
                 False,
                 (
                     f"Coordinates ({x}, {y}) lie outside element bounding box "
-                    f"[left={l}, top={t}, right={r}, bottom={b}]."
+                    f"[left={box_l}, top={box_t}, right={box_r}, bottom={box_b}]."
                 ),
             )
 

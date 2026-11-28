@@ -35,7 +35,8 @@ def _call_ha_api(endpoint: str, method: str = "GET", payload: Optional[dict] = N
     if not token:
         return False, "Home Assistant token not configured. Set 'token' in home_assistant settings."
 
-    clean_url = url.rstrip("/") + "/api/" + endpoint.lstrip("/")
+    base_url = (url or "http://homeassistant.local:8123").rstrip("/")
+    clean_url = base_url + "/api/" + endpoint.lstrip("/")
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
@@ -147,7 +148,7 @@ def run(parameters: dict, player: Any = None, session_memory: Any = None) -> str
     elif action in ("ha_call_service", "call_service"):
         domain = str(params.get("domain", ""))
         service = str(params.get("service", ""))
-        entity_id = params.get("entity_id")
+        entity_id = str(params.get("entity_id", ""))
         service_data = params.get("service_data")
         return ha_call_service(domain, service, entity_id=entity_id, service_data=service_data)
 

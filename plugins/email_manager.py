@@ -130,7 +130,7 @@ def email_read(msg_id: str) -> str:
         mail.login(email_user, email_pass)
         mail.select("INBOX", readonly=True)
 
-        res, data = mail.fetch(msg_id.encode("utf-8"), "(RFC822)")
+        res, data = mail.fetch(str(msg_id), "(RFC822)")
         if res != "OK" or not data or not data[0]:
             mail.logout()
             return outcome.failed("email_read", f"Message with ID '{msg_id}' not found.")
@@ -148,12 +148,12 @@ def email_read(msg_id: str) -> str:
                 disp = str(part.get("Content-Disposition", ""))
                 if ctype == "text/plain" and "attachment" not in disp:
                     payload = part.get_payload(decode=True)
-                    if payload:
+                    if isinstance(payload, bytes):
                         body = payload.decode(part.get_content_charset() or "utf-8", errors="replace")
                         break
         else:
             payload = msg.get_payload(decode=True)
-            if payload:
+            if isinstance(payload, bytes):
                 body = payload.decode(msg.get_content_charset() or "utf-8", errors="replace")
 
         mail.logout()

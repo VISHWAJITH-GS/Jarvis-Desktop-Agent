@@ -79,9 +79,9 @@ Following **Rule 7**, all 231 capabilities are consolidated into **35–45 actio
 | `ui_hotkey` | Press a key or keyboard shortcut in the active window. | **exists** | `actions/windows_uia.py` | `action` | Windows | `SENSITIVE` | uiautomation / ctypes |
 | `conversation_search` | Search past conversations for a topic, decision, or phrase. | **exists** | `plugins/conversation_search.py` | `plugin` | Cross-platform | `READ_ONLY` | sqlite3 |
 | `conversation_list` | List recent conversations by title and date. | **exists** | `plugins/conversation_search.py` | `plugin` | Cross-platform | `READ_ONLY` | sqlite3 |
-| `credential_check_password` | Check password strength locally: entropy, common-pattern detection, suggestions. The passw | **partial** | `actions/security_privacy.py` | `action` | Cross-platform | `READ_ONLY` | hashlib, requests |
-| `credential_check_reuse` | Check if a password appears in known data breaches via HIBP Pwned Passwords (k-anonymity:  | **partial** | `actions/security_privacy.py` | `action` | Cross-platform | `READ_ONLY` | hashlib, requests |
-| `credential_generate` | Generate a cryptographically secure random password. | **partial** | `actions/security_privacy.py` | `action` | Cross-platform | `READ_ONLY` | hashlib, requests |
+| `credential_check_password` | Check password strength locally: entropy, common-pattern detection, suggestions. The password never leaves this machine. | **exists** | `actions/security_privacy.py` | `action` | Cross-platform | `READ_ONLY` | hashlib, requests |
+| `credential_check_reuse` | Check if a password appears in known data breaches via HIBP Pwned Passwords (k-anonymity: only the first 5 characters of the SHA-1 hash are sent). | **exists** | `actions/security_privacy.py` | `action` | Cross-platform | `READ_ONLY` | hashlib, requests |
+| `credential_generate` | Generate a cryptographically secure random password. | **exists** | `actions/security_privacy.py` | `action` | Cross-platform | `READ_ONLY` | hashlib, requests |
 | `apps_search` | Find installed applications by name. | **exists** | `actions/desktop_control.py` | `action` | Windows/macOS/Linux | `READ_ONLY` | psutil, pyautogui |
 | `apps_open` | Launch an installed application by name. | **exists** | `actions/desktop_control.py` | `action` | Windows/macOS/Linux | `NORMAL` | psutil, pyautogui |
 | `windows_list` | List open top-level windows with their ids, titles and owning processes. | **exists** | `actions/desktop_control.py` | `action` | Windows/macOS/Linux | `READ_ONLY` | psutil, pyautogui |
@@ -142,9 +142,9 @@ Following **Rule 7**, all 231 capabilities are consolidated into **35–45 actio
 | `incident_network` | Show active network connections with process info. | **partial** | `actions/security_privacy.py` | `action` | Windows/macOS/Linux | `READ_ONLY` | psutil, winreg |
 | `incident_service_status` |  | **partial** | `actions/security_privacy.py` | `action` | Windows/macOS/Linux | `READ_ONLY` | psutil, winreg |
 | `document_intake` | Extract configured Label: Value fields from local documents with page or line evidence and | **partial** | `actions/file_processor.py` | `action` | Cross-platform | `READ_ONLY` | pypdf, markdown |
-| `mcp_catalogue` | Browse available MCP servers to install. | **missing** | `plugins/mcp_client.py` | `plugin` | Cross-platform | `READ_ONLY` | mcp sdk / subprocess |
-| `mcp_install` | Enable an MCP server from the catalogue. | **missing** | `plugins/mcp_client.py` | `plugin` | Cross-platform | `SENSITIVE` | mcp sdk / subprocess |
-| `mcp_uninstall` | Remove an MCP server from your configuration. | **missing** | `plugins/mcp_client.py` | `plugin` | Cross-platform | `SENSITIVE` | mcp sdk / subprocess |
+| `mcp_catalogue` | Browse available MCP servers to install. | **exists** | `plugins/mcp_client.py` | `plugin` | Cross-platform | `READ_ONLY` | mcp sdk / subprocess |
+| `mcp_install` | Enable an MCP server from the catalogue. | **exists** | `plugins/mcp_client.py` | `plugin` | Cross-platform | `SENSITIVE` | mcp sdk / subprocess |
+| `mcp_uninstall` | Remove an MCP server from your configuration. | **exists** | `plugins/mcp_client.py` | `plugin` | Cross-platform | `SENSITIVE` | mcp sdk / subprocess |
 | `volume_set` | Set, change or mute the system output volume. Returns the resulting level. | **exists** | `actions/computer_settings.py` | `action` | Windows/macOS/Linux | `NORMAL` | pyautogui, pycaw |
 | `media_control` | Send a media key: play_pause, next, previous or stop. | **partial** | `actions/computer_settings.py` | `action` | Windows/macOS/Linux | `NORMAL` | pyautogui, pycaw |
 | `memory_remember` | Save a fact, preference, or instruction to long-term memory. | **partial** | `actions/memory_controller.py` | `action` | Cross-platform | `READ_ONLY` | sqlite3 |
@@ -165,9 +165,9 @@ Following **Rule 7**, all 231 capabilities are consolidated into **35–45 actio
 | `persona_append` | Add a standing instruction to the persona. | **partial** | `plugins/persona_presets.py` | `plugin` | Cross-platform | `NORMAL` | json |
 | `preset_list` | List available configuration presets. | **partial** | `plugins/persona_presets.py` | `plugin` | Cross-platform | `READ_ONLY` | json |
 | `preset_apply` | Apply a configuration preset. | **partial** | `plugins/persona_presets.py` | `plugin` | Cross-platform | `NORMAL` | json |
-| `privacy_net_audit` | Audit active network connections: see which processes are talking to the internet. | **partial** | `actions/security_privacy.py` | `action` | Windows/macOS/Linux | `READ_ONLY` | psutil, socket |
-| `privacy_dns_lookup` | Resolve a hostname and log the result for the privacy audit trail. | **partial** | `actions/security_privacy.py` | `action` | Windows/macOS/Linux | `READ_ONLY` | psutil, socket |
-| `privacy_listening_ports` | List all listening (open) ports and which processes own them. | **partial** | `actions/security_privacy.py` | `action` | Windows/macOS/Linux | `READ_ONLY` | psutil, socket |
+| `privacy_net_audit` | Audit active network connections: see which processes are talking to the internet. | **exists** | `actions/security_privacy.py` | `action` | Windows/macOS/Linux | `READ_ONLY` | psutil, socket |
+| `privacy_dns_lookup` | Resolve a hostname and log the result for the privacy audit trail. | **exists** | `actions/security_privacy.py` | `action` | Windows/macOS/Linux | `READ_ONLY` | psutil, socket |
+| `privacy_listening_ports` | List all listening (open) ports and which processes own them. | **exists** | `actions/security_privacy.py` | `action` | Windows/macOS/Linux | `READ_ONLY` | psutil, socket |
 | `privacy_startup_audit` |  | **partial** | `actions/security_privacy.py` | `action` | Windows/macOS/Linux | `READ_ONLY` | psutil, socket |
 | `project_create` | Scaffold a new project: python, node, react, fastapi, flask, nextjs, or html. | **exists** | `actions/dev_tools.py` | `action` | Cross-platform | `SENSITIVE` | pathlib |
 | `project_analyze` | Analyze a project directory: detect language, framework, file stats, dependencies and entry points. | **exists** | `actions/dev_tools.py` | `action` | Cross-platform | `READ_ONLY` | pathlib |
@@ -203,10 +203,10 @@ Following **Rule 7**, all 231 capabilities are consolidated into **35–45 actio
 | `clip_tag` | Add tags to a screenshot. | **partial** | `actions/screenshot_curator.py` | `action` | Cross-platform | `READ_ONLY` | Pillow, sqlite3 |
 | `file_find` |  | **partial** | `actions/file_controller.py` | `action` | Cross-platform | `READ_ONLY` | os, sqlite3 |
 | `content_search` | Search inside files for text content (like grep). | **partial** | `actions/file_controller.py` | `action` | Cross-platform | `READ_ONLY` | os, sqlite3 |
-| `security_lock` | Lock the screen immediately. | **partial** | `actions/security_privacy.py` | `action` | Windows/macOS/Linux | `SENSITIVE` | psutil, ctypes |
-| `security_processes` | List running processes (filtered by name). | **partial** | `actions/security_privacy.py` | `action` | Windows/macOS/Linux | `READ_ONLY` | psutil, ctypes |
-| `security_network` | Show active network connections. | **partial** | `actions/security_privacy.py` | `action` | Windows/macOS/Linux | `READ_ONLY` | psutil, ctypes |
-| `security_kill` | Kill a process by PID. | **partial** | `actions/security_privacy.py` | `action` | Windows/macOS/Linux | `SENSITIVE` | psutil, ctypes |
+| `security_lock` | Lock the screen immediately. | **exists** | `actions/security_privacy.py` | `action` | Windows/macOS/Linux | `SENSITIVE` | psutil, ctypes |
+| `security_processes` | List running processes (filtered by name). | **exists** | `actions/security_privacy.py` | `action` | Windows/macOS/Linux | `READ_ONLY` | psutil, ctypes |
+| `security_network` | Show active network connections. | **exists** | `actions/security_privacy.py` | `action` | Windows/macOS/Linux | `READ_ONLY` | psutil, ctypes |
+| `security_kill` | Kill a process by PID. | **exists** | `actions/security_privacy.py` | `action` | Windows/macOS/Linux | `SENSITIVE` | psutil, ctypes |
 | `sentinel_create` | Create a named condition watcher. Supported: cpu_above, memory_above, disk_above, process_ | **partial** | `actions/system_sentinel.py` | `action` | Windows/macOS/Linux | `SENSITIVE` | psutil |
 | `sentinel_list` | List all active sentinel watchers and their last-checked status. | **partial** | `actions/system_sentinel.py` | `action` | Windows/macOS/Linux | `READ_ONLY` | psutil |
 | `sentinel_check` | Run all (or one) sentinel watchers now and return which ones triggered. | **partial** | `actions/system_sentinel.py` | `action` | Windows/macOS/Linux | `NORMAL` | psutil |
