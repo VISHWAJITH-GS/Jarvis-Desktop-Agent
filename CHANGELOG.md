@@ -7,7 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased] - Phase 2: Files, Clipboard History, Notes, and Conversation Search
+## [Unreleased] - Phase 3: Desktop UI Automation, Timers, and Stopwatch
+
+### Added
+- **Timers and Stopwatch Engine (`actions/timers_stopwatch.py`)**:
+  - Countdown timer management with background threading timers, status transitions, and SQLite WAL persistence in `memory/timers.db`.
+  - Precision stopwatch with start, pause/stop, multi-lap recording, status queries, and reset using monotonic clocks (`time.monotonic()`).
+  - Thread-safe registry (`_ACTIVE_TIMERS`, `_LOCK`) and UI activity log notifications via `player.write_log`.
+- **UI Automation & Desktop Window Control Enhancements (`actions/windows_uia.py`)**:
+  - Unified snapshot inspection (`ui_snapshot`), element clicking (`ui_click`), text typing (`ui_type`), and keyboard shortcut execution (`ui_hotkey`, `hotkey`).
+  - Native Windows desktop window enumeration (`list_windows`), focus switching (`focus_window`), state control (`set_window_state` for minimize/maximize/restore), and polite window closing (`close_window` via `WM_CLOSE`).
+- **Testing**:
+  - Dedicated test suite `tests/test_phase3_desktop_timers.py` covering timer countdowns, cancellation, stopwatch lap splits, window enumeration, and hotkeys.
+
+---
+
+## [1.3.0] - 2026-11-28 - Phase 2: Files, Clipboard History, Notes, and Conversation Search
 
 ### Added
 - **Clipboard Manager (`actions/clipboard_manager.py`)**:

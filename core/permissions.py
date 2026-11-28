@@ -171,6 +171,7 @@ ACTION_PERMISSIONS: dict[str, str] = {
     "clipboard_manager": NORMAL,
     "notes_manager": NORMAL,
     "conversation_search": READ_ONLY,
+    "timers_stopwatch": NORMAL,
     # Gesture & Workflow Watcher controls
     "enable_gesture_mode": NORMAL,
     "disable_gesture_mode": NORMAL,

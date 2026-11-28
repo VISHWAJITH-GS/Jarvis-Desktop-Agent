@@ -59,13 +59,13 @@ if _IS_WINDOWS:
         if _orig_frozen is None:
             sys.frozen = "console_exe"
         try:
-            from pywinauto import Desktop as _Desktop
-            from pywinauto.controls.uiawrapper import UIAWrapper as _UIAWrapper
-            from pywinauto.uia_defines import NoPatternInterfaceError as _NPIE
-            from pywinauto.keyboard import send_keys as _send_keys
+            import win32con as _win32con
             import win32gui as _win32gui
             import win32process as _win32process
-            import win32con as _win32con
+            from pywinauto import Desktop as _Desktop
+            from pywinauto.controls.uiawrapper import UIAWrapper as _UIAWrapper
+            from pywinauto.keyboard import send_keys as _send_keys
+            from pywinauto.uia_defines import NoPatternInterfaceError as _NPIE
 
             Desktop = _Desktop
             UIAWrapper = _UIAWrapper
@@ -1544,6 +1544,117 @@ def find_element_with_fallback(
     }
 
 
+def list_desktop_windows() -> list[dict]:
+    """Enumerate all open, visible top-level windows."""
+    results = []
+    if not _IS_WINDOWS or not win32gui:
+        return results
+
+    def enum_cb(hwnd, extra):
+        if win32gui.IsWindowVisible(hwnd):
+            title = win32gui.GetWindowText(hwnd).strip()
+            if title:
+                _, pid = win32process.GetWindowThreadProcessId(hwnd)
+                rect = win32gui.GetWindowRect(hwnd)
+                results.append({
+                    "hwnd": hwnd,
+                    "title": title,
+                    "pid": pid,
+                    "rect": {"left": rect[0], "top": rect[1], "right": rect[2], "bottom": rect[3]},
+                })
+        return True
+
+    try:
+        win32gui.EnumWindows(enum_cb, None)
+    except Exception as e:
+        logger.debug(f"EnumWindows error: {e}")
+    return results
+
+
+def focus_desktop_window(target: str) -> dict:
+    """Bring a window to the foreground by title substring or hwnd/pid."""
+    if not _IS_WINDOWS or not win32gui:
+        return {"status": "failed", "reason": "Not on Windows or win32gui not available"}
+    target_lower = target.lower()
+    for w in list_desktop_windows():
+        if target_lower in w["title"].lower() or (target.isdigit() and int(target) in (w["hwnd"], w["pid"])):
+            try:
+                hwnd = w["hwnd"]
+                if win32gui.IsIconic(hwnd):
+                    win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+                win32gui.SetForegroundWindow(hwnd)
+                return {"status": "done", "title": w["title"], "hwnd": hwnd}
+            except Exception as e:
+                return {"status": "failed", "reason": str(e)}
+    return {"status": "failed", "reason": f"No window found matching '{target}'"}
+
+
+def close_desktop_window(target: str) -> dict:
+    """Politely close a window via WM_CLOSE."""
+    if not _IS_WINDOWS or not win32gui:
+        return {"status": "failed", "reason": "Not on Windows or win32gui not available"}
+    target_lower = target.lower()
+    for w in list_desktop_windows():
+        if target_lower in w["title"].lower() or (target.isdigit() and int(target) in (w["hwnd"], w["pid"])):
+            try:
+                hwnd = w["hwnd"]
+                win32gui.PostMessage(hwnd, win32con.WM_CLOSE, 0, 0)
+                return {"status": "done", "title": w["title"], "hwnd": hwnd}
+            except Exception as e:
+                return {"status": "failed", "reason": str(e)}
+    return {"status": "failed", "reason": f"No window found matching '{target}'"}
+
+
+def set_desktop_window_state(target: str, state: str) -> dict:
+    """Change window state: minimize | maximize | restore."""
+    if not _IS_WINDOWS or not win32gui:
+        return {"status": "failed", "reason": "Not on Windows or win32gui not available"}
+    cmd_map = {
+        "minimize": win32con.SW_MINIMIZE,
+        "maximize": win32con.SW_MAXIMIZE,
+        "restore": win32con.SW_RESTORE,
+    }
+    cmd = cmd_map.get(state.lower().strip())
+    if not cmd:
+        return {"status": "failed", "reason": f"Unsupported state '{state}'. Use minimize, maximize, restore."}
+    target_lower = target.lower()
+    for w in list_desktop_windows():
+        if target_lower in w["title"].lower() or (target.isdigit() and int(target) in (w["hwnd"], w["pid"])):
+            try:
+                hwnd = w["hwnd"]
+                win32gui.ShowWindow(hwnd, cmd)
+                return {"status": "done", "title": w["title"], "hwnd": hwnd, "state": state}
+            except Exception as e:
+                return {"status": "failed", "reason": str(e)}
+    return {"status": "failed", "reason": f"No window found matching '{target}'"}
+
+
+def press_hotkey(keys_str: str) -> dict:
+    """Send hotkey combination to the active window."""
+    if not keys_str:
+        return {"status": "failed", "reason": "No keys specified"}
+    parts = [k.strip().lower() for k in keys_str.split("+") if k.strip()]
+    if not parts:
+        return {"status": "failed", "reason": "Invalid key specification"}
+    if _PYAUTOGUI:
+        pyautogui.hotkey(*parts)
+        return {"status": "done", "keys": parts, "method": "pyautogui"}
+    elif send_keys:
+        pywin_keys = []
+        for p in parts:
+            if p in ("ctrl", "control"):
+                pywin_keys.append("^")
+            elif p in ("alt",):
+                pywin_keys.append("%")
+            elif p in ("shift",):
+                pywin_keys.append("+")
+            else:
+                pywin_keys.append(f"{{{p.upper()}}}")
+        send_keys("".join(pywin_keys))
+        return {"status": "done", "keys": parts, "method": "send_keys"}
+    return {"status": "failed", "reason": "No keyboard automation library available"}
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  JARVIS Tool Entry Point
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1588,7 +1699,7 @@ def windows_uia(
                 )
             return outcome.failed("active_window", res.get("reason", "unknown error"))
 
-        if action in ("inspect", "inspect_window"):
+        if action in ("inspect", "inspect_window", "snapshot", "ui_snapshot"):
             max_depth = int(params.get("max_depth", 3))
             limit = int(params.get("limit", 30))
             res = inspect_window(max_depth=max_depth, limit=limit, only_actionable=True)
@@ -1617,7 +1728,7 @@ def windows_uia(
                 return outcome.ask("find_element", res.get("question", "Ambiguous elements."))
             return outcome.failed("find_element", res.get("reason", "Element not found."))
 
-        if action in ("click", "click_element"):
+        if action in ("click", "click_element", "ui_click"):
             name = params.get("name") or params.get("description", "")
             ctype = params.get("control_type")
             res = click_element(name, control_type=ctype)
@@ -1632,7 +1743,7 @@ def windows_uia(
                 return outcome.ask("click_element", res.get("question", "Ambiguous elements."))
             return outcome.failed("click_element", res.get("reason", "Failed to click element."))
 
-        if action in ("type", "type_text"):
+        if action in ("type", "type_text", "ui_type"):
             text = params.get("text", "")
             name = params.get("name") or params.get("description")
             res = type_text(text, element_or_name=name)
@@ -1644,6 +1755,49 @@ def windows_uia(
                     method=res.get("method"),
                 )
             return outcome.failed("type_text", res.get("reason", "Failed to type text."))
+
+        if action in ("hotkey", "ui_hotkey", "press_key"):
+            keys = params.get("keys") or params.get("key") or params.get("text", "")
+            res = press_hotkey(keys)
+            if res.get("status") == "done":
+                return outcome.done("hotkey", keys=keys, method=res.get("method"))
+            return outcome.failed("hotkey", res.get("reason", "Failed to send hotkey."))
+
+        if action in ("list_windows", "windows_list"):
+            wins = list_desktop_windows()
+            return outcome.done(
+                "list_windows",
+                total=len(wins),
+                windows=[{"title": w["title"], "pid": w["pid"]} for w in wins[:25]],
+            )
+
+        if action in ("focus_window", "window_focus", "switch_to_window"):
+            target = params.get("name") or params.get("title") or params.get("target", "")
+            if not target:
+                return outcome.failed("focus_window", "Missing target window name or title.")
+            res = focus_desktop_window(target)
+            if res.get("status") == "done":
+                return outcome.done("focus_window", title=res.get("title"), hwnd=res.get("hwnd"))
+            return outcome.failed("focus_window", res.get("reason", "Failed to focus window."))
+
+        if action in ("close_window", "window_close"):
+            target = params.get("name") or params.get("title") or params.get("target", "")
+            if not target:
+                return outcome.failed("close_window", "Missing target window name or title.")
+            res = close_desktop_window(target)
+            if res.get("status") == "done":
+                return outcome.done("close_window", title=res.get("title"), hwnd=res.get("hwnd"))
+            return outcome.failed("close_window", res.get("reason", "Failed to close window."))
+
+        if action in ("set_window_state", "window_set_state"):
+            target = params.get("name") or params.get("title") or params.get("target", "")
+            state = params.get("state") or params.get("value", "restore")
+            if not target:
+                return outcome.failed("set_window_state", "Missing target window name or title.")
+            res = set_desktop_window_state(target, state)
+            if res.get("status") == "done":
+                return outcome.done("set_window_state", title=res.get("title"), state=state)
+            return outcome.failed("set_window_state", res.get("reason", "Failed to set window state."))
 
         if action in ("scroll", "scroll_window"):
             direction = params.get("direction", "down")
@@ -1681,13 +1835,26 @@ TOOL = {
             "action": {
                 "type": "STRING",
                 "description": (
-                    "open_file_explorer_item | click_element | type_text | get_active_window | "
-                    "inspect_window | find_element | scroll"
+                    "open_file_explorer_item | click_element | ui_click | type_text | ui_type | "
+                    "get_active_window | inspect_window | snapshot | ui_snapshot | find_element | "
+                    "scroll | hotkey | ui_hotkey | list_windows | focus_window | close_window | set_window_state"
                 ),
             },
             "name": {
                 "type": "STRING",
-                "description": "Accessible name of the UI element or folder (e.g. 'Semester 5')",
+                "description": "Accessible name of the UI element, folder, or target window title",
+            },
+            "title": {
+                "type": "STRING",
+                "description": "Window title for focus_window, close_window, or set_window_state",
+            },
+            "state": {
+                "type": "STRING",
+                "description": "Target window state for set_window_state: minimize | maximize | restore",
+            },
+            "keys": {
+                "type": "STRING",
+                "description": "Key or hotkey combination to press (e.g. 'ctrl+c', 'alt+tab', 'enter')",
             },
             "control_type": {
                 "type": "STRING",

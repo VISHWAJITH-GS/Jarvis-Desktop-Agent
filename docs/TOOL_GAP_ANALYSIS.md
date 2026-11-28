@@ -73,10 +73,10 @@ Following **Rule 7**, all 231 capabilities are consolidated into **35–45 actio
 | `email_send` | Send an email from the user's account. Show the user the exact text first when it is long. | **missing** | `plugins/email_manager.py` | `plugin` | Cross-platform | `SENSITIVE` | imaplib, smtplib |
 | `call_start` |  | **partial** | `plugins/email_manager.py` | `plugin` | Cross-platform | `SENSITIVE` | imaplib, smtplib |
 | `settings_open` | Open a page of {var} (then use ui_snapshot / ui_click to change something). | **partial** | `plugins/email_manager.py` | `plugin` | Cross-platform | `NORMAL` | imaplib, smtplib |
-| `ui_snapshot` | List the controls (buttons, fields, menus, links…) of the window in the foreground, each w | **partial** | `actions/windows_uia.py` | `action` | Windows | `READ_ONLY` | uiautomation / ctypes |
-| `ui_click` | Click a control from the latest ui_snapshot. | **partial** | `actions/windows_uia.py` | `action` | Windows | `SENSITIVE` | uiautomation / ctypes |
-| `ui_type` | Type text into a control from ui_snapshot, or at the current cursor. Never use for passwor | **partial** | `actions/windows_uia.py` | `action` | Windows | `SENSITIVE` | uiautomation / ctypes |
-| `ui_hotkey` | Press a key or keyboard shortcut in the active window. | **partial** | `actions/windows_uia.py` | `action` | Windows | `SENSITIVE` | uiautomation / ctypes |
+| `ui_snapshot` | List the controls (buttons, fields, menus, links…) of the window in the foreground, each with coordinates. | **exists** | `actions/windows_uia.py` | `action` | Windows | `READ_ONLY` | uiautomation / ctypes |
+| `ui_click` | Click a control from the latest ui_snapshot. | **exists** | `actions/windows_uia.py` | `action` | Windows | `SENSITIVE` | uiautomation / ctypes |
+| `ui_type` | Type text into a control from ui_snapshot, or at the current cursor. Never use for passwords. | **exists** | `actions/windows_uia.py` | `action` | Windows | `SENSITIVE` | uiautomation / ctypes |
+| `ui_hotkey` | Press a key or keyboard shortcut in the active window. | **exists** | `actions/windows_uia.py` | `action` | Windows | `SENSITIVE` | uiautomation / ctypes |
 | `conversation_search` | Search past conversations for a topic, decision, or phrase. | **exists** | `plugins/conversation_search.py` | `plugin` | Cross-platform | `READ_ONLY` | sqlite3 |
 | `conversation_list` | List recent conversations by title and date. | **exists** | `plugins/conversation_search.py` | `plugin` | Cross-platform | `READ_ONLY` | sqlite3 |
 | `credential_check_password` | Check password strength locally: entropy, common-pattern detection, suggestions. The passw | **partial** | `actions/security_privacy.py` | `action` | Cross-platform | `READ_ONLY` | hashlib, requests |
@@ -223,10 +223,10 @@ Following **Rule 7**, all 231 capabilities are consolidated into **35–45 actio
 | `process_kill` | Terminate a process by pid. Unsaved work in it is lost. | **exists** | `actions/system_monitor.py` | `action` | Windows/macOS/Linux | `SENSITIVE` | psutil |
 | `telegram_send` | Send a message to the user via Telegram. | **missing** | `plugins/telegram_manager.py` | `plugin` | Cross-platform | `SENSITIVE` | requests / httpx |
 | `telegram_status` | Check Telegram bot connection status. | **missing** | `plugins/telegram_manager.py` | `plugin` | Cross-platform | `READ_ONLY` | requests / httpx |
-| `timer_set` | Set a countdown timer. Plays a chime when done. | **missing** | `actions/timers_stopwatch.py` | `action` | Cross-platform | `READ_ONLY` | threading, time |
-| `timer_list` | List all active timers and their remaining time. | **missing** | `actions/timers_stopwatch.py` | `action` | Cross-platform | `READ_ONLY` | threading, time |
-| `timer_cancel` | Cancel an active timer. | **missing** | `actions/timers_stopwatch.py` | `action` | Cross-platform | `READ_ONLY` | threading, time |
-| `stopwatch` | Start, stop, lap, or reset a stopwatch. | **missing** | `actions/timers_stopwatch.py` | `action` | Cross-platform | `READ_ONLY` | threading, time |
+| `timer_set` | Set a countdown timer. Plays a chime when done. | **exists** | `actions/timers_stopwatch.py` | `action` | Cross-platform | `READ_ONLY` | threading, time |
+| `timer_list` | List all active timers and their remaining time. | **exists** | `actions/timers_stopwatch.py` | `action` | Cross-platform | `READ_ONLY` | threading, time |
+| `timer_cancel` | Cancel an active timer. | **exists** | `actions/timers_stopwatch.py` | `action` | Cross-platform | `READ_ONLY` | threading, time |
+| `stopwatch` | Start, stop, lap, or reset a stopwatch. | **exists** | `actions/timers_stopwatch.py` | `action` | Cross-platform | `READ_ONLY` | threading, time |
 | `reminder_set` | Set a reminder. Specify minutes from now or an absolute time. | **partial** | `actions/timers_stopwatch.py` | `action` | Cross-platform | `NORMAL` | threading, time |
 | `reminder_list` | List upcoming reminders. | **partial** | `actions/timers_stopwatch.py` | `action` | Cross-platform | `READ_ONLY` | threading, time |
 | `reminder_cancel` | Cancel a pending reminder. | **partial** | `actions/timers_stopwatch.py` | `action` | Cross-platform | `NORMAL` | threading, time |
