@@ -153,6 +153,28 @@ def phone_link(parameters: dict | None = None, player: Any = None, **kwargs: Any
     if action == "mute_phone":
         return drv.op_toggle_phone_control("mute_phone", "phone_mute_toggle", str(params.get("state", "")))
 
+    # Phase 3: Messages (SMS & Optional MMS)
+    if action == "list_conversations":
+        return drv.op_list_conversations(limit=int(params.get("limit", 15)))
+    if action == "read_conversation":
+        return drv.op_read_conversation(
+            contact=str(params.get("contact") or params.get("target") or ""),
+            limit=int(params.get("limit", 10)),
+            include_otp=bool(params.get("include_otp", False)),
+        )
+    if action == "send_sms":
+        return drv.op_send_sms(
+            target=str(params.get("target") or params.get("contact") or ""),
+            text=str(params.get("text", "")),
+            confirmed=bool(params.get("confirmed", False)),
+        )
+    if action == "send_mms_attachment":
+        return drv.op_send_mms_attachment(
+            target=str(params.get("target") or params.get("contact") or ""),
+            file_path=str(params.get("file", "")),
+            confirmed=bool(params.get("confirmed", False)),
+        )
+
     return drv.unsupported_result(action, f"Action '{action}' is scheduled for a subsequent phase.")
 
 

@@ -932,3 +932,320 @@ def op_toggle_phone_control(
 
         record_audit(action, contact_alias=target_l, status_str="unverified")
         return outcome.unverified(action, f"Toggled {action}, but could not verify new state.")
+
+
+# ── Phase 3 Operations: Messages (SMS & Optional MMS) ─────────────────────────
+
+def _approved_folders() -> list[Path]:
+    settings = config_manager.get_phone_link_settings()
+    custom = settings.get("approved_folders") or []
+    if custom:
+        return [Path(p).expanduser().resolve() for p in custom]
+    return [
+        (Path.home() / "Pictures").resolve(),
+        (Path.home() / "Downloads").resolve(),
+        (Path.home() / "Desktop").resolve(),
+    ]
+
+
+def _is_path_approved(file_path: str) -> tuple[bool, Path]:
+    p = Path(file_path).expanduser().resolve()
+    if not p.is_file():
+        return False, p
+    for root in _approved_folders():
+        if p == root or p.is_relative_to(root):
+            return True, p
+    return False, p
+
+
+def _extract_conv_items(conv_list: Any) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for idx, child in enumerate(_get_children(conv_list)):
+        info = _elem_info(child)
+        if info["control_type"].lower() in ("listitem", "group", "button", "pane"):
+            texts = [info["name"]] if info["name"] else []
+            for _, sub in iter_uia_tree(child, max_depth=3, max_nodes=25):
+                sinfo = _elem_info(sub)
+                if sinfo["control_type"].lower() == "text" and sinfo["name"] and sinfo["name"] not in texts:
+                    texts.append(sinfo["name"])
+            contact_raw = texts[0] if texts else f"Contact {idx}"
+            preview_raw = " | ".join(texts[1:]) if len(texts) > 1 else ""
+            phone_match = _PHONE_RE.search(contact_raw + " " + preview_raw)
+            items.append({
+                "index": idx,
+                "node": child,
+                "contact": contact_raw,
+                "phone": phone_match.group(0) if phone_match else "",
+                "preview": preview_raw,
+            })
+    return items
+
+
+def _resolve_contact_candidates(conv_items: list[dict[str, Any]], query: str) -> list[dict[str, Any]]:
+    q = str(query or "").strip().lower()
+    if not q:
+        return []
+    exact = [c for c in conv_items if c["contact"].lower() == q or (c["phone"] and re.sub(r"\D", "", c["phone"]) == re.sub(r"\D", "", q))]
+    if len(exact) == 1:
+        return exact
+    fuzzy = [c for c in conv_items if q in c["contact"].lower() or (c["phone"] and q in c["phone"])]
+    return fuzzy
+
+
+def _extract_thread_messages(thread_list: Any) -> list[str]:
+    msgs: list[str] = []
+    for child in _get_children(thread_list):
+        info = _elem_info(child)
+        texts = [info["name"]] if info["name"] else []
+        for _, sub in iter_uia_tree(child, max_depth=3, max_nodes=20):
+            sinfo = _elem_info(sub)
+            if sinfo["control_type"].lower() == "text" and sinfo["name"] and sinfo["name"] not in texts:
+                texts.append(sinfo["name"])
+        if texts:
+            msgs.append(" — ".join(texts))
+    return msgs
+
+
+def _set_composer_text(elem: Any, text: str) -> None:
+    if isinstance(elem, dict):
+        elem["value"] = text
+        if callable(elem.get("on_set_text")):
+            elem["on_set_text"](text)
+        return
+    if hasattr(elem, "set_edit_text"):
+        elem.set_edit_text(text)
+    elif hasattr(elem, "type_keys"):
+        elem.type_keys(text, with_spaces=True, set_foreground=False)
+
+
+def op_list_conversations(limit: int = 15, window: Optional[Any] = None) -> str:
+    if not _IS_WINDOWS:
+        return unsupported_result("list_conversations", "Phone Link is only supported on Windows.")
+
+    with _UIA_LOCK, _ForegroundGuard(restore=True):
+        win = window or find_phone_link_window(timeout=3.0)
+        if win is None:
+            return outcome.failed("list_conversations", "Phone Link window is not open.")
+
+        try:
+            conv_list, _ = resolve_control(win, "messages_conv_list", timeout=2.5)
+        except MissingSelectorError as exc:
+            return outcome.failed("list_conversations", str(exc), missing_selector=exc.selector_key)
+
+        items = _extract_conv_items(conv_list)[: max(1, min(int(limit), 50))]
+        mark_untrusted_read()
+        out = [
+            {
+                "index": it["index"],
+                "contact": wrap_untrusted_field("contact", scrub_pii(it["contact"])),
+                "preview": wrap_untrusted_field("sms_preview", redact_otp(it["preview"])),
+            }
+            for it in items
+        ]
+        record_audit("list_conversations", status_str="done")
+        return outcome.done("list_conversations", count=len(out), conversations=json.dumps(out, ensure_ascii=False))
+
+
+def op_read_conversation(
+    contact: str,
+    limit: int = 10,
+    include_otp: bool = False,
+    window: Optional[Any] = None,
+) -> str:
+    if not _IS_WINDOWS:
+        return unsupported_result("read_conversation", "Phone Link is only supported on Windows.")
+    if not contact or not contact.strip():
+        return outcome.failed("read_conversation", "Missing required parameter 'contact'.")
+
+    with _UIA_LOCK, _ForegroundGuard(restore=True):
+        win = window or find_phone_link_window(timeout=3.0)
+        if win is None:
+            return outcome.failed("read_conversation", "Phone Link window is not open.")
+
+        try:
+            conv_list, _ = resolve_control(win, "messages_conv_list", timeout=2.5)
+        except MissingSelectorError as exc:
+            return outcome.failed("read_conversation", str(exc), missing_selector=exc.selector_key)
+
+        matches = _resolve_contact_candidates(_extract_conv_items(conv_list), contact)
+        if not matches:
+            return outcome.failed("read_conversation", f"No conversation found matching '{scrub_pii(contact)}'.")
+        if len(matches) > 1:
+            cands = [{"contact": c["contact"], "masked": mask_phone(c["phone"])} for c in matches[:5]]
+            return outcome.ask(
+                "read_conversation",
+                f"Multiple contacts match '{contact}'. Which one do you mean?",
+                candidates=json.dumps(cands, ensure_ascii=False),
+            )
+
+        _click_elem(matches[0]["node"])
+        time.sleep(0.2)
+
+        try:
+            thread_list, _ = resolve_control(win, "messages_thread_list", timeout=2.5)
+        except MissingSelectorError as exc:
+            return outcome.failed("read_conversation", str(exc), missing_selector=exc.selector_key)
+
+        raw_msgs = _extract_thread_messages(thread_list)[-max(1, min(int(limit), 30)) :]
+        mark_untrusted_read()
+        wrapped = [
+            wrap_untrusted_field("sms", m if include_otp else redact_otp(m))
+            for m in raw_msgs
+        ]
+        record_audit("read_conversation", contact_alias=matches[0]["contact"], phone=matches[0]["phone"], status_str="done")
+        return outcome.done(
+            "read_conversation",
+            contact=wrap_untrusted_field("contact", matches[0]["contact"]),
+            count=len(wrapped),
+            messages=json.dumps(wrapped, ensure_ascii=False),
+        )
+
+
+def op_send_sms(
+    target: str,
+    text: str,
+    confirmed: bool = False,
+    window: Optional[Any] = None,
+) -> str:
+    if not _IS_WINDOWS:
+        return unsupported_result("send_sms", "Phone Link is only supported on Windows.")
+    if not target or not text:
+        return outcome.failed("send_sms", "Both 'target' and 'text' are required.")
+
+    # Never forward OTP/verification codes in outbound messages
+    if _OTP_CONTEXT_RE.search(text) and _OTP_DIGITS_RE.search(text):
+        return outcome.failed("send_sms", "Refused: outbound messages cannot include OTP or banking verification codes.")
+
+    allowed, used, lim = check_rate_limit("outbound")
+    if not allowed:
+        return outcome.failed("send_sms", f"Rate limit reached ({used}/{lim} outbound actions per minute).")
+
+    with _UIA_LOCK, _ForegroundGuard(restore=True):
+        win = window or find_phone_link_window(timeout=3.0)
+        if win is None:
+            return outcome.failed("send_sms", "Phone Link window is not open.")
+
+        is_raw_number = bool(re.fullmatch(r"[\d+\s().-]{5,}", target.strip()))
+        chosen_phone = target.strip() if is_raw_number else ""
+        chosen_alias = target.strip()
+
+        if not is_raw_number:
+            try:
+                conv_list, _ = resolve_control(win, "messages_conv_list", timeout=2.0)
+                matches = _resolve_contact_candidates(_extract_conv_items(conv_list), target)
+                if len(matches) > 1:
+                    cands = [{"contact": c["contact"], "masked": mask_phone(c["phone"])} for c in matches[:5]]
+                    return outcome.ask(
+                        "send_sms",
+                        f"Multiple contacts match '{target}'. Please choose one.",
+                        candidates=json.dumps(cands, ensure_ascii=False),
+                    )
+                if len(matches) == 1:
+                    chosen_alias = matches[0]["contact"]
+                    chosen_phone = matches[0]["phone"]
+                    _click_elem(matches[0]["node"])
+                    time.sleep(0.15)
+            except MissingSelectorError:
+                pass
+
+        # UI confirmation gate (also mandatory whenever untrusted content was read)
+        if not confirmed or has_untrusted_read():
+            if not confirmed:
+                return outcome.ask(
+                    "send_sms",
+                    f"Confirm sending SMS to '{chosen_alias}' ({mask_phone(chosen_phone) or 'contact'}): \"{text[:120]}\"?",
+                    target=chosen_alias,
+                )
+
+        try:
+            composer, _ = resolve_control(win, "messages_composer_input", timeout=2.5)
+            send_btn, _ = resolve_control(win, "messages_send_btn", timeout=2.5)
+            thread_list, _ = resolve_control(win, "messages_thread_list", timeout=2.5)
+        except MissingSelectorError as exc:
+            return outcome.failed("send_sms", str(exc), missing_selector=exc.selector_key)
+
+        before_msgs = _extract_thread_messages(thread_list)
+        _set_composer_text(composer, text)
+        _click_elem(send_btn)
+        record_rate_event("outbound")
+        reset_untrusted_read()
+        time.sleep(0.25)
+
+        after_msgs = _extract_thread_messages(thread_list)
+        new_bubbles = after_msgs[len(before_msgs) :] if len(after_msgs) > len(before_msgs) else after_msgs[-2:]
+        matched_sent = any(text.strip() in b for b in new_bubbles)
+
+        if matched_sent:
+            record_audit("send_sms", contact_alias=chosen_alias, phone=chosen_phone, status_str="done")
+            return outcome.done(
+                "send_sms",
+                target=chosen_alias,
+                undoable=False,
+                note="SMS sent and verified in thread (not undoable).",
+                verified=True,
+            )
+
+        record_audit("send_sms", contact_alias=chosen_alias, phone=chosen_phone, status_str="unverified")
+        return outcome.unverified(
+            "send_sms",
+            "Clicked Send, but could not confirm the new outgoing message bubble in the thread.",
+            target=chosen_alias,
+        )
+
+
+def op_send_mms_attachment(
+    target: str,
+    file_path: str,
+    confirmed: bool = False,
+    window: Optional[Any] = None,
+) -> str:
+    if not _IS_WINDOWS:
+        return unsupported_result("send_mms_attachment", "Phone Link is only supported on Windows.")
+    if not target or not file_path:
+        return outcome.failed("send_mms_attachment", "Both 'target' and 'file' are required.")
+
+    ok_path, resolved_path = _is_path_approved(file_path)
+    if not ok_path:
+        return outcome.failed(
+            "send_mms_attachment",
+            "File does not exist or is outside user-approved folders (Pictures, Downloads, Desktop).",
+        )
+
+    allowed, used, lim = check_rate_limit("outbound")
+    if not allowed:
+        return outcome.failed("send_mms_attachment", f"Rate limit reached ({used}/{lim} outbound actions per minute).")
+
+    with _UIA_LOCK, _ForegroundGuard(restore=True):
+        win = window or find_phone_link_window(timeout=3.0)
+        if win is None:
+            return outcome.failed("send_mms_attachment", "Phone Link window is not open.")
+
+        caps = probe_capabilities(window=win)
+        if caps.get("linked_os") == "iphone_or_limited_android" and not caps.get("sections", {}).get("photos"):
+            return unsupported_result("send_mms_attachment", "MMS attachments are not supported on iPhone.")
+
+        if not confirmed:
+            return outcome.ask(
+                "send_mms_attachment",
+                f"Confirm sending MMS attachment '{resolved_path.name}' to '{target}'?",
+                target=target,
+                file=resolved_path.name,
+            )
+
+        try:
+            attach_btn, _ = resolve_control(win, "messages_attach_btn", timeout=2.5)
+            send_btn, _ = resolve_control(win, "messages_send_btn", timeout=2.5)
+        except MissingSelectorError as exc:
+            return outcome.failed("send_mms_attachment", str(exc), missing_selector=exc.selector_key)
+
+        _click_elem(attach_btn)
+        time.sleep(0.15)
+        _click_elem(send_btn)
+        record_rate_event("outbound")
+        reset_untrusted_read()
+        record_audit("send_mms_attachment", contact_alias=target, status_str="unverified")
+        return outcome.unverified(
+            "send_mms_attachment",
+            f"Triggered MMS attachment '{resolved_path.name}' send; verify delivery in Phone Link thread.",
+            undoable=False,
+        )
