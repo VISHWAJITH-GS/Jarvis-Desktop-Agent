@@ -175,6 +175,30 @@ def phone_link(parameters: dict | None = None, player: Any = None, **kwargs: Any
             confirmed=bool(params.get("confirmed", False)),
         )
 
+    # Phase 4: Calls
+    if action == "recent_calls":
+        return drv.op_recent_calls(limit=int(params.get("limit", 20)))
+    if action == "call_status":
+        return drv.op_call_status()
+    if action == "call":
+        return drv.op_call(
+            target=str(params.get("target") or params.get("contact") or ""),
+            confirmed=bool(params.get("confirmed", False)),
+        )
+    if action == "answer":
+        return drv.op_answer_call()
+    if action == "decline":
+        return drv.op_decline_call()
+    if action == "end_call":
+        return drv.op_end_call()
+    if action == "dial_digits":
+        return drv.op_dial_digits(digits=str(params.get("digits", "")))
+    if action == "dial_via_tel_uri":
+        return drv.op_dial_via_tel_uri(
+            number=str(params.get("target") or params.get("number") or ""),
+            confirmed=bool(params.get("confirmed", False)),
+        )
+
     return drv.unsupported_result(action, f"Action '{action}' is scheduled for a subsequent phase.")
 
 

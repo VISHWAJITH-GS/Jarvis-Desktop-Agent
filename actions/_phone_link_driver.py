@@ -1249,3 +1249,248 @@ def op_send_mms_attachment(
             f"Triggered MMS attachment '{resolved_path.name}' send; verify delivery in Phone Link thread.",
             undoable=False,
         )
+
+
+# ── Phase 4 Operations: Calls ─────────────────────────────────────────────────
+
+def _detect_call_state(win: Any) -> str:
+    """Return 'incoming' | 'in_call' | 'idle' based on UIA call controls."""
+    try:
+        resolve_control(win, "calls_answer_btn", timeout=0.15)
+        return "incoming"
+    except MissingSelectorError:
+        pass
+    for key in ("calls_end_btn", "calls_active_banner"):
+        try:
+            resolve_control(win, key, timeout=0.15)
+            return "in_call"
+        except MissingSelectorError:
+            pass
+    return "idle"
+
+
+def op_recent_calls(limit: int = 20, window: Optional[Any] = None) -> str:
+    if not _IS_WINDOWS:
+        return unsupported_result("recent_calls", "Phone Link is only supported on Windows.")
+
+    with _UIA_LOCK, _ForegroundGuard(restore=True):
+        win = window or find_phone_link_window(timeout=3.0)
+        if win is None:
+            return outcome.failed("recent_calls", "Phone Link window is not open.")
+
+        try:
+            calls_list, _ = resolve_control(win, "calls_list", timeout=2.5)
+        except MissingSelectorError as exc:
+            return outcome.failed("recent_calls", str(exc), missing_selector=exc.selector_key)
+
+        capped = max(1, min(int(limit), 100))
+        entries = _extract_conv_items(calls_list)[:capped]
+        mark_untrusted_read()
+        out = [
+            {
+                "index": it["index"],
+                "contact": wrap_untrusted_field("call_contact", scrub_pii(it["contact"])),
+                "detail": wrap_untrusted_field("call_detail", scrub_pii(it["preview"])),
+            }
+            for it in entries
+        ]
+        record_audit("recent_calls", status_str="done")
+        return outcome.done("recent_calls", count=len(out), calls=json.dumps(out, ensure_ascii=False))
+
+
+def op_call_status(window: Optional[Any] = None) -> str:
+    if not _IS_WINDOWS:
+        return unsupported_result("call_status", "Phone Link is only supported on Windows.")
+
+    with _UIA_LOCK:
+        win = window or find_phone_link_window(timeout=2.0)
+        if win is None:
+            return outcome.failed("call_status", "Phone Link window is not open.")
+        state = _detect_call_state(win)
+        record_audit("call_status", contact_alias=state, status_str="done")
+        return outcome.done("call_status", call_state=state)
+
+
+def op_call(target: str, confirmed: bool = False, window: Optional[Any] = None) -> str:
+    if not _IS_WINDOWS:
+        return unsupported_result("call", "Phone Link is only supported on Windows.")
+    if not target or not target.strip():
+        return outcome.failed("call", "Missing required parameter 'target' (contact or phone number).")
+
+    if is_emergency_number(target):
+        record_audit("call", contact_alias="EMERGENCY_BLOCKED", status_str="failed")
+        return outcome.failed(
+            "call",
+            "Refused: emergency numbers (e.g. 911, 112, 999) are blocked by policy. Dial directly from your phone.",
+        )
+
+    allowed, used, lim = check_rate_limit("outbound")
+    if not allowed:
+        return outcome.failed("call", f"Rate limit reached ({used}/{lim} outbound actions per minute).")
+
+    with _UIA_LOCK, _ForegroundGuard(restore=True):
+        win = window or find_phone_link_window(timeout=3.0)
+        if win is None:
+            return outcome.failed("call", "Phone Link window is not open.")
+
+        is_raw_number = bool(re.fullmatch(r"[\d+\s().-]{5,}", target.strip()))
+        chosen_alias = target.strip()
+        chosen_phone = target.strip() if is_raw_number else ""
+
+        if not is_raw_number:
+            try:
+                calls_list, _ = resolve_control(win, "calls_list", timeout=1.5)
+                matches = _resolve_contact_candidates(_extract_conv_items(calls_list), target)
+                if len(matches) > 1:
+                    cands = [{"contact": c["contact"], "masked": mask_phone(c["phone"])} for c in matches[:5]]
+                    return outcome.ask(
+                        "call",
+                        f"Multiple contacts match '{target}'. Which one do you want to call?",
+                        candidates=json.dumps(cands, ensure_ascii=False),
+                    )
+                if len(matches) == 1:
+                    chosen_alias = matches[0]["contact"]
+                    chosen_phone = matches[0]["phone"] or matches[0]["contact"]
+            except MissingSelectorError:
+                pass
+
+        if not confirmed:
+            return outcome.ask(
+                "call",
+                f"Confirm placing a phone call to '{chosen_alias}' ({mask_phone(chosen_phone) or 'contact'})?",
+                target=chosen_alias,
+            )
+
+        try:
+            dial_input, _ = resolve_control(win, "calls_dial_input", timeout=2.5)
+            dial_btn, _ = resolve_control(win, "calls_dial_btn", timeout=2.5)
+        except MissingSelectorError as exc:
+            return outcome.failed("call", str(exc), missing_selector=exc.selector_key)
+
+        _set_composer_text(dial_input, chosen_phone or chosen_alias)
+        _click_elem(dial_btn)
+        record_rate_event("outbound")
+        reset_untrusted_read()
+        time.sleep(0.25)
+
+        if _detect_call_state(win) == "in_call":
+            record_audit("call", contact_alias=chosen_alias, phone=chosen_phone, status_str="done")
+            return outcome.done(
+                "call",
+                target=chosen_alias,
+                call_state="in_call",
+                undoable=False,
+                note="Call initiated (not undoable).",
+                verified=True,
+            )
+
+        record_audit("call", contact_alias=chosen_alias, phone=chosen_phone, status_str="unverified")
+        return outcome.unverified("call", "Clicked Dial, but active-call UI state could not be confirmed.")
+
+
+def op_answer_call(window: Optional[Any] = None) -> str:
+    if not _IS_WINDOWS:
+        return unsupported_result("answer", "Phone Link is only supported on Windows.")
+
+    with _UIA_LOCK, _ForegroundGuard(restore=True):
+        win = window or find_phone_link_window(timeout=2.5)
+        if win is None:
+            return outcome.failed("answer", "Phone Link window is not open.")
+        try:
+            btn, _ = resolve_control(win, "calls_answer_btn", timeout=2.0)
+        except MissingSelectorError as exc:
+            return outcome.failed("answer", str(exc), missing_selector=exc.selector_key)
+
+        _click_elem(btn)
+        time.sleep(0.2)
+        if _detect_call_state(win) == "in_call":
+            record_audit("answer", status_str="done")
+            return outcome.done("answer", call_state="in_call", verified=True)
+        record_audit("answer", status_str="unverified")
+        return outcome.unverified("answer", "Clicked Answer, but active-call state was not confirmed.")
+
+
+def op_decline_call(window: Optional[Any] = None) -> str:
+    if not _IS_WINDOWS:
+        return unsupported_result("decline", "Phone Link is only supported on Windows.")
+
+    with _UIA_LOCK, _ForegroundGuard(restore=True):
+        win = window or find_phone_link_window(timeout=2.5)
+        if win is None:
+            return outcome.failed("decline", "Phone Link window is not open.")
+        try:
+            btn, _ = resolve_control(win, "calls_decline_btn", timeout=2.0)
+        except MissingSelectorError as exc:
+            return outcome.failed("decline", str(exc), missing_selector=exc.selector_key)
+
+        _click_elem(btn)
+        time.sleep(0.2)
+        if _detect_call_state(win) != "incoming":
+            record_audit("decline", status_str="done")
+            return outcome.done("decline", call_state="idle", undoable=False, verified=True)
+        record_audit("decline", status_str="unverified")
+        return outcome.unverified("decline", "Clicked Decline, but incoming call controls are still visible.")
+
+
+def op_end_call(window: Optional[Any] = None) -> str:
+    if not _IS_WINDOWS:
+        return unsupported_result("end_call", "Phone Link is only supported on Windows.")
+
+    with _UIA_LOCK, _ForegroundGuard(restore=True):
+        win = window or find_phone_link_window(timeout=2.5)
+        if win is None:
+            return outcome.failed("end_call", "Phone Link window is not open.")
+        try:
+            btn, _ = resolve_control(win, "calls_end_btn", timeout=2.0)
+        except MissingSelectorError as exc:
+            return outcome.failed("end_call", str(exc), missing_selector=exc.selector_key)
+
+        _click_elem(btn)
+        time.sleep(0.2)
+        if _detect_call_state(win) == "idle":
+            record_audit("end_call", status_str="done")
+            return outcome.done("end_call", call_state="idle", undoable=False, verified=True)
+        record_audit("end_call", status_str="unverified")
+        return outcome.unverified("end_call", "Clicked End Call, but active-call state is still visible.")
+
+
+def op_dial_digits(digits: str, window: Optional[Any] = None) -> str:
+    if not _IS_WINDOWS:
+        return unsupported_result("dial_digits", "Phone Link is only supported on Windows.")
+    clean = str(digits or "").strip()
+    if not clean or not re.fullmatch(r"[0-9*#]+", clean):
+        return outcome.failed("dial_digits", "Parameter 'digits' must contain only 0-9, *, or #.")
+
+    with _UIA_LOCK, _ForegroundGuard(restore=True):
+        win = window or find_phone_link_window(timeout=2.5)
+        if win is None:
+            return outcome.failed("dial_digits", "Phone Link window is not open.")
+        if _detect_call_state(win) != "in_call":
+            return outcome.failed("dial_digits", "dial_digits is only allowed during an active call.")
+
+        if isinstance(win, dict):
+            win.setdefault("_dialed_digits", []).append(clean)
+        elif hasattr(win, "type_keys"):
+            win.type_keys(clean, set_foreground=False)
+
+        record_audit("dial_digits", contact_alias=f"len:{len(clean)}", status_str="done")
+        return outcome.done("dial_digits", digits_sent=len(clean), verified=True)
+
+
+def op_dial_via_tel_uri(number: str, confirmed: bool = False) -> str:
+    """Experimental off-by-default fallback using Windows tel: URI handler."""
+    if not _IS_WINDOWS:
+        return unsupported_result("dial_via_tel_uri", "Phone Link is only supported on Windows.")
+    clean = re.sub(r"[^\d+*#]", "", str(number or "").strip())
+    if not clean:
+        return outcome.failed("dial_via_tel_uri", "Valid phone number required.")
+    if is_emergency_number(clean):
+        return outcome.failed("dial_via_tel_uri", "Refused: emergency numbers must be dialed from your phone.")
+    if not confirmed:
+        return outcome.ask("dial_via_tel_uri", f"Confirm experimental tel: dial to {mask_phone(clean)}?")
+    try:
+        os.startfile(f"tel:{clean}")
+        record_audit("dial_via_tel_uri", phone=clean, status_str="unverified")
+        return outcome.unverified("dial_via_tel_uri", "Opened tel: URI; call state cannot be verified via URI.")
+    except Exception as exc:
+        return outcome.failed("dial_via_tel_uri", f"Failed to open tel: URI: {exc}")
