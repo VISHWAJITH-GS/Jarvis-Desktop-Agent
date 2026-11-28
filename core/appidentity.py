@@ -107,6 +107,8 @@ def fold(text: str) -> str:
 ALIASES: dict[str, dict[str, str]] = {
     "chrome": {"Windows": "chrome", "Darwin": "Google Chrome", "Linux": "google-chrome"},
     "google chrome": {"Windows": "chrome", "Darwin": "Google Chrome", "Linux": "google-chrome"},
+    "ego": {"Windows": "ego-browser", "Darwin": "ego-browser", "Linux": "ego-browser"},
+    "ego browser": {"Windows": "ego-browser", "Darwin": "ego-browser", "Linux": "ego-browser"},
     "firefox": {"Windows": "firefox", "Darwin": "Firefox", "Linux": "firefox"},
     "edge": {"Windows": "msedge", "Darwin": "Microsoft Edge", "Linux": "microsoft-edge"},
     "brave": {"Windows": "brave", "Darwin": "Brave Browser", "Linux": "brave-browser"},

@@ -74,11 +74,17 @@ def browser_control(parameters: Optional[Dict[str, Any]] = None, **kwargs: Any) 
         )
         return outcome.done("browser_control", message=summary, action="list_providers", providers=health_map)
 
-    # Resolve active browser engine
-    provider = prov_mgr.get_active_provider()
-    session_mgr = get_browser_session_manager()
-    executor = get_action_executor()
-    distiller = get_dom_distiller()
+    # Resolve active browser engine (honoring explicit provider='ego'|'chrome'|'edge'|'cdp')
+    target_prov = str(params.get("provider", params.get("browser", ""))).strip().lower()
+    if target_prov in ("ego", "chrome", "edge", "cdp"):
+        prov_mgr.set_provider(target_prov)
+        provider = prov_mgr.get_provider(target_prov)
+    else:
+        provider = prov_mgr.get_active_provider()
+
+    session_mgr = getattr(provider, "session_mgr", None) or get_browser_session_manager()
+    executor = getattr(provider, "executor", None) or get_action_executor()
+    distiller = getattr(provider, "distiller", None) or get_dom_distiller()
 
     # If test suites have explicitly patched session_mgr or if CDP is requested, route to CDP provider
     import unittest.mock
@@ -471,19 +477,23 @@ TOOL = {
     "name": "browser_control",
     "permission": "normal",
     "description": (
-        "Controls browser automation using the active engine (Ego Lite or Chrome/Edge CDP). "
+        "Controls browser automation using the chosen engine (Ego Lite or Chrome/Edge CDP). "
         "Supports isolated task Spaces, semantic DOM observation, and reliable interactions. "
+        "MANDATORY PROTOCOL: When asked to open a website, navigate to a page, or search the web, "
+        "ALWAYS ask the user first: 'Which browser do you want me to open: Ego or Chrome?' "
+        "unless the user already specified the browser. "
+        "Then pass provider='ego' or provider='chrome' based on their choice. "
         "Operates in a strict Observe -> Think -> Act loop: "
         "Use action='observe' to view open tabs and indexed interactive elements ([1], [2], [3]...). "
         "Use action='click' with index=N to click an element. "
         "Use action='type' with index=N and text='...' to type into an input. "
-        "Use action='navigate' with url='...' to open pages. "
+        "Use action='navigate' with url='...' and provider='ego'|'chrome' to open pages. "
         "Use action='scroll' with direction='up'|'down' to reveal content. "
         "Use action='status' to view the active engine and connection state. "
         "Use action='create_space' / 'switch_space' / 'close_space' for isolated tasks. "
         "Use action='switch_provider' with provider='ego'|'chrome'|'edge'|'auto' to choose engines."
     ),
-    "brief": "Unified browser control (Ego Lite & CDP): observe, click, type, navigate, spaces, status.",
+    "brief": "Unified browser control (Ego Lite & Chrome): observe, click, type, navigate, spaces, status.",
     "parameters": {
         "type": "OBJECT",
         "properties": {
@@ -504,7 +514,7 @@ TOOL = {
             "tab_index": {"type": "INTEGER", "description": "Tab index for switch_tab or close_tab."},
             "space_id": {"type": "STRING", "description": "Target task space identifier for space operations."},
             "name": {"type": "STRING", "description": "Name for new space creation."},
-            "provider": {"type": "STRING", "description": "Target engine name: 'ego' | 'chrome' | 'edge' | 'cdp' | 'auto'."},
+            "provider": {"type": "STRING", "description": "Target engine name: 'ego' | 'chrome' | 'edge' | 'cdp' | 'auto'. Ask user if not specified."},
             "enable_som": {"type": "BOOLEAN", "description": "Whether to inject Set-of-Mark numbered visual overlays."},
         },
         "required": ["action"],
