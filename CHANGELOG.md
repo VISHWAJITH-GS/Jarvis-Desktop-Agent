@@ -7,7 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased] - Phase 7: Security Toolkit, MCP Client & Complete Verification Suite
+## [Unreleased] - Microsoft Phone Link Integration (Phases 1–6)
+
+### Added
+- **Microsoft Phone Link Controller (`actions/phone_link.py`, `actions/_phone_link_driver.py`, `config/phone_link_selectors.json`)**:
+  - Windows-only UI Automation (UIA) driver with single UIA mutex, lazy `pywinauto` imports, foreground window/clipboard preservation, and multi-locale selector resolution (`en-US`, `en-GB`, `es-ES`, `fr-FR`, `de-DE`, `hi-IN`).
+  - Phase 1: `status`, `launch`, `open_feature`, `diagnose` (redacted UIA dump), plus default-disabled feature flags in `memory/config_manager.py` and UI toggles in `gui/window_audio.py`.
+  - Phase 2: `list_notifications`, `dismiss_notification`, `clear_all` (`Ctrl+Alt+K`), `dnd`, `mute_phone` (with `core/undo.py`).
+  - Phase 3: `list_conversations`, `read_conversation`, `send_sms` (thread re-read verification), `send_mms_attachment` (folder allowlist), OTP/banking redaction, and contact disambiguation.
+  - Phase 4: `recent_calls`, `call` (emergency number block + active-call verification), `answer`, `decline`, `end_call`, `dial_digits`, `call_status`, and experimental `dial_via_tel_uri`.
+  - Phase 5: Android `list_recent_photos`, `copy_photo`, `save_photo`, disabled-by-default `share_photo`/`delete_photo`, `list_apps`, `open_app`, `open_phone_screen`, and opt-in low-CPU `watcher_start`/`watcher_stop`/`watcher_status`.
+  - Phase 6: Multi-locale/resilience tests (`tests/test_phone_link_phase1..6.py`), selector re-recording guide, and real-device checklist in `docs/PHONE_LINK_SPEC.md`.
+
+---
+
+## [1.8.0] - 2026-11-28 - Phase 7: Security Toolkit, MCP Client & Complete Verification Suite
 
 ### Added
 - **Security & Privacy Toolkit (`actions/security_privacy.py`)**:

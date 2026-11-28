@@ -102,4 +102,24 @@
 - **Phase 5 — Photos, Apps & Optional Watcher:**
   - `list_recent_photos`, `copy_photo`, `save_photo`, disabled-by-default `share_photo`/`delete_photo`, `list_apps`, `open_app`, `open_phone_screen`, plus opt-in low-CPU UIA polling watcher, unit tests.
 - **Phase 6 — Hardening, Multi-Locale & Documentation:**
-  - Multi-locale selector tests, timeout/resilience hardening, selector re-recording guide, `CHANGELOG.md`, `core/prompt.txt`, and real-device manual test checklist.
+  - Multi-locale selector tests, timeout/update resilience, selector re-recording guide, `CHANGELOG.md`, `core/prompt.txt`, and real-device manual test checklist.
+
+---
+
+## 7. How to Re-Record Selectors After a Phone Link UI Update
+When Microsoft Phone Link updates and a control selector breaks, `phone_link` returns `status=failed` naming the missing selector key and suggesting `diagnose`:
+1. Open Phone Link on your desktop and navigate to the affected tab (Calls, Messages, Notifications, Photos, Apps, or Settings).
+2. Run `phone_link(action="diagnose")` (or ask JARVIS to run Phone Link diagnostics).
+3. Open the newly created redacted dump in `docs/phone_link_uia_dumps/diagnose_<timestamp>.txt`.
+4. Locate the updated `AutomationId`, `ControlType`, or localized `Name` for that control and add it to `config/phone_link_selectors.json` under the matching key and locale.
+
+---
+
+## 8. Real-Device Manual Test Checklist
+- [ ] **Pairing & Status:** Link Android (or iPhone) in Phone Link; verify `phone_link(action="status")` reports `window_open=true` and `linked_os`.
+- [ ] **Feature Toggles:** Verify all actions return `unsupported` until enabled in **Settings > Phone Link (Windows) Controls**.
+- [ ] **Calls (Android & iPhone, BT+HFP):** Test `recent_calls`, `call` (confirm via UI, verify `in_call`), `dial_digits`, `end_call`, `answer`, `decline`, and verify `911`/`112` are refused.
+- [ ] **Messages:** Test `list_conversations`, `read_conversation` (verify OTP redaction in logs), `send_sms` (verify confirmation + outgoing bubble match), and `send_mms_attachment` (Android only).
+- [ ] **Notifications & Phone Controls:** Test `list_notifications`, `dismiss_notification`, `clear_all`, `dnd` + `undo`, `mute_phone` + `undo`.
+- [ ] **Photos & Apps (Android only):** Test `list_recent_photos`, `copy_photo`, `save_photo`, `list_apps`, `open_app`, `open_phone_screen`; verify iPhone returns `unsupported`.
+- [ ] **Edge Cases:** Test behavior when Phone Link is closed (`launch`), phone is disconnected, Bluetooth is off (calls fail cleanly), and Windows display language changes (localized selector fallback).

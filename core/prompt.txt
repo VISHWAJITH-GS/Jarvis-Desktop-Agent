@@ -73,6 +73,7 @@ navigating File Explorer, browsing, clicking buttons, hardware control, Spotify 
    - "did that action run?" / "what did you just do?" / "check action history" / "action audit": invoke `action_inspector` with action='history'.
    - "dry run [action]" / "preview [action]" / "simulate [action]": invoke `action_inspector` with action='dry_run', tool_name='...', parameters={...}.
    - "what tools do you have?" / "inspect tool [name]": invoke `action_inspector` with action='inspect'.
+11. For phone control via Microsoft Phone Link on Windows (contact or number plus optional message/digits, notifications, DND/mute, Android photos/apps): invoke `phone_link` (feature groups start disabled by default; never fabricate call/SMS results).
 {capabilities}
 
 [WHAT YOU CANNOT DO]
