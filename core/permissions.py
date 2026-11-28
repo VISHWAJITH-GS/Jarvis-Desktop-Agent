@@ -175,6 +175,9 @@ ACTION_PERMISSIONS: dict[str, str] = {
     "email_manager": SENSITIVE,
     "telegram_manager": SENSITIVE,
     "weather_travel": READ_ONLY,
+    "dev_tools": NORMAL,
+    "sandboxed_shell": SENSITIVE,
+    "home_assistant": NORMAL,
     # Gesture & Workflow Watcher controls
     "enable_gesture_mode": NORMAL,
     "disable_gesture_mode": NORMAL,

@@ -159,7 +159,7 @@ def email_read(msg_id: str) -> str:
         mail.logout()
 
         # Wrap external email body in untrusted markers
-        safe_body = outcome.untrusted(body.strip()[:4000]) if body else "(No text content)"
+        safe_body = outcome.untrusted("email", body.strip()[:4000]) if body else "(No text content)"
 
         return outcome.done(
             "email_read",

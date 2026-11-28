@@ -64,10 +64,10 @@ Following **Rule 7**, all 231 capabilities are consolidated into **35–45 actio
 | `clipboard_paste` | Copy a history entry back to the clipboard. | **exists** | `actions/clipboard_manager.py` | `action` | Windows/macOS/Linux | `NORMAL` | pyperclip, sqlite3 |
 | `clipboard_search` | Search clipboard history or list recent entries. | **exists** | `actions/clipboard_manager.py` | `action` | Cross-platform | `READ_ONLY` | sqlite3 |
 | `clipboard_get` | Get a specific clipboard entry by ID. | **exists** | `actions/clipboard_manager.py` | `action` | Cross-platform | `READ_ONLY` | sqlite3 |
-| `codereview_diff` | Show git diff (working tree or staged) for a repository. | **partial** | `actions/dev_tools.py` | `action` | Cross-platform | `READ_ONLY` | git |
-| `codereview_log` | Show recent git commit log. | **partial** | `actions/dev_tools.py` | `action` | Cross-platform | `READ_ONLY` | git |
-| `codereview_blame` | Run git blame on a file, optionally for a line range. | **partial** | `actions/dev_tools.py` | `action` | Cross-platform | `READ_ONLY` | git |
-| `codereview_stats` | Show file-level change statistics (git diff --stat). | **partial** | `actions/dev_tools.py` | `action` | Cross-platform | `READ_ONLY` | git |
+| `codereview_diff` | Show git diff (working tree or staged) for a repository. | **exists** | `actions/dev_tools.py` | `action` | Cross-platform | `READ_ONLY` | git |
+| `codereview_log` | Show recent git commit log. | **exists** | `actions/dev_tools.py` | `action` | Cross-platform | `READ_ONLY` | git |
+| `codereview_blame` | Run git blame on a file, optionally for a line range. | **exists** | `actions/dev_tools.py` | `action` | Cross-platform | `READ_ONLY` | git |
+| `codereview_stats` | Show file-level change statistics (git diff --stat). | **exists** | `actions/dev_tools.py` | `action` | Cross-platform | `READ_ONLY` | git |
 | `email_list` | List recent emails (newest first), optionally filtered by words, sender or unread. | **exists** | `plugins/email_manager.py` | `plugin` | Cross-platform | `READ_ONLY` | imaplib, smtplib |
 | `email_read` | Read one email in full. | **exists** | `plugins/email_manager.py` | `plugin` | Cross-platform | `READ_ONLY` | imaplib, smtplib |
 | `email_send` | Send an email from the user's account. Show the user the exact text first when it is long. | **exists** | `plugins/email_manager.py` | `plugin` | Cross-platform | `SENSITIVE` | imaplib, smtplib |
@@ -131,10 +131,10 @@ Following **Rule 7**, all 231 capabilities are consolidated into **35–45 actio
 | `gods_eye_start` | Start the God's Eye View dev server on port 4173. Required before using any God's Eye View | **missing** | `plugins/mcp_geospatial.py` | `plugin` | Cross-platform | `SENSITIVE` | requests (Opt-in) |
 | `gods_eye_stop` | Stop the God's Eye View dev server. | **missing** | `plugins/mcp_geospatial.py` | `plugin` | Cross-platform | `NORMAL` | requests (Opt-in) |
 | `gods_eye_status` | Check whether God's Eye View is installed and its dev server is running. | **missing** | `plugins/mcp_geospatial.py` | `plugin` | Cross-platform | `READ_ONLY` | requests (Opt-in) |
-| `ha_list` | List Home Assistant devices by type. | **missing** | `plugins/home_assistant.py` | `plugin` | Cross-platform | `READ_ONLY` | requests / aiohttp |
-| `ha_control` | Turn on, off, or toggle a Home Assistant device. | **missing** | `plugins/home_assistant.py` | `plugin` | Cross-platform | `SENSITIVE` | requests / aiohttp |
-| `ha_scene` | Activate a Home Assistant scene. | **missing** | `plugins/home_assistant.py` | `plugin` | Cross-platform | `NORMAL` | requests / aiohttp |
-| `ha_temperature` | Set thermostat temperature. | **missing** | `plugins/home_assistant.py` | `plugin` | Cross-platform | `SENSITIVE` | requests / aiohttp |
+| `ha_list` | List Home Assistant devices by type. | **exists** | `plugins/home_assistant.py` | `plugin` | Cross-platform | `READ_ONLY` | requests / aiohttp |
+| `ha_control` | Turn on, off, or toggle a Home Assistant device. | **exists** | `plugins/home_assistant.py` | `plugin` | Cross-platform | `SENSITIVE` | requests / aiohttp |
+| `ha_scene` | Activate a Home Assistant scene. | **exists** | `plugins/home_assistant.py` | `plugin` | Cross-platform | `NORMAL` | requests / aiohttp |
+| `ha_temperature` | Set thermostat temperature. | **exists** | `plugins/home_assistant.py` | `plugin` | Cross-platform | `SENSITIVE` | requests / aiohttp |
 | `image_generate` | Generate an image from a text prompt using local Stable Diffusion (if running) or return s | **missing** | `plugins/image_generator.py` | `plugin` | Cross-platform | `SENSITIVE` | requests (A1111/ComfyUI API) |
 | `image_list` | List recently generated images. | **missing** | `plugins/image_generator.py` | `plugin` | Cross-platform | `READ_ONLY` | requests (A1111/ComfyUI API) |
 | `incident_capture` | Capture a system state snapshot: CPU, memory, disk, top processes, recent event log errors | **partial** | `actions/security_privacy.py` | `action` | Windows/macOS/Linux | `NORMAL` | psutil, winreg |
@@ -169,8 +169,8 @@ Following **Rule 7**, all 231 capabilities are consolidated into **35–45 actio
 | `privacy_dns_lookup` | Resolve a hostname and log the result for the privacy audit trail. | **partial** | `actions/security_privacy.py` | `action` | Windows/macOS/Linux | `READ_ONLY` | psutil, socket |
 | `privacy_listening_ports` | List all listening (open) ports and which processes own them. | **partial** | `actions/security_privacy.py` | `action` | Windows/macOS/Linux | `READ_ONLY` | psutil, socket |
 | `privacy_startup_audit` |  | **partial** | `actions/security_privacy.py` | `action` | Windows/macOS/Linux | `READ_ONLY` | psutil, socket |
-| `project_create` | Scaffold a new project: python, node, react, fastapi, flask, nextjs, or html. | **partial** | `actions/dev_tools.py` | `action` | Cross-platform | `SENSITIVE` | pathlib |
-| `project_analyze` | Analyze a project directory: detect language, framework, file stats, dependencies and entr | **partial** | `actions/dev_tools.py` | `action` | Cross-platform | `READ_ONLY` | pathlib |
+| `project_create` | Scaffold a new project: python, node, react, fastapi, flask, nextjs, or html. | **exists** | `actions/dev_tools.py` | `action` | Cross-platform | `SENSITIVE` | pathlib |
+| `project_analyze` | Analyze a project directory: detect language, framework, file stats, dependencies and entry points. | **exists** | `actions/dev_tools.py` | `action` | Cross-platform | `READ_ONLY` | pathlib |
 | `brightness_get` | Get current screen brightness level (0-100). | **exists** | `actions/computer_settings.py` | `action` | Windows/macOS | `READ_ONLY` | pycaw, screen_brightness_control |
 | `quick_brightness_set` | Set screen brightness (quick settings). | **exists** | `actions/computer_settings.py` | `action` | Windows/macOS | `SENSITIVE` | pycaw, screen_brightness_control |
 | `quick_volume_set` | Set system volume level (quick settings). | **exists** | `actions/computer_settings.py` | `action` | Windows/macOS | `NORMAL` | pycaw, screen_brightness_control |

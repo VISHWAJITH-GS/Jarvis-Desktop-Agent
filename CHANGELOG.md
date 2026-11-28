@@ -7,7 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased] - Phase 4: Universal Email, Telegram, and Weather/Travel
+## [Unreleased] - Phase 5: Dev Tools, Code Review, Sandboxed Shell, and Smart Home
+
+### Added
+- **Developer Tools & Git Code Review (`actions/dev_tools.py`)**:
+  - Code review operations: `codereview_diff` (working tree/staged), `codereview_log`, `codereview_blame`, and `codereview_stats`.
+  - Project generator (`project_create`) supporting Python, FastAPI, Flask, Node.js, and HTML templates.
+  - Project architecture analyzer (`project_analyze`) detecting languages, frameworks, and top extensions.
+- **Sandboxed Shell Runner (`actions/sandboxed_shell.py`)**:
+  - Secure local shell execution with 60s timeout enforcement and 16KB stdout/stderr truncation cap.
+  - Destructive command detection (`rm -rf`, `del /f /s /q`, `format`) requiring user confirmation.
+  - Untrusted text wrapping on command output for injection protection.
+- **Home Assistant Smart Home Controller (`plugins/home_assistant.py`)**:
+  - REST client supporting `ha_list_devices`, `ha_get_state`, `ha_call_service`, and `ha_trigger_scene`.
+- **Testing**:
+  - Dedicated test suite `tests/test_phase5_dev_shell_ha.py` covering git review operations, project scaffolding, shell safety boundaries, and Home Assistant service dispatches.
+
+---
+
+## [1.5.0] - 2026-11-28 - Phase 4: Universal Email, Telegram, and Weather/Travel
 
 ### Added
 - **Universal Email Manager (`plugins/email_manager.py`)**:

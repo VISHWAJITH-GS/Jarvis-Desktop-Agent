@@ -111,7 +111,7 @@ def telegram_updates(limit: int = 5) -> str:
             msg = u.get("message", {})
             sender = msg.get("from", {}).get("username") or msg.get("from", {}).get("first_name", "Unknown")
             text = msg.get("text", "")
-            safe_text = outcome.untrusted(text) if text else ""
+            safe_text = outcome.untrusted("telegram", text) if text else ""
             updates.append({
                 "update_id": u.get("update_id"),
                 "sender": sender,
