@@ -681,3 +681,254 @@ def op_diagnose(window: Optional[Any] = None, output_dir: Optional[Path] = None)
             dump_file=str(dump_path),
             verified=True,
         )
+
+
+def _get_children(node: Any) -> list[Any]:
+    if isinstance(node, dict):
+        return list(node.get("children", []))
+    if hasattr(node, "children"):
+        try:
+            return list(node.children())
+        except Exception:
+            return []
+    return []
+
+
+def _click_elem(elem: Any) -> None:
+    if hasattr(elem, "click_input"):
+        elem.click_input()
+    elif hasattr(elem, "invoke"):
+        elem.invoke()
+    elif isinstance(elem, dict) and callable(elem.get("on_click")):
+        elem["on_click"]()
+
+
+def _read_toggle_state(elem: Any) -> Optional[bool]:
+    """Read UIA TogglePattern state (True=on, False=off, None=unknown)."""
+    if isinstance(elem, dict):
+        if "toggle_state" in elem:
+            return bool(elem["toggle_state"])
+        name_l = str(elem.get("name", "")).lower()
+        if "on" in name_l or "muted" in name_l:
+            return True
+        if "off" in name_l or "unmuted" in name_l:
+            return False
+        return None
+    try:
+        if hasattr(elem, "get_toggle_state"):
+            return bool(elem.get_toggle_state() == 1)
+    except Exception:
+        pass
+    return None
+
+
+# ── Phase 2 Operations: Notifications & Phone Controls (DND / Mute) ───────────
+
+def _extract_notif_items(list_elem: Any) -> list[tuple[Any, str, str]]:
+    """Return list of (node, app_or_title, body_text) from a notification list."""
+    items: list[tuple[Any, str, str]] = []
+    for child in _get_children(list_elem):
+        info = _elem_info(child)
+        ctype = info["control_type"].lower()
+        if ctype in ("listitem", "group", "pane", "custom"):
+            texts = [info["name"]] if info["name"] else []
+            for _, sub in iter_uia_tree(child, max_depth=3, max_nodes=30):
+                sinfo = _elem_info(sub)
+                if sinfo["control_type"].lower() == "text" and sinfo["name"]:
+                    if sinfo["name"] not in texts:
+                        texts.append(sinfo["name"])
+            title = texts[0] if texts else "Notification"
+            body = " | ".join(texts[1:]) if len(texts) > 1 else ""
+            items.append((child, title, body))
+    return items
+
+
+def op_list_notifications(limit: int = 15, window: Optional[Any] = None) -> str:
+    if not _IS_WINDOWS:
+        return unsupported_result("list_notifications", "Phone Link is only supported on Windows.")
+
+    with _UIA_LOCK, _ForegroundGuard(restore=True):
+        win = window or find_phone_link_window(timeout=3.0)
+        if win is None:
+            return outcome.failed("list_notifications", "Phone Link window is not open.")
+
+        try:
+            list_elem, _ = resolve_control(win, "notifications_list", timeout=2.5)
+        except MissingSelectorError as exc:
+            return outcome.failed("list_notifications", str(exc), missing_selector=exc.selector_key)
+
+        raw_items = _extract_notif_items(list_elem)[: max(1, min(int(limit), 50))]
+        mark_untrusted_read()
+        out_items = [
+            {
+                "index": idx,
+                "title": wrap_untrusted_field("notif_title", title),
+                "body": wrap_untrusted_field("notif_body", redact_otp(body)),
+            }
+            for idx, (_, title, body) in enumerate(raw_items)
+        ]
+        record_audit("list_notifications", status_str="done")
+        return outcome.done(
+            "list_notifications",
+            count=len(out_items),
+            notifications=json.dumps(out_items, ensure_ascii=False),
+        )
+
+
+def op_dismiss_notification(
+    app: Optional[str] = None,
+    index: Optional[int] = None,
+    window: Optional[Any] = None,
+) -> str:
+    if not _IS_WINDOWS:
+        return unsupported_result("dismiss_notification", "Phone Link is only supported on Windows.")
+    if app is None and index is None:
+        return outcome.failed("dismiss_notification", "Provide either 'app' name or 0-based 'index'.")
+
+    with _UIA_LOCK, _ForegroundGuard(restore=True):
+        win = window or find_phone_link_window(timeout=3.0)
+        if win is None:
+            return outcome.failed("dismiss_notification", "Phone Link window is not open.")
+
+        try:
+            list_elem, _ = resolve_control(win, "notifications_list", timeout=2.5)
+        except MissingSelectorError as exc:
+            return outcome.failed("dismiss_notification", str(exc), missing_selector=exc.selector_key)
+
+        before_items = _extract_notif_items(list_elem)
+        if not before_items:
+            return outcome.failed("dismiss_notification", "No notifications to dismiss.")
+
+        target_node = None
+        if index is not None:
+            idx = int(index)
+            if 0 <= idx < len(before_items):
+                target_node = before_items[idx][0]
+        elif app:
+            app_l = app.strip().lower()
+            for node, title, body in before_items:
+                if app_l in title.lower() or app_l in body.lower():
+                    target_node = node
+                    break
+
+        if target_node is None:
+            return outcome.failed("dismiss_notification", "Matching notification not found.")
+
+        try:
+            btn, _ = resolve_control(target_node, "notifications_dismiss_btn", timeout=1.5)
+        except MissingSelectorError as exc:
+            return outcome.failed("dismiss_notification", str(exc), missing_selector=exc.selector_key)
+
+        _click_elem(btn)
+        time.sleep(0.15)
+        after_items = _extract_notif_items(list_elem)
+        if len(after_items) < len(before_items):
+            record_audit("dismiss_notification", contact_alias=app or str(index), status_str="done")
+            return outcome.done(
+                "dismiss_notification",
+                remaining=len(after_items),
+                undoable=False,
+                note="Dismissed notification (not undoable).",
+                verified=True,
+            )
+
+        record_audit("dismiss_notification", contact_alias=app or str(index), status_str="unverified")
+        return outcome.unverified(
+            "dismiss_notification",
+            "Clicked dismiss, but notification count did not decrease.",
+            remaining=len(after_items),
+        )
+
+
+def op_clear_all_notifications(window: Optional[Any] = None) -> str:
+    if not _IS_WINDOWS:
+        return unsupported_result("clear_all", "Phone Link is only supported on Windows.")
+
+    with _UIA_LOCK, _ForegroundGuard(restore=True):
+        win = window or find_phone_link_window(timeout=3.0)
+        if win is None:
+            return outcome.failed("clear_all", "Phone Link window is not open.")
+
+        try:
+            list_elem, _ = resolve_control(win, "notifications_list", timeout=2.0)
+        except MissingSelectorError as exc:
+            return outcome.failed("clear_all", str(exc), missing_selector=exc.selector_key)
+
+        try:
+            btn, _ = resolve_control(win, "notifications_clear_btn", timeout=1.5)
+            _click_elem(btn)
+        except MissingSelectorError:
+            if not _send_shortcut(win, "^%k"):  # Ctrl+Alt+K
+                return outcome.failed(
+                    "clear_all",
+                    "Could not find 'Clear all' button or send Ctrl+Alt+K.",
+                    missing_selector="notifications_clear_btn",
+                )
+
+        time.sleep(0.2)
+        remaining = len(_extract_notif_items(list_elem))
+        if remaining == 0:
+            record_audit("clear_all", status_str="done")
+            return outcome.done(
+                "clear_all",
+                remaining=0,
+                undoable=False,
+                note="Cleared all notifications (not undoable).",
+                verified=True,
+            )
+        record_audit("clear_all", status_str="unverified")
+        return outcome.unverified("clear_all", f"Clear command sent, {remaining} notification(s) still visible.")
+
+
+def op_toggle_phone_control(
+    action: str,
+    selector_key: str,
+    desired_state: str,
+    window: Optional[Any] = None,
+) -> str:
+    """Toggle Android/supported device DND or Mute Phone and register core.undo restoration."""
+    if not _IS_WINDOWS:
+        return unsupported_result(action, "Phone Link is only supported on Windows.")
+
+    target_l = str(desired_state or "").strip().lower()
+    if target_l not in ("on", "off", "true", "false"):
+        return outcome.failed(action, "Parameter 'state' must be 'on' or 'off'.")
+    want_on = target_l in ("on", "true")
+
+    with _UIA_LOCK, _ForegroundGuard(restore=True):
+        win = window or find_phone_link_window(timeout=3.0)
+        if win is None:
+            return outcome.failed(action, "Phone Link window is not open.")
+
+        caps = probe_capabilities(window=win)
+        if caps.get("linked_os") == "iphone_or_limited_android" and not caps.get("sections", {}).get("photos"):
+            return unsupported_result(action, f"{action} is only supported on Android / supported devices.")
+
+        try:
+            toggle_elem, _ = resolve_control(win, selector_key, timeout=2.0)
+        except MissingSelectorError as exc:
+            return outcome.failed(action, str(exc), missing_selector=exc.selector_key)
+
+        prev_state = _read_toggle_state(toggle_elem)
+        if prev_state is not None and prev_state == want_on:
+            record_audit(action, contact_alias=target_l, status_str="done")
+            return outcome.done(action, state="on" if want_on else "off", already_set=True, verified=True)
+
+        _click_elem(toggle_elem)
+        time.sleep(0.2)
+        new_state = _read_toggle_state(toggle_elem)
+
+        if new_state is not None and new_state == want_on:
+            if prev_state is not None:
+                from core.undo import push_undo
+
+                restore_str = "on" if prev_state else "off"
+                push_undo(
+                    f"Phone Link {action} -> {restore_str}",
+                    lambda: op_toggle_phone_control(action, selector_key, restore_str, window=window),
+                )
+            record_audit(action, contact_alias=target_l, status_str="done")
+            return outcome.done(action, state="on" if want_on else "off", undoable=prev_state is not None, verified=True)
+
+        record_audit(action, contact_alias=target_l, status_str="unverified")
+        return outcome.unverified(action, f"Toggled {action}, but could not verify new state.")

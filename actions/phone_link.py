@@ -137,6 +137,22 @@ def phone_link(parameters: dict | None = None, player: Any = None, **kwargs: Any
         if blocked:
             return blocked
 
+    # Phase 2: Notifications & Phone Controls
+    if action == "list_notifications":
+        return drv.op_list_notifications(limit=int(params.get("limit", 15)))
+    if action == "dismiss_notification":
+        idx_val = params.get("index")
+        return drv.op_dismiss_notification(
+            app=params.get("app"),
+            index=int(idx_val) if idx_val is not None else None,
+        )
+    if action == "clear_all":
+        return drv.op_clear_all_notifications()
+    if action == "dnd":
+        return drv.op_toggle_phone_control("dnd", "phone_dnd_toggle", str(params.get("state", "")))
+    if action == "mute_phone":
+        return drv.op_toggle_phone_control("mute_phone", "phone_mute_toggle", str(params.get("state", "")))
+
     return drv.unsupported_result(action, f"Action '{action}' is scheduled for a subsequent phase.")
 
 
