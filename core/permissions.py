@@ -182,6 +182,7 @@ ACTION_PERMISSIONS: dict[str, str] = {
     "deep_research": SENSITIVE,
     "security_privacy": SENSITIVE,
     "mcp_client": NORMAL,
+    "phone_link": SENSITIVE,
     # Gesture & Workflow Watcher controls
     "enable_gesture_mode": NORMAL,
     "disable_gesture_mode": NORMAL,

@@ -1128,12 +1128,71 @@ class WindowAudioMixin:
         c_lay.addWidget(_action_btn("PLUGIN & EXTENSIONS MANAGER", self._open_plugin_manager))
         c_lay.addWidget(_action_btn("APPEARANCE & IDENTITY CUSTOMIZATION", self._open_customize))
         c_lay.addWidget(_action_btn("PAIR PHONE WEB DASHBOARD", self._open_remote))
+        c_lay.addWidget(_action_btn("PHONE LINK (WINDOWS) CONTROLS", self._open_phone_link_settings, "settings"))
         c_lay.addWidget(_action_btn("BIG SCREEN HUD MODE (F11)", self._toggle_fullscreen))
 
         c_lay.addStretch(1)
         scroll.setWidget(content)
         lay.addWidget(scroll, stretch=1)
         return w
+
+    def _open_phone_link_settings(self):
+        from memory import config_manager
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Phone Link (Windows) Feature Toggles")
+        dlg.setMinimumWidth(420)
+        dlg.setStyleSheet("""
+            QDialog { background: #0A0406; color: #F2E9EC; border: 1px solid #4A1522; }
+            QLabel { color: #F2E9EC; background: transparent; }
+            QCheckBox { color: #F2E9EC; spacing: 8px; padding: 4px; }
+            QPushButton {
+                background: #14070B; color: #F2E9EC;
+                border: 1px solid #4A1522; border-radius: 4px; padding: 6px 14px;
+            }
+            QPushButton:hover { background: #220B12; border-color: #FF1E42; color: #FFFFFF; }
+        """)
+        lay = QVBoxLayout(dlg)
+        lay.setContentsMargins(16, 14, 16, 14)
+        lay.setSpacing(8)
+
+        hdr = QLabel("MICROSOFT PHONE LINK — FEATURE GROUPS (ALL OFF BY DEFAULT)")
+        hdr.setFont(keena_font(9, True))
+        hdr.setStyleSheet(f"color: {C.PRI};")
+        lay.addWidget(hdr)
+
+        cur = config_manager.get_phone_link_settings()
+        toggles = [
+            ("calls", "Calls (dial, answer, decline, end, recent calls)"),
+            ("messages", "Messages (read/list SMS, send SMS/MMS)"),
+            ("notifications", "Notifications & Phone Controls (list, dismiss, DND, mute)"),
+            ("photos", "Photos (Android: list, copy, save)"),
+            ("apps", "Apps & Phone Screen (Android: list, open, mirror)"),
+            ("watcher", "Incoming Call / Message Watcher (low-CPU UIA polling)"),
+            ("share_photo", "Share Photo (disabled by default; SENSITIVE)"),
+            ("delete_photo", "Delete Photo (disabled by default; DESTRUCTIVE)"),
+            ("dial_via_tel_uri", "Experimental tel: URI fallback (disabled by default)"),
+        ]
+        boxes = {}
+        for key, label in toggles:
+            cb = QCheckBox(label)
+            cb.setChecked(bool(cur.get(key, False)))
+            boxes[key] = cb
+            lay.addWidget(cb)
+
+        btns = QHBoxLayout()
+        btns.addStretch(1)
+        btn_cancel = QPushButton("CANCEL")
+        btn_cancel.clicked.connect(dlg.reject)
+        btn_save = QPushButton("SAVE")
+        def _save():
+            config_manager.save_phone_link_settings({k: b.isChecked() for k, b in boxes.items()})
+            dlg.accept()
+        btn_save.clicked.connect(_save)
+        btns.addWidget(btn_cancel)
+        btns.addWidget(btn_save)
+        lay.addLayout(btns)
+        dlg.exec()
 
     def _ui_toggle_wake_val(self, val: bool):
         if self.on_wake_toggle:

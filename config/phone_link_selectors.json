@@ -1,0 +1,316 @@
+{
+  "_comment": "Locale-keyed UIA selectors for Microsoft Phone Link. AutomationId is tried first, then ControlType + localized Name.",
+  "process_names": [
+    "PhoneExperienceHost.exe",
+    "YourPhone.exe"
+  ],
+  "window_titles": {
+    "en-US": ["Phone Link", "Your Phone"],
+    "en-GB": ["Phone Link", "Your Phone"],
+    "es-ES": ["Enlace Móvil", "Tu Teléfono"],
+    "fr-FR": ["Mobile connecté", "Votre téléphone"],
+    "de-DE": ["Smartphone-Link", "Ihr Smartphone"],
+    "hi-IN": ["फ़ोन लिंक", "Phone Link"]
+  },
+  "controls": {
+    "nav_calls": {
+      "automation_ids": ["CallsNavigationButton", "NavCalls", "CallsTab"],
+      "control_types": ["Button", "TabItem", "ListItem"],
+      "names": {
+        "en-US": ["Calls"],
+        "en-GB": ["Calls"],
+        "es-ES": ["Llamadas"],
+        "fr-FR": ["Appels"],
+        "de-DE": ["Anrufe"],
+        "hi-IN": ["कॉल", "Calls"]
+      }
+    },
+    "nav_messages": {
+      "automation_ids": ["MessagesNavigationButton", "NavMessages", "MessagesTab"],
+      "control_types": ["Button", "TabItem", "ListItem"],
+      "names": {
+        "en-US": ["Messages"],
+        "en-GB": ["Messages"],
+        "es-ES": ["Mensajes"],
+        "fr-FR": ["Messages"],
+        "de-DE": ["Nachrichten"],
+        "hi-IN": ["संदेश", "Messages"]
+      }
+    },
+    "nav_photos": {
+      "automation_ids": ["PhotosNavigationButton", "NavPhotos", "PhotosTab"],
+      "control_types": ["Button", "TabItem", "ListItem"],
+      "names": {
+        "en-US": ["Photos"],
+        "en-GB": ["Photos"],
+        "es-ES": ["Fotos"],
+        "fr-FR": ["Photos"],
+        "de-DE": ["Fotos"],
+        "hi-IN": ["फ़ोटो", "Photos"]
+      }
+    },
+    "nav_apps": {
+      "automation_ids": ["AppsNavigationButton", "NavApps", "AppsTab"],
+      "control_types": ["Button", "TabItem", "ListItem"],
+      "names": {
+        "en-US": ["Apps"],
+        "en-GB": ["Apps"],
+        "es-ES": ["Aplicaciones"],
+        "fr-FR": ["Applications"],
+        "de-DE": ["Apps"],
+        "hi-IN": ["ऐप्स", "Apps"]
+      }
+    },
+    "nav_notifications": {
+      "automation_ids": ["NotificationsPanel", "NotificationsPane", "NotificationsList"],
+      "control_types": ["Pane", "Group", "List", "Button"],
+      "names": {
+        "en-US": ["Notifications"],
+        "en-GB": ["Notifications"],
+        "es-ES": ["Notificaciones"],
+        "fr-FR": ["Notifications"],
+        "de-DE": ["Benachrichtigungen"],
+        "hi-IN": ["सूचनाएँ", "Notifications"]
+      }
+    },
+    "nav_settings": {
+      "automation_ids": ["SettingsButton", "OpenSettingsButton"],
+      "control_types": ["Button"],
+      "names": {
+        "en-US": ["Settings"],
+        "en-GB": ["Settings"],
+        "es-ES": ["Configuración"],
+        "fr-FR": ["Paramètres"],
+        "de-DE": ["Einstellungen"],
+        "hi-IN": ["सेटिंग्स", "Settings"]
+      }
+    },
+    "settings_features": {
+      "automation_ids": ["FeaturesNavItem", "FeaturesTab"],
+      "control_types": ["ListItem", "TabItem", "Button", "Text"],
+      "names": {
+        "en-US": ["Features"],
+        "en-GB": ["Features"],
+        "es-ES": ["Características"],
+        "fr-FR": ["Fonctionnalités"],
+        "de-DE": ["Funktionen"],
+        "hi-IN": ["सुविधाएँ", "Features"]
+      }
+    },
+    "notifications_list": {
+      "automation_ids": ["NotificationListView", "NotificationsList"],
+      "control_types": ["List"],
+      "names": {
+        "en-US": ["Notifications"],
+        "en-GB": ["Notifications"],
+        "es-ES": ["Notificaciones"],
+        "fr-FR": ["Notifications"],
+        "de-DE": ["Benachrichtigungen"]
+      }
+    },
+    "notifications_clear_btn": {
+      "automation_ids": ["ClearAllNotificationsButton", "ClearAllButton"],
+      "control_types": ["Button"],
+      "names": {
+        "en-US": ["Clear all"],
+        "en-GB": ["Clear all"],
+        "es-ES": ["Borrar todo"],
+        "fr-FR": ["Tout effacer"],
+        "de-DE": ["Alle löschen"]
+      }
+    },
+    "notifications_dismiss_btn": {
+      "automation_ids": ["DismissNotificationButton", "DismissButton"],
+      "control_types": ["Button"],
+      "names": {
+        "en-US": ["Dismiss", "Clear"],
+        "en-GB": ["Dismiss", "Clear"],
+        "es-ES": ["Descartar"],
+        "fr-FR": ["Ignorer"],
+        "de-DE": ["Verwerfen"]
+      }
+    },
+    "phone_dnd_toggle": {
+      "automation_ids": ["DoNotDisturbToggle", "DndToggleButton"],
+      "control_types": ["Button", "CheckBox"],
+      "names": {
+        "en-US": ["Do not disturb", "Do Not Disturb"],
+        "en-GB": ["Do not disturb", "Do Not Disturb"],
+        "es-ES": ["No molestar"],
+        "fr-FR": ["Ne pas déranger"],
+        "de-DE": ["Bitte nicht stören"]
+      }
+    },
+    "phone_mute_toggle": {
+      "automation_ids": ["MutePhoneToggle", "SoundToggleButton", "RingerToggleButton"],
+      "control_types": ["Button", "CheckBox"],
+      "names": {
+        "en-US": ["Mute", "Sound", "Ring"],
+        "en-GB": ["Mute", "Sound", "Ring"],
+        "es-ES": ["Silenciar", "Sonido"],
+        "fr-FR": ["Muet", "Son"],
+        "de-DE": ["Stummschalten", "Ton"]
+      }
+    },
+    "messages_conv_list": {
+      "automation_ids": ["ConversationListView", "ConversationsList"],
+      "control_types": ["List"],
+      "names": {
+        "en-US": ["Conversations", "Messages"],
+        "en-GB": ["Conversations", "Messages"]
+      }
+    },
+    "messages_thread_list": {
+      "automation_ids": ["MessageListView", "ThreadMessagesList"],
+      "control_types": ["List"],
+      "names": {
+        "en-US": ["Messages", "Conversation history"]
+      }
+    },
+    "messages_new_btn": {
+      "automation_ids": ["NewMessageButton", "ComposeMessageButton"],
+      "control_types": ["Button"],
+      "names": {
+        "en-US": ["New message"],
+        "en-GB": ["New message"],
+        "es-ES": ["Nuevo mensaje"],
+        "fr-FR": ["Nouveau message"],
+        "de-DE": ["Neue Nachricht"]
+      }
+    },
+    "messages_to_input": {
+      "automation_ids": ["RecipientInputBox", "ToTextBox", "SearchBox"],
+      "control_types": ["Edit", "ComboBox"],
+      "names": {
+        "en-US": ["To", "Type a name or phone number", "Search contacts"],
+        "en-GB": ["To", "Type a name or phone number", "Search contacts"]
+      }
+    },
+    "messages_composer_input": {
+      "automation_ids": ["MessageTextBox", "ComposeTextBox", "InputMessageBox"],
+      "control_types": ["Edit"],
+      "names": {
+        "en-US": ["Type a message", "Enter a message"],
+        "en-GB": ["Type a message", "Enter a message"],
+        "es-ES": ["Escribe un mensaje"],
+        "fr-FR": ["Tapez un message"],
+        "de-DE": ["Nachricht eingeben"]
+      }
+    },
+    "messages_send_btn": {
+      "automation_ids": ["SendMessageButton", "SendButton"],
+      "control_types": ["Button"],
+      "names": {
+        "en-US": ["Send"],
+        "en-GB": ["Send"],
+        "es-ES": ["Enviar"],
+        "fr-FR": ["Envoyer"],
+        "de-DE": ["Senden"]
+      }
+    },
+    "messages_attach_btn": {
+      "automation_ids": ["AttachButton", "AddAttachmentButton"],
+      "control_types": ["Button"],
+      "names": {
+        "en-US": ["Attach", "Add image", "Add attachment"]
+      }
+    },
+    "calls_list": {
+      "automation_ids": ["CallHistoryListView", "RecentCallsList"],
+      "control_types": ["List"],
+      "names": {
+        "en-US": ["Recent calls", "Call history"]
+      }
+    },
+    "calls_dial_input": {
+      "automation_ids": ["DialerInputBox", "PhoneNumberInput", "SearchOrDialInput"],
+      "control_types": ["Edit"],
+      "names": {
+        "en-US": ["Search your contacts or enter a number", "Enter name or number", "Phone number"]
+      }
+    },
+    "calls_dial_btn": {
+      "automation_ids": ["DialButton", "CallButton"],
+      "control_types": ["Button"],
+      "names": {
+        "en-US": ["Call", "Dial"],
+        "en-GB": ["Call", "Dial"],
+        "es-ES": ["Llamar"],
+        "fr-FR": ["Appeler"],
+        "de-DE": ["Anrufen"]
+      }
+    },
+    "calls_answer_btn": {
+      "automation_ids": ["AnswerCallButton", "AcceptCallButton"],
+      "control_types": ["Button"],
+      "names": {
+        "en-US": ["Answer", "Accept"],
+        "es-ES": ["Responder"],
+        "fr-FR": ["Répondre"],
+        "de-DE": ["Annehmen"]
+      }
+    },
+    "calls_decline_btn": {
+      "automation_ids": ["DeclineCallButton", "RejectCallButton"],
+      "control_types": ["Button"],
+      "names": {
+        "en-US": ["Decline", "Reject"],
+        "es-ES": ["Rechazar"],
+        "fr-FR": ["Refuser"],
+        "de-DE": ["Ablehnen"]
+      }
+    },
+    "calls_end_btn": {
+      "automation_ids": ["EndCallButton", "HangUpButton"],
+      "control_types": ["Button"],
+      "names": {
+        "en-US": ["End call", "Hang up"],
+        "es-ES": ["Finalizar llamada"],
+        "fr-FR": ["Raccrocher"],
+        "de-DE": ["Anruf beenden"]
+      }
+    },
+    "calls_active_banner": {
+      "automation_ids": ["ActiveCallView", "InCallPanel", "CallStatusText"],
+      "control_types": ["Pane", "Group", "Text"],
+      "names": {
+        "en-US": ["In call", "Calling", "Ringing", "Connected"]
+      }
+    },
+    "calls_dialpad_btn": {
+      "automation_ids": ["DialpadToggleButton", "KeypadButton"],
+      "control_types": ["Button"],
+      "names": {
+        "en-US": ["Keypad", "Dialpad"]
+      }
+    },
+    "photos_grid": {
+      "automation_ids": ["PhotosGridView", "PhotosList"],
+      "control_types": ["List", "DataGrid"],
+      "names": {
+        "en-US": ["Photos"]
+      }
+    },
+    "photos_save_btn": {
+      "automation_ids": ["SavePhotoButton", "SaveAsButton"],
+      "control_types": ["Button", "MenuItem"],
+      "names": {
+        "en-US": ["Save as", "Save"]
+      }
+    },
+    "apps_list": {
+      "automation_ids": ["AppsGridView", "AppsListView"],
+      "control_types": ["List", "DataGrid"],
+      "names": {
+        "en-US": ["Apps"]
+      }
+    },
+    "apps_open_screen_btn": {
+      "automation_ids": ["OpenPhoneScreenButton", "PhoneScreenButton"],
+      "control_types": ["Button"],
+      "names": {
+        "en-US": ["Open phone screen", "Phone screen"]
+      }
+    }
+  }
+}

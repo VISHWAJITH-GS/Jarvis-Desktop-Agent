@@ -1892,3 +1892,93 @@ def set_stt_hybrid_mode(enabled: bool) -> None:
     _save_flag("stt_hybrid_mode", bool(enabled))
 
 
+DEFAULT_PHONE_LINK_SETTINGS: dict[str, Any] = {
+    "calls": False,
+    "messages": False,
+    "notifications": False,
+    "photos": False,
+    "apps": False,
+    "watcher": False,
+    "share_photo": False,
+    "delete_photo": False,
+    "dial_via_tel_uri": False,
+    "rate_limit_per_min": 5,
+    "emergency_numbers": ["112", "100", "101", "102", "108", "911", "999"],
+    "approved_folders": [],
+}
+
+
+def get_phone_link_settings() -> dict[str, Any]:
+    """Return Microsoft Phone Link feature flags and safety settings (all groups disabled by default)."""
+    raw = load_api_keys().get("phone_link")
+    out = dict(DEFAULT_PHONE_LINK_SETTINGS)
+    out["emergency_numbers"] = list(DEFAULT_PHONE_LINK_SETTINGS["emergency_numbers"])
+    out["approved_folders"] = list(DEFAULT_PHONE_LINK_SETTINGS["approved_folders"])
+    if isinstance(raw, dict):
+        for key in (
+            "calls",
+            "messages",
+            "notifications",
+            "photos",
+            "apps",
+            "watcher",
+            "share_photo",
+            "delete_photo",
+            "dial_via_tel_uri",
+        ):
+            if key in raw:
+                out[key] = bool(raw[key])
+        if "rate_limit_per_min" in raw:
+            try:
+                out["rate_limit_per_min"] = max(1, min(int(raw["rate_limit_per_min"]), 60))
+            except (TypeError, ValueError):
+                pass
+        if isinstance(raw.get("emergency_numbers"), list):
+            extra = [str(n).strip() for n in raw["emergency_numbers"] if str(n).strip()]
+            merged = list(dict.fromkeys(out["emergency_numbers"] + extra))
+            out["emergency_numbers"] = merged
+        if isinstance(raw.get("approved_folders"), list):
+            out["approved_folders"] = [str(p).strip() for p in raw["approved_folders"] if str(p).strip()]
+    return out
+
+
+def save_phone_link_settings(values: dict[str, Any]) -> None:
+    """Persist Microsoft Phone Link feature flags and safety settings."""
+    if not isinstance(values, dict):
+        raise ValueError("phone_link settings must be a dict")
+    current = get_phone_link_settings()
+    for key in (
+        "calls",
+        "messages",
+        "notifications",
+        "photos",
+        "apps",
+        "watcher",
+        "share_photo",
+        "delete_photo",
+        "dial_via_tel_uri",
+    ):
+        if key in values:
+            current[key] = bool(values[key])
+    if "rate_limit_per_min" in values:
+        try:
+            current["rate_limit_per_min"] = max(1, min(int(values["rate_limit_per_min"]), 60))
+        except (TypeError, ValueError):
+            pass
+    if isinstance(values.get("emergency_numbers"), list):
+        current["emergency_numbers"] = [
+            str(n).strip() for n in values["emergency_numbers"] if str(n).strip()
+        ]
+    if isinstance(values.get("approved_folders"), list):
+        current["approved_folders"] = [
+            str(p).strip() for p in values["approved_folders"] if str(p).strip()
+        ]
+    _save_flag("phone_link", current)
+
+
+def is_phone_link_feature_enabled(group: str) -> bool:
+    """Return True only when the named Phone Link feature group is explicitly enabled."""
+    return bool(get_phone_link_settings().get(str(group or "").strip().lower(), False))
+
+
+
