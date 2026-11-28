@@ -1,17 +1,23 @@
 """
-gui/telemetry_widgets.py - Hardware-Accelerated PyQt6 Telemetry Visual Components for JARVIS
+gui/telemetry_widgets.py - Modern Glassmorphic PyQt6 Telemetry Components for JARVIS
 
-Includes:
-1. SystemVitalsWidget: Labeled rows, numeric readouts, slim horizontal progress bars with semantic color thresholds.
-2. RollingLoadChartWidget: QPainter multi-series line chart (CPU, MEM, GPU) over 60s with gridlines & legend.
-3. ProcessRadarWidget: Concentric radar sweep & target blips paired with Top 5 process memory/CPU table.
-4. NetLinkWaveformWidget: Real-time dual sparkline showing download and upload throughput (kb/s / MB/s).
-5. EventStreamWidget: Monospace auto-scrolling live event stream log feed.
-6. ModelBenchWidget: Compact benchmark & latency diagnostic cards for active models.
-7. ActionsHistoryWidget: Live list of executed tool calls with completion checkmark, badge, and duration.
-8. TopStatusBarWidget: Top status bar with live state pills (connection, state, brain mode, abort badge, clock/uptime).
-9. ResponseCardPerfHeader: Metadata performance header for assistant response cards.
-10. MasterTelemetryPanel: Comprehensive command-center layout combining all telemetry widgets.
+Redesigned Telemetry Dashboard:
+1. StatCard: Glassmorphism dark card container (rgba(255,255,255,0.04), 14-16px radius, subtle border & glow).
+2. RadialGauge: Custom QPainter circular gauge with smooth load-based color interpolation,
+   glowing arc, easing QPropertyAnimation, bold centered %, and detail text.
+3. DriveBar: Slim progress bar for storage partitions with free space text and load coloring.
+4. BatteryWidget: Proportional battery-shaped icon with neon charging bolt and AC/battery chips.
+5. SystemVitalsWidget: Responsive grid card housing CPU, RAM, GPU, VRAM radial gauges, storage, and battery.
+6. GlowLineChart / RollingLoadChartWidget: Visual centerpiece 60-second line chart with Catmull-Rom
+   spline smoothing, glowing multi-series lines (CPU, Memory, GPU), vertical fading gradient fill,
+   faint gridlines, latest glowing dots with values, and interactive hover crosshair & tooltip.
+7. ProcessTable / ProcessRadarWidget: Clean table of top consumers (no radar), inline RAM & CPU magnitude
+   bars, sortable by RAM/CPU descending, instance grouping, monospace numbers, and zero-flicker in-place updates.
+8. SpeedStat / NetLinkWaveformWidget: Two large stat blocks for Download (↓) and Upload (↑) with big bold
+   numbers, auto-scaled units, arrow icons, connection name, and high-activity color pulse (no graph).
+9. ActionsHistoryWidget: Compact glass list with success/fail icon, action description, and duration chip.
+10. MasterTelemetryPanel: Unified command-center layout combining System Vitals, Load Line Chart,
+    Processes table, Internet speed stats, and Actions history with responsive scaling.
 """
 
 from __future__ import annotations
@@ -22,23 +28,39 @@ import math
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
-from PyQt6.QtCore import QPointF, QRectF, QSize, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import (
+    QEasingCurve,
+    QPoint,
+    QPointF,
+    QPropertyAnimation,
+    QRect,
+    QRectF,
+    QSize,
+    Qt,
+    QTimer,
+    pyqtProperty,
+    pyqtSignal,
+)
 from PyQt6.QtGui import (
     QBrush,
     QColor,
+    QCursor,
     QFont,
     QLinearGradient,
     QPainter,
     QPainterPath,
     QPen,
     QPolygonF,
+    QRadialGradient,
 )
 from PyQt6.QtWidgets import (
     QFrame,
     QGridLayout,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QProgressBar,
+    QPushButton,
     QScrollArea,
     QSizePolicy,
     QSplitter,
@@ -55,197 +77,620 @@ from core.telemetry_service import TelemetryEventBus, get_event_bus
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 1. System Vitals Widget
+# Design System & Palette Constants
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Dark glassmorphic palette
+BG_COLOR = "#07090f"
+CARD_BG = "rgba(255, 255, 255, 0.04)"
+CARD_BORDER = "rgba(255, 255, 255, 0.08)"
+CARD_BORDER_COLOR = QColor(255, 255, 255, 20)
+CARD_BG_COLOR = QColor(13, 17, 28, 210)
+CARD_RADIUS = 14
+
+# Neon accents (Restrained palette: cyan, violet, amber. Red reserved ONLY for critical/warning)
+ACCENT_CYAN = QColor(34, 211, 238)      # #22d3ee (Normal load 0-60%)
+ACCENT_VIOLET = QColor(167, 139, 250)   # #a78bfa (Memory / upload accent)
+ACCENT_AMBER = QColor(251, 191, 36)     # #fbbf24 (Elevated load 60-85%)
+ACCENT_RED = QColor(244, 63, 94)        # #f43f5e (Critical load 85-100% only)
+ACCENT_GREEN = QColor(16, 185, 129)     # #10b981 (Success / online)
+
+TEXT_PRIMARY = "#f8fafc"
+TEXT_MUTED = "#94a3b8"
+TEXT_DIM = "#64748b"
+
+
+def sans_font(size: float | int, bold: bool = False, letter_spacing: float = 0.0) -> QFont:
+    """Clean geometric sans font for labels and titles (Segoe UI / Inter)."""
+    f = QFont("Segoe UI")
+    if isinstance(size, float):
+        f.setPointSizeF(size)
+    else:
+        f.setPointSize(int(size))
+    f.setBold(bold)
+    if letter_spacing > 0.0:
+        f.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, letter_spacing)
+    return f
+
+
+def mono_font(size: float | int, bold: bool = False) -> QFont:
+    """Clean monospace font for numbers and metrics (Consolas / JetBrains Mono)."""
+    f = QFont("Consolas")
+    if isinstance(size, float):
+        f.setPointSizeF(size)
+    else:
+        f.setPointSize(int(size))
+    f.setBold(bold)
+    return f
+
+
+def load_color(pct: float) -> QColor:
+    """
+    Smoothly interpolate color based on load percentage:
+      0  - 60%: Cyan (#22d3ee)
+      60 - 85%: Cyan blending into Amber (#fbbf24)
+      85 - 100%: Amber blending into Warning Red (#f43f5e)
+    """
+    val = max(0.0, min(100.0, float(pct)))
+    if val <= 60.0:
+        return ACCENT_CYAN
+    elif val <= 85.0:
+        t = (val - 60.0) / 25.0
+        r = int(ACCENT_CYAN.red() + t * (ACCENT_AMBER.red() - ACCENT_CYAN.red()))
+        g = int(ACCENT_CYAN.green() + t * (ACCENT_AMBER.green() - ACCENT_CYAN.green()))
+        b = int(ACCENT_CYAN.blue() + t * (ACCENT_AMBER.blue() - ACCENT_CYAN.blue()))
+        return QColor(r, g, b)
+    else:
+        t = (val - 85.0) / 15.0
+        r = int(ACCENT_AMBER.red() + t * (ACCENT_RED.red() - ACCENT_AMBER.red()))
+        g = int(ACCENT_AMBER.green() + t * (ACCENT_RED.green() - ACCENT_AMBER.green()))
+        b = int(ACCENT_AMBER.blue() + t * (ACCENT_RED.blue() - ACCENT_AMBER.blue()))
+        return QColor(r, g, b)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 1. Base Glassmorphic Container: StatCard
+# ─────────────────────────────────────────────────────────────────────────────
+
+class StatCard(QFrame):
+    """
+    Dark glassmorphic container with rounded corners (14-16px),
+    rgba(255,255,255,0.04) fill, 1px border rgba(255,255,255,0.08),
+    and soft glow/shadow.
+    """
+
+    def __init__(self, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self.setStyleSheet(f"""
+            QFrame {{
+                background-color: {CARD_BG};
+                border: 1px solid {CARD_BORDER};
+                border-radius: {CARD_RADIUS}px;
+            }}
+        """)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 2. Circular Radial Gauge Widget
+# ─────────────────────────────────────────────────────────────────────────────
+
+class RadialGauge(QWidget):
+    """
+    Circular (radial) gauge with smooth QPainter rendering:
+    - Large bold percentage in the center
+    - Muted uppercase label at the top
+    - Small detail text (GHz, GB, °C) underneath
+    - Smooth color interpolation (cyan -> amber -> red)
+    - Animated value changes using QPropertyAnimation (easing, never jumping)
+    - Soft glow around the value arc
+    - Optional mini thermometer / colored chip for temperatures
+    - Optional mini-core load bars for multi-core CPU
+    - Graceful fallback for missing data (shows 'N/A')
+    """
+
+    def __init__(
+        self,
+        title: str = "METRIC",
+        sub_text: str = "--",
+        parent: Optional[QWidget] = None,
+        show_temp_chip: bool = False,
+    ):
+        super().__init__(parent)
+        self._title = title.upper()
+        self._sub_text = sub_text
+        self._target_value = 0.0
+        self._anim_value = 0.0
+        self._is_na = False
+        self._show_temp_chip = show_temp_chip
+        self._temp_c = -1.0
+        self._mini_bars: List[float] = []
+
+        self.setMinimumSize(110, 125)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.setStyleSheet("background: transparent;")
+
+        # Property animation for smooth transitions
+        self._anim = QPropertyAnimation(self, b"animated_value", self)
+        self._anim.setDuration(350)
+        self._anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+    @pyqtProperty(float)
+    def animated_value(self) -> float:
+        return self._anim_value
+
+    @animated_value.setter
+    def animated_value(self, val: float):
+        self._anim_value = max(0.0, min(100.0, float(val)))
+        self.update()
+
+    def set_value(self, val: float, sub_text: Optional[str] = None, is_na: bool = False):
+        self._is_na = is_na
+        if sub_text is not None:
+            self._sub_text = sub_text
+
+        if is_na or val < 0:
+            self._is_na = True
+            self._target_value = 0.0
+            self._anim.stop()
+            self._anim_value = 0.0
+            self.update()
+            return
+
+        self._is_na = False
+        new_target = max(0.0, min(100.0, float(val)))
+        if abs(new_target - self._target_value) > 0.1:
+            self._target_value = new_target
+            self._anim.stop()
+            self._anim.setStartValue(self._anim_value)
+            self._anim.setEndValue(self._target_value)
+            self._anim.start()
+        else:
+            self.update()
+
+    def set_temp(self, temp_c: float):
+        self._temp_c = temp_c
+        self.update()
+
+    def set_mini_bars(self, bars: List[float]):
+        self._mini_bars = list(bars)
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
+
+        w = self.width()
+        h = self.height()
+
+        # Glass card background
+        card_rect = QRectF(0, 0, w, h)
+        painter.setBrush(QBrush(CARD_BG_COLOR))
+        painter.setPen(QPen(CARD_BORDER_COLOR, 1))
+        painter.drawRoundedRect(card_rect.adjusted(0.5, 0.5, -0.5, -0.5), CARD_RADIUS, CARD_RADIUS)
+
+        # 1. Section Title (small, uppercase, letter-spaced)
+        painter.setFont(sans_font(7, bold=True, letter_spacing=1.2))
+        painter.setPen(QColor(TEXT_MUTED))
+        painter.drawText(QRectF(8, 8, w - 16, 16), Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop, self._title)
+
+        # 2. Radial Arc Dimensions
+        cx = w / 2.0
+        cy = 58.0
+        radius = min(36.0, (w - 28) / 2.0)
+        track_width = 5.5
+        arc_rect = QRectF(cx - radius, cy - radius, radius * 2.0, radius * 2.0)
+
+        # 240° sweep arc: starts at 210° (bottom-left) and sweeps -240° clockwise to -30° (bottom-right)
+        start_angle = 210 * 16
+        total_span = -240 * 16
+
+        # Draw background track arc
+        track_pen = QPen(QColor(255, 255, 255, 18), track_width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
+        painter.setPen(track_pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawArc(arc_rect, start_angle, total_span)
+
+        if not self._is_na and self._anim_value > 0.0:
+            val_col = load_color(self._anim_value)
+            value_span = int(total_span * (self._anim_value / 100.0))
+
+            # Soft glow under-arc
+            glow_col = QColor(val_col.red(), val_col.green(), val_col.blue(), 40)
+            glow_pen = QPen(glow_col, track_width + 4.5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
+            painter.setPen(glow_pen)
+            painter.drawArc(arc_rect, start_angle, value_span)
+
+            # Crisp foreground arc
+            val_pen = QPen(val_col, track_width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
+            painter.setPen(val_pen)
+            painter.drawArc(arc_rect, start_angle, value_span)
+
+        # 3. Big Value Text in Center
+        painter.setFont(mono_font(13, bold=True))
+        if self._is_na:
+            painter.setPen(QColor(TEXT_DIM))
+            val_text = "N/A"
+        else:
+            painter.setPen(QColor(TEXT_PRIMARY))
+            val_text = f"{int(round(self._anim_value))}%"
+        painter.drawText(QRectF(cx - 38, cy - 13, 76, 26), Qt.AlignmentFlag.AlignCenter, val_text)
+
+        # 4. Detail Sub-Text underneath center
+        painter.setFont(sans_font(7, bold=False))
+        painter.setPen(QColor(TEXT_MUTED))
+        sub_y = cy + radius - 2.0
+        painter.drawText(QRectF(6, sub_y, w - 12, 16), Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop, self._sub_text)
+
+        # 5. Optional Temperature Chip or Mini-Bars
+        bottom_y = sub_y + 17.0
+        if self._show_temp_chip and self._temp_c > 0:
+            chip_t = int(self._temp_c)
+            if chip_t < 60:
+                c_lbl = "COOL"
+                c_col = ACCENT_CYAN
+            elif chip_t < 80:
+                c_lbl = "WARM"
+                c_col = ACCENT_AMBER
+            else:
+                c_lbl = "HOT"
+                c_col = ACCENT_RED
+
+            # Small thermometer pill
+            pill_text = f"{chip_t}°C · {c_lbl}"
+            painter.setFont(mono_font(6, bold=True))
+            pill_w = 64
+            pill_h = 14
+            pill_x = cx - (pill_w / 2.0)
+            pill_rect = QRectF(pill_x, bottom_y, pill_w, pill_h)
+            painter.setBrush(QBrush(QColor(c_col.red(), c_col.green(), c_col.blue(), 25)))
+            painter.setPen(QPen(QColor(c_col.red(), c_col.green(), c_col.blue(), 90), 1))
+            painter.drawRoundedRect(pill_rect, 3, 3)
+            painter.setPen(c_col)
+            painter.drawText(pill_rect, Qt.AlignmentFlag.AlignCenter, pill_text)
+
+        elif self._mini_bars and len(self._mini_bars) > 1:
+            # Draw optional per-core mini bars
+            nbars = min(16, len(self._mini_bars))
+            bar_w = max(2.5, min(4.5, (w - 30) / nbars))
+            bar_gap = 1.5
+            total_bars_w = (nbars * bar_w) + ((nbars - 1) * bar_gap)
+            start_bx = cx - (total_bars_w / 2.0)
+            max_bh = 10.0
+
+            for i in range(nbars):
+                c_val = max(0.0, min(100.0, self._mini_bars[i]))
+                bh = max(1.5, (c_val / 100.0) * max_bh)
+                bx = start_bx + i * (bar_w + bar_gap)
+                by = bottom_y + (max_bh - bh)
+                bcol = load_color(c_val)
+                painter.setBrush(QBrush(bcol))
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.drawRoundedRect(QRectF(bx, by, bar_w, bh), 1, 1)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 3. Storage Drive Bar Widget
+# ─────────────────────────────────────────────────────────────────────────────
+
+class DriveBar(QWidget):
+    """
+    Slim horizontal progress bar for storage drives with load-based color,
+    mount label on the left, and free space formatted on the right.
+    """
+
+    def __init__(self, mount_label: str = "C:", parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self._mount = mount_label
+        self._free_str = "-- GB free"
+        self._pct = 0.0
+        self.setFixedHeight(24)
+        self.setStyleSheet("background: transparent;")
+
+    def set_data(self, mount_label: str, pct: float, free_str: str):
+        self._mount = mount_label
+        self._pct = max(0.0, min(100.0, float(pct)))
+        self._free_str = free_str
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
+
+        w = self.width()
+        h = self.height()
+
+        # Labels row: Left Drive name, Right free space
+        painter.setFont(sans_font(7, bold=True))
+        painter.setPen(QColor(TEXT_PRIMARY))
+        painter.drawText(0, 9, f"DRIVE {self._mount}")
+
+        painter.setFont(mono_font(7))
+        painter.setPen(QColor(TEXT_MUTED))
+        painter.drawText(QRectF(0, 0, w, 12), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop, f"{self._free_str} ({int(self._pct)}%)")
+
+        # Slim progress track
+        bar_y = 15.0
+        bar_h = 5.0
+        bar_w = float(w)
+
+        # Track background
+        painter.setBrush(QBrush(QColor(255, 255, 255, 15)))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawRoundedRect(QRectF(0, bar_y, bar_w, bar_h), 2.5, 2.5)
+
+        # Filled progress chunk with load color
+        if self._pct > 0.0:
+            fill_w = max(4.0, (self._pct / 100.0) * bar_w)
+            col = load_color(self._pct)
+            painter.setBrush(QBrush(col))
+            painter.drawRoundedRect(QRectF(0, bar_y, fill_w, bar_h), 2.5, 2.5)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 4. Battery / Power State Widget
+# ─────────────────────────────────────────────────────────────────────────────
+
+class BatteryWidget(QWidget):
+    """
+    Battery-shaped icon that fills proportionally, with a lightning bolt
+    when plugged in, big bold percentage, and AC/battery status chip.
+    """
+
+    def __init__(self, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self._pct = 100.0
+        self._plugged = True
+        self._is_na = False
+        self.setFixedHeight(28)
+        self.setStyleSheet("background: transparent;")
+
+    def set_battery(self, pct: Optional[float], plugged: Optional[bool]):
+        if pct is None:
+            self._is_na = True
+            self._pct = 0.0
+            self._plugged = True
+        else:
+            self._is_na = False
+            self._pct = max(0.0, min(100.0, float(pct)))
+            self._plugged = bool(plugged)
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
+
+        w = self.width()
+
+        # 1. Proportional Battery Icon
+        b_x = 0.0
+        b_y = 6.0
+        b_w = 26.0
+        b_h = 14.0
+
+        # Battery outer casing
+        painter.setPen(QPen(QColor(255, 255, 255, 70), 1.2))
+        painter.setBrush(QBrush(QColor(10, 14, 24, 180)))
+        painter.drawRoundedRect(QRectF(b_x, b_y, b_w, b_h), 3, 3)
+
+        # Battery positive terminal bump
+        painter.setBrush(QBrush(QColor(255, 255, 255, 70)))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawRoundedRect(QRectF(b_x + b_w + 1.0, b_y + 4.0, 2.0, 6.0), 1, 1)
+
+        # Fill level inside battery
+        if not self._is_na and self._pct > 0.0:
+            inner_w = (b_w - 4.0) * (self._pct / 100.0)
+            # Low battery turns amber/red, high is cyan
+            bcol = load_color(100.0 - self._pct) if not self._plugged else ACCENT_CYAN
+            painter.setBrush(QBrush(bcol))
+            painter.drawRoundedRect(QRectF(b_x + 2.0, b_y + 2.0, inner_w, b_h - 4.0), 1.5, 1.5)
+
+        # Lightning bolt when plugged in
+        if self._plugged:
+            bolt_path = QPainterPath()
+            lx = b_x + (b_w / 2.0)
+            ly = b_y + 2.0
+            bolt_path.moveTo(lx + 1.0, ly)
+            bolt_path.lineTo(lx - 2.5, ly + 5.5)
+            bolt_path.lineTo(lx, ly + 5.5)
+            bolt_path.lineTo(lx - 1.0, ly + 10.0)
+            bolt_path.lineTo(lx + 2.5, ly + 4.5)
+            bolt_path.lineTo(lx, ly + 4.5)
+            bolt_path.closeSubpath()
+            painter.setBrush(QBrush(QColor("#ffffff")))
+            painter.setPen(QPen(QColor("#000000"), 0.5))
+            painter.drawPath(bolt_path)
+
+        # 2. Battery Percentage
+        painter.setFont(mono_font(9, bold=True))
+        painter.setPen(QColor(TEXT_PRIMARY))
+        pct_text = "N/A" if self._is_na else f"{int(self._pct)}%"
+        painter.drawText(QRectF(36, 4, 45, 18), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, pct_text)
+
+        # 3. Status chip
+        chip_x = 86
+        chip_w = 64
+        chip_h = 16
+        chip_rect = QRectF(chip_x, 6, chip_w, chip_h)
+        if self._plugged:
+            c_text = "AC POWER"
+            c_col = ACCENT_CYAN
+        else:
+            c_text = "ON BATTERY"
+            c_col = ACCENT_AMBER
+
+        painter.setBrush(QBrush(QColor(c_col.red(), c_col.green(), c_col.blue(), 20)))
+        painter.setPen(QPen(QColor(c_col.red(), c_col.green(), c_col.blue(), 80), 1))
+        painter.drawRoundedRect(chip_rect, 3, 3)
+        painter.setFont(sans_font(6, bold=True))
+        painter.setPen(c_col)
+        painter.drawText(chip_rect, Qt.AlignmentFlag.AlignCenter, c_text)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 5. System Vitals Widget (Composing Gauges, Drives, and Power)
 # ─────────────────────────────────────────────────────────────────────────────
 
 class SystemVitalsWidget(QWidget):
     """
-    Renders CPU, RAM, GPU/VRAM, Storage partitions, and Battery vitals
-    with numeric readouts and slim semantic progress bars.
+    Renders CPU, RAM, GPU, VRAM with circular radial gauges,
+    storage partitions with slim drive progress bars, and proportional battery.
+    Maintains compatibility aliases for external callers and tests.
     """
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.setStyleSheet("background: transparent;")
-        self._disk_rows: Dict[str, Tuple[QLabel, QProgressBar]] = {}
+        self._disk_bars: Dict[str, DriveBar] = {}
         self._build_ui()
 
     def _build_ui(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(6, 6, 6, 6)
-        root.setSpacing(6)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(8)
 
-        # Header
-        hdr = QHBoxLayout()
-        hdr.setContentsMargins(0, 0, 0, 0)
-        h_icon = QLabel("◈")
-        h_icon.setFont(keena_font(9, bold=True))
-        h_icon.setStyleSheet(f"color: {C.PRI};")
-        hdr.addWidget(h_icon)
-        h_title = QLabel("SYSTEM VITALS")
-        h_title.setFont(keena_font(9, bold=True, spacing=1.2))
-        h_title.setStyleSheet("color: #ffffff;")
-        hdr.addWidget(h_title)
-        hdr.addStretch()
-        root.addLayout(hdr)
+        # ── 1. Top Row: 4 Radial Gauges in a Responsive Grid ──
+        self.gauges_grid = QGridLayout()
+        self.gauges_grid.setContentsMargins(0, 0, 0, 0)
+        self.gauges_grid.setSpacing(8)
 
-        self.cards_container = QVBoxLayout()
-        self.cards_container.setSpacing(6)
-        root.addLayout(self.cards_container)
+        # CPU Radial Gauge
+        self.gauge_cpu = RadialGauge(title="CPU", sub_text="0 MHz")
+        self.gauges_grid.addWidget(self.gauge_cpu, 0, 0)
 
-        # 1. CPU Card
-        c_cpu, self.lbl_cpu_val, self.bar_cpu, sub_cpu = self._make_vital_card("CPU", "0.0 %")
+        # RAM Radial Gauge
+        self.gauge_ram = RadialGauge(title="RAM", sub_text="0.0 / 0.0 GB")
+        self.gauges_grid.addWidget(self.gauge_ram, 0, 1)
+
+        # GPU Radial Gauge
+        self.gauge_gpu = RadialGauge(title="GPU", sub_text="-- °C", show_temp_chip=True)
+        self.gauges_grid.addWidget(self.gauge_gpu, 0, 2)
+
+        # Dedicated VRAM Radial Gauge
+        self.gauge_vram = RadialGauge(title="VRAM", sub_text="0.0 / 0.0 GB")
+        self.gauges_grid.addWidget(self.gauge_vram, 0, 3)
+
+        root.addLayout(self.gauges_grid)
+
+        # ── 2. Bottom Row: Storage Drives + Battery Cards ──
+        sub_row = QHBoxLayout()
+        sub_row.setContentsMargins(0, 0, 0, 0)
+        sub_row.setSpacing(8)
+
+        # Storage Drives Card
+        self.card_storage = StatCard()
+        v_st = QVBoxLayout(self.card_storage)
+        v_st.setContentsMargins(12, 10, 12, 10)
+        v_st.setSpacing(6)
+
+        lbl_st_title = QLabel("STORAGE DRIVES")
+        lbl_st_title.setFont(sans_font(7, bold=True, letter_spacing=1.2))
+        lbl_st_title.setStyleSheet(f"color: {TEXT_MUTED}; background: transparent; border: none;")
+        v_st.addWidget(lbl_st_title)
+
+        self.drives_container = QVBoxLayout()
+        self.drives_container.setSpacing(5)
+        v_st.addLayout(self.drives_container)
+        v_st.addStretch()
+        sub_row.addWidget(self.card_storage, stretch=3)
+
+        # Power / Battery Card
+        self.card_battery = StatCard()
+        v_bat = QVBoxLayout(self.card_battery)
+        v_bat.setContentsMargins(12, 10, 12, 10)
+        v_bat.setSpacing(6)
+
+        lbl_bat_title = QLabel("POWER & BATTERY")
+        lbl_bat_title.setFont(sans_font(7, bold=True, letter_spacing=1.2))
+        lbl_bat_title.setStyleSheet(f"color: {TEXT_MUTED}; background: transparent; border: none;")
+        v_bat.addWidget(lbl_bat_title)
+
+        self.battery_widget = BatteryWidget()
+        v_bat.addWidget(self.battery_widget)
+        v_bat.addStretch()
+        sub_row.addWidget(self.card_battery, stretch=2)
+
+        root.addLayout(sub_row)
+
+        # ── Compatibility surrogate labels/bars for legacy callers and unit tests ──
+        self.lbl_cpu_val = QLabel("0.0 %")
         self.lbl_cpu_freq = QLabel("0 MHz")
-        self.lbl_cpu_freq.setFont(keena_font(7))
-        self.lbl_cpu_freq.setStyleSheet(f"color: {C.TEXT_DIM};")
-        sub_cpu.addWidget(self.lbl_cpu_freq)
-        self.cards_container.addWidget(c_cpu)
-
-        # 2. RAM Card
-        c_ram, self.lbl_ram_val, self.bar_ram, sub_ram = self._make_vital_card("MEMORY (RAM)", "0.0 / 0.0 GB")
-        self.cards_container.addWidget(c_ram)
-
-        # 3. GPU Card
-        c_gpu, self.lbl_gpu_val, self.bar_gpu, sub_gpu = self._make_vital_card("GPU UTIL", "0 %")
+        self.lbl_ram_val = QLabel("0.0 / 0.0 GB")
+        self.lbl_gpu_val = QLabel("0 %")
         self.lbl_gpu_temp = QLabel("-- °C")
-        self.lbl_gpu_temp.setFont(keena_font(7))
-        self.lbl_gpu_temp.setStyleSheet(f"color: {C.TEXT_DIM};")
-        sub_gpu.addWidget(self.lbl_gpu_temp)
-        self.cards_container.addWidget(c_gpu)
+        self.lbl_vram_val = QLabel("0.0 / 0.0 GB")
+        self.lbl_bat_val = QLabel("N/A")
 
-        # 4. VRAM Card
-        c_vram, self.lbl_vram_val, self.bar_vram, sub_vram = self._make_vital_card("DEDICATED VRAM", "0.0 / 0.0 GB")
-        self.cards_container.addWidget(c_vram)
-
-        # 5. Storage Card (Container for dynamic drives)
-        self.c_storage = QFrame()
-        self.c_storage.setStyleSheet(f"""
-            QFrame {{
-                background: rgba(14, 5, 12, 0.85);
-                border: 1px solid rgba(255, 30, 66, 0.25);
-                border-radius: 4px;
-            }}
-        """)
-        self.v_storage = QVBoxLayout(self.c_storage)
-        self.v_storage.setContentsMargins(8, 6, 8, 6)
-        self.v_storage.setSpacing(4)
-        s_hdr = QLabel("STORAGE DRIVES")
-        s_hdr.setFont(keena_font(7, bold=True, spacing=1.0))
-        s_hdr.setStyleSheet(f"color: {C.PRI_DIM};")
-        self.v_storage.addWidget(s_hdr)
-        self.cards_container.addWidget(self.c_storage)
-
-        # 6. Battery Card
-        self.c_bat, self.lbl_bat_val, self.bar_bat, _ = self._make_vital_card("BATTERY / POWER", "N/A")
-        self.cards_container.addWidget(self.c_bat)
-
-        root.addStretch()
-
-    def _make_vital_card(self, title: str, init_val: str):
-        c = QFrame()
-        c.setStyleSheet(f"""
-            QFrame {{
-                background: rgba(14, 5, 12, 0.85);
-                border: 1px solid rgba(255, 30, 66, 0.25);
-                border-radius: 4px;
-            }}
-        """)
-        v = QVBoxLayout(c)
-        v.setContentsMargins(8, 6, 8, 6)
-        v.setSpacing(3)
-
-        hdr = QHBoxLayout()
-        hdr.setContentsMargins(0, 0, 0, 0)
-        tl = QLabel(title)
-        tl.setFont(keena_font(7, bold=True, spacing=1.0))
-        tl.setStyleSheet(f"color: {C.PRI_DIM};")
-        hdr.addWidget(tl)
-        hdr.addStretch()
-
-        vl = QLabel(init_val)
-        vl.setFont(keena_font(8, bold=True))
-        vl.setStyleSheet("color: #ffffff;")
-        hdr.addWidget(vl)
-        v.addLayout(hdr)
-
-        bar = QProgressBar()
-        bar.setFixedHeight(4)
-        bar.setTextVisible(False)
-        bar.setRange(0, 100)
-        bar.setValue(0)
-        self._apply_bar_style(bar, 0)
-        v.addWidget(bar)
-
-        sub_lay = QHBoxLayout()
-        sub_lay.setContentsMargins(0, 0, 0, 0)
-        v.addLayout(sub_lay)
-
-        return c, vl, bar, sub_lay
-
-    def _apply_bar_style(self, bar: QProgressBar, pct: float):
-        if pct > 90:
-            col = "#ff1744"  # Critical red
-        elif pct >= 75:
-            col = "#ffb300"  # Amber
-        else:
-            col = "#00e5ff"  # Cyan neon
-        bar.setStyleSheet(f"""
-            QProgressBar {{
-                background: rgba(255, 255, 255, 0.08);
-                border: none;
-                border-radius: 2px;
-            }}
-            QProgressBar::chunk {{
-                background: {col};
-                border-radius: 2px;
-            }}
-        """)
+        self.bar_cpu = QProgressBar()
+        self.bar_cpu.setRange(0, 100)
+        self.bar_ram = QProgressBar()
+        self.bar_ram.setRange(0, 100)
+        self.bar_gpu = QProgressBar()
+        self.bar_gpu.setRange(0, 100)
+        self.bar_vram = QProgressBar()
+        self.bar_vram.setRange(0, 100)
+        self.bar_bat = QProgressBar()
+        self.bar_bat.setRange(0, 100)
 
     def update_vitals(self, snap: Dict[str, Any]):
-        # CPU
+        # 1. CPU
         cpu_p = snap.get("cpu_pct", 0.0)
+        cpu_freq = snap.get("cpu_freq_mhz", 0.0)
+        cpu_percore = snap.get("cpu_percore", [])
+        freq_str = f"{int(cpu_freq)} MHz" if cpu_freq > 0 else "--"
+
+        self.gauge_cpu.set_value(cpu_p, sub_text=freq_str)
+        if cpu_percore:
+            self.gauge_cpu.set_mini_bars(cpu_percore)
+
         self.lbl_cpu_val.setText(f"{cpu_p:.1f} %")
+        self.lbl_cpu_freq.setText(freq_str)
         self.bar_cpu.setValue(int(cpu_p))
-        self._apply_bar_style(self.bar_cpu, cpu_p)
-        cf = snap.get("cpu_freq_mhz", 0.0)
-        if cf > 0:
-            self.lbl_cpu_freq.setText(f"{int(cf)} MHz")
 
-        # RAM
-        mem_fmt = snap.get("mem_formatted", "0.0 / 0.0 GB")
+        # 2. RAM
+        mem_used = snap.get("mem_used_gb", 0.0)
+        mem_tot = snap.get("mem_total_gb", 0.0)
         mem_p = snap.get("mem_pct", 0.0)
-        self.lbl_ram_val.setText(f"{mem_fmt} ({int(mem_p)}%)")
-        self.bar_ram.setValue(int(mem_p))
-        self._apply_bar_style(self.bar_ram, mem_p)
+        mem_str = f"{mem_used:.1f} / {mem_tot:.1f} GB"
 
-        # GPU
+        self.gauge_ram.set_value(mem_p, sub_text=mem_str)
+        self.lbl_ram_val.setText(f"{mem_str} ({int(mem_p)}%)")
+        self.bar_ram.setValue(int(mem_p))
+
+        # 3. GPU & Temperature
         gpu_p = snap.get("gpu_pct", -1.0)
         gpu_t = snap.get("gpu_temp_c", -1.0)
         if gpu_p >= 0:
+            temp_str = f"{int(gpu_t)} °C" if gpu_t > 0 else "--"
+            self.gauge_gpu.set_value(gpu_p, sub_text=temp_str)
+            self.gauge_gpu.set_temp(gpu_t)
             self.lbl_gpu_val.setText(f"{int(gpu_p)} %")
+            self.lbl_gpu_temp.setText(temp_str)
             self.bar_gpu.setValue(int(gpu_p))
-            self._apply_bar_style(self.bar_gpu, gpu_p)
-            self.lbl_gpu_temp.setText(f"{int(gpu_t)} °C" if gpu_t > 0 else "")
         else:
+            self.gauge_gpu.set_value(0, sub_text="N/A", is_na=True)
             self.lbl_gpu_val.setText("N/A")
-            self.bar_gpu.setValue(0)
-            self._apply_bar_style(self.bar_gpu, 0)
             self.lbl_gpu_temp.setText("")
+            self.bar_gpu.setValue(0)
 
-        # VRAM
+        # 4. Dedicated VRAM
         v_used = snap.get("gpu_vram_used_gb", -1.0)
         v_tot = snap.get("gpu_vram_total_gb", -1.0)
         v_pct = snap.get("gpu_vram_pct", -1.0)
         if v_used >= 0 and v_tot > 0:
-            self.lbl_vram_val.setText(f"{v_used:.1f} / {v_tot:.1f} GB ({int(v_pct)}%)")
+            v_str = f"{v_used:.1f} / {v_tot:.1f} GB"
+            self.gauge_vram.set_value(v_pct, sub_text=v_str)
+            self.lbl_vram_val.setText(f"{v_str} ({int(v_pct)}%)")
             self.bar_vram.setValue(int(v_pct))
-            self._apply_bar_style(self.bar_vram, v_pct)
         else:
+            self.gauge_vram.set_value(0, sub_text="N/A", is_na=True)
             self.lbl_vram_val.setText("N/A")
             self.bar_vram.setValue(0)
-            self._apply_bar_style(self.bar_vram, 0)
 
-        # Storage
+        # 5. Storage Partitions
         disks = snap.get("disks", [])
         for d in disks:
             mnt = d.get("mount", "")
@@ -253,70 +698,58 @@ class SystemVitalsWidget(QWidget):
             fmt = d.get("formatted", "")
             pct = d.get("pct", 0.0)
 
-            if mnt not in self._disk_rows:
-                row_w = QWidget()
-                row_l = QVBoxLayout(row_w)
-                row_l.setContentsMargins(0, 2, 0, 2)
-                row_l.setSpacing(2)
+            if mnt not in self._disk_bars:
+                d_bar = DriveBar(lbl_name)
+                self.drives_container.addWidget(d_bar)
+                self._disk_bars[mnt] = d_bar
 
-                r_top = QHBoxLayout()
-                r_top.setContentsMargins(0, 0, 0, 0)
-                d_lbl = QLabel(f"DISK {lbl_name}")
-                d_lbl.setFont(keena_font(7, bold=True))
-                d_lbl.setStyleSheet("color: #ffffff;")
-                r_top.addWidget(d_lbl)
-                r_top.addStretch()
+            self._disk_bars[mnt].set_data(lbl_name, pct, fmt)
 
-                v_lbl = QLabel(fmt)
-                v_lbl.setFont(keena_font(7))
-                v_lbl.setStyleSheet(f"color: {C.TEXT_DIM};")
-                r_top.addWidget(v_lbl)
-                row_l.addLayout(r_top)
-
-                pb = QProgressBar()
-                pb.setFixedHeight(3)
-                pb.setTextVisible(False)
-                pb.setRange(0, 100)
-                row_l.addWidget(pb)
-
-                self.v_storage.addWidget(row_w)
-                self._disk_rows[mnt] = (v_lbl, pb)
-
-            v_label, p_bar = self._disk_rows[mnt]
-            v_label.setText(f"{fmt} ({int(pct)}%)")
-            p_bar.setValue(int(pct))
-            self._apply_bar_style(p_bar, pct)
-
-        # Battery
-        bat_fmt = snap.get("battery_formatted", "N/A")
+        # 6. Battery & Power
         bat_p = snap.get("battery_pct")
+        bat_plug = snap.get("battery_plugged", True)
+        self.battery_widget.set_battery(bat_p, bat_plug)
         if bat_p is not None:
-            self.c_bat.setVisible(True)
-            self.lbl_bat_val.setText(bat_fmt)
+            self.lbl_bat_val.setText(snap.get("battery_formatted", "N/A"))
             self.bar_bat.setValue(int(bat_p))
-            self._apply_bar_style(self.bar_bat, 100 - bat_p)
         else:
-            self.c_bat.setVisible(False)
+            self.lbl_bat_val.setText("N/A")
+            self.bar_bat.setValue(0)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 2. Rolling Load Chart Widget (LOAD – 60 S)
+# 6. Load, Last 60 Seconds: Visual Centerpiece Line Chart
 # ─────────────────────────────────────────────────────────────────────────────
 
-class RollingLoadChartWidget(QWidget):
+class GlowLineChart(QWidget):
     """
-    Hardware-accelerated QPainter multi-series line graph.
-    Plots CPU, MEM, and GPU load over the last 60 seconds.
+    Wide, smooth, anti-aliased multi-series line chart:
+    - Catmull-Rom spline smoothing (smooth curves, never stepped)
+    - Three series: CPU (#22d3ee), Memory (#a78bfa), GPU (#fbbf24)
+    - Soft glowing lines with subtle fading vertical gradient fill
+    - Faint horizontal gridlines at 25%, 50%, 75%, 100% with subtle labels
+    - 60s -> now time axis
+    - Glowing dot at the latest point of each line with current value label
+    - Hover crosshair with interactive glass tooltip showing all 3 values
+    - Top legend chips matching line colors
+    - Fluid real-time scrolling
     """
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
-        self.setMinimumHeight(140)
+        self.setMinimumHeight(175)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.setStyleSheet("background: transparent;")
+        self.setMouseTracking(True)
+
         self._history: List[Tuple[float, float, float, float]] = []  # (t, cpu, mem, gpu)
         self._latest_cpu = 0.0
         self._latest_mem = 0.0
         self._latest_gpu = 0.0
+
+        # Mouse hover crosshair state
+        self._hover_pt: Optional[QPointF] = None
+        self._hover_idx: int = -1
 
     def update_history(self, samples: List[Tuple[float, float, float, float]]):
         self._history = list(samples)
@@ -324,604 +757,695 @@ class RollingLoadChartWidget(QWidget):
             _, self._latest_cpu, self._latest_mem, self._latest_gpu = self._history[-1]
         self.update()
 
+    def mouseMoveEvent(self, event):
+        self._hover_pt = event.position()
+        self.update()
+
+    def leaveEvent(self, event):
+        self._hover_pt = None
+        self.update()
+
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
 
         w = self.width()
         h = self.height()
 
-        # Background card
+        # 1. Dark Glass Card Background
         card_rect = QRectF(0, 0, w, h)
-        painter.fillRect(card_rect, QColor(14, 5, 12, 210))
-        painter.setPen(QPen(QColor(255, 30, 66, 60), 1))
-        painter.drawRoundedRect(card_rect.adjusted(0.5, 0.5, -0.5, -0.5), 4, 4)
+        painter.setBrush(QBrush(CARD_BG_COLOR))
+        painter.setPen(QPen(CARD_BORDER_COLOR, 1))
+        painter.drawRoundedRect(card_rect.adjusted(0.5, 0.5, -0.5, -0.5), CARD_RADIUS, CARD_RADIUS)
 
-        # Header with legend
-        painter.setFont(QFont("Montserrat", 7, QFont.Weight.Bold))
-        painter.setPen(QColor(C.PRI))
-        painter.drawText(10, 16, "LOAD – 60 S")
+        # 2. Header & Live Legend Chips
+        painter.setFont(sans_font(7, bold=True, letter_spacing=1.2))
+        painter.setPen(QColor(TEXT_MUTED))
+        painter.drawText(14, 18, "LOAD, LAST 60 SECONDS")
 
-        # Swatches
-        swatch_x = w - 210
-        # CPU
-        painter.setBrush(QBrush(QColor("#00e5ff")))
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.drawEllipse(swatch_x, 8, 6, 6)
-        painter.setPen(QColor("#ffffff"))
-        painter.drawText(swatch_x + 10, 15, f"CPU {int(self._latest_cpu)}%")
+        # Draw Live Legend Chips on Top-Right
+        chip_x = w - 245
+        chip_y = 7
+        self._draw_legend_chip(painter, chip_x, chip_y, "CPU", f"{int(self._latest_cpu)}%", ACCENT_CYAN)
+        chip_x += 76
+        self._draw_legend_chip(painter, chip_x, chip_y, "MEM", f"{int(self._latest_mem)}%", ACCENT_VIOLET)
+        chip_x += 76
+        self._draw_legend_chip(painter, chip_x, chip_y, "GPU", f"{int(self._latest_gpu)}%", ACCENT_AMBER)
 
-        # MEM
-        swatch_x += 70
-        painter.setBrush(QBrush(QColor("#FF1E42")))
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.drawEllipse(swatch_x, 8, 6, 6)
-        painter.setPen(QColor("#ffffff"))
-        painter.drawText(swatch_x + 10, 15, f"MEM {int(self._latest_mem)}%")
-
-        # GPU
-        swatch_x += 70
-        painter.setBrush(QBrush(QColor("#ffb300")))
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.drawEllipse(swatch_x, 8, 6, 6)
-        painter.setPen(QColor("#ffffff"))
-        painter.drawText(swatch_x + 10, 15, f"GPU {int(self._latest_gpu)}%")
-
-        # Plot area
-        top_y = 26.0
-        bot_y = h - 16.0
-        left_x = 10.0
-        right_x = w - 10.0
+        # 3. Plot Area Geometry
+        top_y = 30.0
+        bot_y = h - 22.0
+        left_x = 34.0
+        right_x = w - 24.0
         plot_w = right_x - left_x
         plot_h = bot_y - top_y
 
-        if plot_w <= 10 or plot_h <= 10:
+        if plot_w <= 20 or plot_h <= 20:
             return
 
-        # Gridlines (25%, 50%, 75%, 100%)
-        grid_pen = QPen(QColor(255, 255, 255, 18), 1, Qt.PenStyle.DashLine)
-        painter.setPen(grid_pen)
+        # 4. Faint Horizontal Gridlines & Y-Axis Labels (25%, 50%, 75%, 100%)
+        painter.setFont(mono_font(6))
+        painter.setPen(QColor(TEXT_DIM))
+        grid_pen = QPen(QColor(255, 255, 255, 14), 1, Qt.PenStyle.DashLine)
+
         for pct in (0.25, 0.50, 0.75, 1.0):
             gy = bot_y - (plot_h * pct)
+            painter.setPen(grid_pen)
             painter.drawLine(QPointF(left_x, gy), QPointF(right_x, gy))
+            painter.setPen(QColor(TEXT_DIM))
+            painter.drawText(QRectF(4, gy - 6, 26, 12), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, f"{int(pct * 100)}")
+
+        # 5. Time Axis (-60s, -45s, -30s, -15s, NOW)
+        painter.setFont(sans_font(6))
+        painter.setPen(QColor(TEXT_DIM))
+        time_labels = [("-60s", 0.0), ("-45s", 0.25), ("-30s", 0.50), ("-15s", 0.75), ("NOW", 1.0)]
+        for lbl, frac in time_labels:
+            tx = left_x + (frac * plot_w)
+            align = Qt.AlignmentFlag.AlignLeft if frac == 0 else (Qt.AlignmentFlag.AlignRight if frac == 1.0 else Qt.AlignmentFlag.AlignHCenter)
+            painter.drawText(QRectF(tx - 15, bot_y + 4, 30, 14), align | Qt.AlignmentFlag.AlignTop, lbl)
 
         if len(self._history) < 2:
             return
 
-        # Map points
+        # 6. Map History Points to Chart Geometry
         n = len(self._history)
         step_x = plot_w / max(1, 60 - 1)
         start_x = right_x - (n - 1) * step_x
 
-        def _make_path(series_idx: int) -> Tuple[QPainterPath, QPolygonF]:
-            path = QPainterPath()
-            poly = QPolygonF()
-            for i, item in enumerate(self._history):
-                val = max(0.0, min(100.0, float(item[series_idx])))
-                px = start_x + (i * step_x)
-                py = bot_y - (val / 100.0 * plot_h)
-                pt = QPointF(px, py)
-                if i == 0:
-                    path.moveTo(pt)
-                else:
-                    path.lineTo(pt)
-                poly.append(pt)
-            return path, poly
+        cpu_pts: List[QPointF] = []
+        mem_pts: List[QPointF] = []
+        gpu_pts: List[QPointF] = []
 
-        # Draw CPU series (Cyan)
-        path_cpu, poly_cpu = _make_path(1)
-        painter.setPen(QPen(QColor("#00e5ff"), 1.8))
-        painter.drawPath(path_cpu)
+        for i, item in enumerate(self._history):
+            px = start_x + (i * step_x)
+            cpu_val = max(0.0, min(100.0, float(item[1])))
+            mem_val = max(0.0, min(100.0, float(item[2])))
+            gpu_val = max(0.0, min(100.0, float(item[3])))
 
-        # Draw MEM series (Neon Crimson)
-        path_mem, poly_mem = _make_path(2)
-        painter.setPen(QPen(QColor("#FF1E42"), 1.8))
-        painter.drawPath(path_mem)
+            cpu_pts.append(QPointF(px, bot_y - (cpu_val / 100.0 * plot_h)))
+            mem_pts.append(QPointF(px, bot_y - (mem_val / 100.0 * plot_h)))
+            gpu_pts.append(QPointF(px, bot_y - (gpu_val / 100.0 * plot_h)))
 
-        # Draw GPU series (Amber)
-        path_gpu, poly_gpu = _make_path(3)
-        painter.setPen(QPen(QColor("#ffb300"), 1.8))
-        painter.drawPath(path_gpu)
+        # 7. Draw Series with Catmull-Rom Spline Smoothing + Vertical Gradient Fill
+        # Series order: GPU (amber), Memory (violet), CPU (cyan)
+        self._draw_spline_series(painter, gpu_pts, ACCENT_AMBER, bot_y, top_y, f"{int(self._latest_gpu)}%")
+        self._draw_spline_series(painter, mem_pts, ACCENT_VIOLET, bot_y, top_y, f"{int(self._latest_mem)}%")
+        self._draw_spline_series(painter, cpu_pts, ACCENT_CYAN, bot_y, top_y, f"{int(self._latest_cpu)}%")
 
+        # 8. Interactive Hover Crosshair & Tooltip
+        if self._hover_pt and left_x <= self._hover_pt.x() <= right_x and top_y <= self._hover_pt.y() <= bot_y:
+            hx = self._hover_pt.x()
+            # Find nearest index
+            nearest_idx = min(n - 1, max(0, int(round((hx - start_x) / max(0.1, step_x)))))
+            if 0 <= nearest_idx < n:
+                snap_x = cpu_pts[nearest_idx].x()
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 3. Process Radar Widget (PROCESS RADAR & TOP 5)
-# ─────────────────────────────────────────────────────────────────────────────
+                # Draw vertical subtle dashed crosshair line
+                cross_pen = QPen(QColor(255, 255, 255, 60), 1, Qt.PenStyle.DashLine)
+                painter.setPen(cross_pen)
+                painter.drawLine(QPointF(snap_x, top_y), QPointF(snap_x, bot_y))
 
-class RadarCanvas(QWidget):
-    """Concentric animated radar sweep and glowing process blips."""
+                # Highlight dots at crosshair
+                for pt, col in [(cpu_pts[nearest_idx], ACCENT_CYAN), (mem_pts[nearest_idx], ACCENT_VIOLET), (gpu_pts[nearest_idx], ACCENT_AMBER)]:
+                    painter.setBrush(QBrush(col))
+                    painter.setPen(QPen(QColor("#ffffff"), 1))
+                    painter.drawEllipse(pt, 3.5, 3.5)
 
-    def __init__(self, parent: Optional[QWidget] = None):
-        super().__init__(parent)
-        self.setFixedSize(140, 140)
-        self._sweep_angle = 0.0
-        self._procs: List[Dict[str, Any]] = []
+                # Floating glass tooltip
+                item = self._history[nearest_idx]
+                c_val = int(item[1])
+                m_val = int(item[2])
+                g_val = int(item[3])
 
-        # Sweep animation timer (40ms ~ 25fps)
-        self._timer = QTimer(self)
-        self._timer.timeout.connect(self._tick_sweep)
-        self._timer.start(40)
+                tip_w = 98.0
+                tip_h = 56.0
+                tip_x = snap_x + 10.0
+                if tip_x + tip_w > right_x:
+                    tip_x = snap_x - tip_w - 10.0
+                tip_y = max(top_y, min(bot_y - tip_h, self._hover_pt.y() - (tip_h / 2.0)))
 
-    def _tick_sweep(self):
-        self._sweep_angle = (self._sweep_angle + 3.0) % 360.0
-        self.update()
+                tip_rect = QRectF(tip_x, tip_y, tip_w, tip_h)
+                painter.setBrush(QBrush(QColor(10, 14, 24, 235)))
+                painter.setPen(QPen(QColor(255, 255, 255, 35), 1))
+                painter.drawRoundedRect(tip_rect, 6, 6)
 
-    def set_processes(self, procs: List[Dict[str, Any]]):
-        self._procs = list(procs)
-        self.update()
+                painter.setFont(mono_font(6.5))
+                painter.setPen(QColor(TEXT_MUTED))
+                secs_ago = int((n - 1 - nearest_idx) * (60.0 / max(1, n - 1)))
+                painter.drawText(QRectF(tip_x + 6, tip_y + 4, tip_w - 12, 12), Qt.AlignmentFlag.AlignLeft, f"-{secs_ago}s ago")
 
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+                painter.setPen(ACCENT_CYAN)
+                painter.drawText(QRectF(tip_x + 6, tip_y + 17, tip_w - 12, 11), Qt.AlignmentFlag.AlignLeft, f"CPU: {c_val}%")
 
-        cx = self.width() / 2.0
-        cy = self.height() / 2.0
-        max_r = min(cx, cy) - 8.0
+                painter.setPen(ACCENT_VIOLET)
+                painter.drawText(QRectF(tip_x + 6, tip_y + 29, tip_w - 12, 11), Qt.AlignmentFlag.AlignLeft, f"MEM: {m_val}%")
 
-        # Radar background circle
-        painter.setBrush(QBrush(QColor(10, 3, 10, 220)))
-        painter.setPen(QPen(QColor(255, 30, 66, 120), 1))
-        painter.drawEllipse(QPointF(cx, cy), max_r, max_r)
+                painter.setPen(ACCENT_AMBER)
+                painter.drawText(QRectF(tip_x + 6, tip_y + 41, tip_w - 12, 11), Qt.AlignmentFlag.AlignLeft, f"GPU: {g_val}%")
 
-        # Concentric rings
-        ring_pen = QPen(QColor(255, 30, 66, 45), 1, Qt.PenStyle.DashLine)
-        painter.setPen(ring_pen)
+    def _draw_legend_chip(self, painter: QPainter, x: float, y: float, label: str, val: str, color: QColor):
+        chip_rect = QRectF(x, y, 70, 18)
+        painter.setBrush(QBrush(QColor(color.red(), color.green(), color.blue(), 18)))
+        painter.setPen(QPen(QColor(color.red(), color.green(), color.blue(), 60), 1))
+        painter.drawRoundedRect(chip_rect, 4, 4)
+
+        # Dot
+        painter.setBrush(QBrush(color))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawEllipse(QPointF(x + 7, y + 9), 2.5, 2.5)
+
+        # Text
+        painter.setFont(sans_font(6.5, bold=True))
+        painter.setPen(color)
+        painter.drawText(QRectF(x + 13, y, 54, 18), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, f"{label} {val}")
+
+    def _draw_spline_series(
+        self,
+        painter: QPainter,
+        pts: List[QPointF],
+        color: QColor,
+        bot_y: float,
+        top_y: float,
+        latest_label: str,
+    ):
+        if len(pts) < 2:
+            return
+
+        # 1. Build Catmull-Rom smooth spline path
+        path = QPainterPath()
+        path.moveTo(pts[0])
+
+        for i in range(len(pts) - 1):
+            p0 = pts[i - 1] if i > 0 else pts[i]
+            p1 = pts[i]
+            p2 = pts[i + 1]
+            p3 = pts[i + 2] if i + 2 < len(pts) else p2
+
+            # Catmull-Rom to Cubic Bezier control points
+            c1 = QPointF(p1.x() + (p2.x() - p0.x()) / 6.0, p1.y() + (p2.y() - p0.y()) / 6.0)
+            c2 = QPointF(p2.x() - (p3.x() - p1.x()) / 6.0, p2.y() - (p3.y() - p1.y()) / 6.0)
+            path.cubicTo(c1, c2, p2)
+
+        # 2. Draw Subtle Vertical Gradient Fill fading to transparent
+        fill_path = QPainterPath(path)
+        fill_path.lineTo(pts[-1].x(), bot_y)
+        fill_path.lineTo(pts[0].x(), bot_y)
+        fill_path.closeSubpath()
+
+        grad = QLinearGradient(0, top_y, 0, bot_y)
+        grad.setColorAt(0.0, QColor(color.red(), color.green(), color.blue(), 30))
+        grad.setColorAt(0.8, QColor(color.red(), color.green(), color.blue(), 5))
+        grad.setColorAt(1.0, QColor(color.red(), color.green(), color.blue(), 0))
+        painter.setBrush(QBrush(grad))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawPath(fill_path)
+
+        # 3. Soft Glowing Line (wide translucent stroke behind)
+        glow_pen = QPen(QColor(color.red(), color.green(), color.blue(), 38), 5.5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+        painter.setPen(glow_pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)
-        for f in (0.33, 0.66, 1.0):
-            painter.drawEllipse(QPointF(cx, cy), max_r * f, max_r * f)
+        painter.drawPath(path)
 
-        # Crosshairs
-        cross_pen = QPen(QColor(255, 30, 66, 50), 1)
-        painter.setPen(cross_pen)
-        painter.drawLine(QPointF(cx - max_r, cy), QPointF(cx + max_r, cy))
-        painter.drawLine(QPointF(cx, cy - max_r), QPointF(cx, cy + max_r))
+        # 4. Crisp Foreground Line
+        line_pen = QPen(color, 1.8, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+        painter.setPen(line_pen)
+        painter.drawPath(path)
 
-        # Rotating Sweep Line
-        sweep_rad = math.radians(self._sweep_angle)
-        sx = cx + max_r * math.cos(sweep_rad)
-        sy = cy + max_r * math.sin(sweep_rad)
+        # 5. Glowing Dot at Latest Point with Live Value Label
+        last_pt = pts[-1]
+        # Halo
+        painter.setBrush(QBrush(QColor(color.red(), color.green(), color.blue(), 50)))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawEllipse(last_pt, 6.0, 6.0)
 
-        sweep_pen = QPen(QColor("#FF1E42"), 1.5)
-        painter.setPen(sweep_pen)
-        painter.drawLine(QPointF(cx, cy), QPointF(sx, sy))
-
-        # Target blips
-        painter.setFont(QFont("Montserrat", 6, QFont.Weight.Bold))
-        for p in self._procs:
-            ang = p.get("angle_rad", 0.0)
-            r_norm = p.get("radius_norm", 0.5)
-            bx = cx + (max_r * r_norm) * math.cos(ang)
-            by = cy + (max_r * r_norm) * math.sin(ang)
-
-            # Glow
-            painter.setBrush(QBrush(QColor(0, 229, 255, 80)))
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.drawEllipse(QPointF(bx, by), 5, 5)
-
-            # Center Dot
-            painter.setBrush(QBrush(QColor("#00e5ff")))
-            painter.drawEllipse(QPointF(bx, by), 2.5, 2.5)
+        # Center dot
+        painter.setBrush(QBrush(color))
+        painter.drawEllipse(last_pt, 3.0, 3.0)
 
 
-class ProcessRadarWidget(QWidget):
+# Backward compatibility alias
+RollingLoadChartWidget = GlowLineChart
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 7. Process Table Widget (Processes: Clean Table, No Radar)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class ProcessTable(QWidget):
     """
-    Combines circular concentric radar with Top 5 process memory/CPU table.
+    Clean table of top consumers (replaces the radar graphic):
+    - Process name (grouped with instance count like 'python.exe ×5')
+    - RAM formatted with inline magnitude bar
+    - CPU % with inline magnitude bar
+    - Sortable by RAM or CPU descending
+    - Up to top 8 rows
+    - Zebra striping with subtle hover highlight
+    - Right-aligned monospace numbers
+    - Smooth in-place updates without flicker or jumping
     """
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.setStyleSheet("background: transparent;")
+        self._sort_by = "ram"  # "ram" or "cpu"
+        self._raw_procs: List[Dict[str, Any]] = []
+        self._max_rows = 8
         self._build_ui()
 
     def _build_ui(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(6, 6, 6, 6)
+        root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(6)
 
+        # Container StatCard
+        card = StatCard()
+        c_lay = QVBoxLayout(card)
+        c_lay.setContentsMargins(12, 10, 12, 10)
+        c_lay.setSpacing(6)
+
+        # Card Header with interactive sort toggles
         hdr = QHBoxLayout()
         hdr.setContentsMargins(0, 0, 0, 0)
-        h_icon = QLabel("◎")
-        h_icon.setFont(keena_font(9, bold=True))
-        h_icon.setStyleSheet(f"color: {C.PRI};")
-        hdr.addWidget(h_icon)
-        h_title = QLabel("PROCESS RADAR & TOP CONSUMERS")
-        h_title.setFont(keena_font(9, bold=True, spacing=1.2))
-        h_title.setStyleSheet("color: #ffffff;")
-        hdr.addWidget(h_title)
+        hdr.setSpacing(6)
+
+        title = QLabel("TOP PROCESS CONSUMERS")
+        title.setFont(sans_font(7, bold=True, letter_spacing=1.2))
+        title.setStyleSheet(f"color: {TEXT_MUTED}; background: transparent; border: none;")
+        hdr.addWidget(title)
         hdr.addStretch()
-        root.addLayout(hdr)
 
-        card = QFrame()
-        card.setStyleSheet(f"""
-            QFrame {{
-                background: rgba(14, 5, 12, 0.85);
-                border: 1px solid rgba(255, 30, 66, 0.25);
-                border-radius: 4px;
-            }}
-        """)
-        c_lay = QHBoxLayout(card)
-        c_lay.setContentsMargins(8, 8, 8, 8)
-        c_lay.setSpacing(10)
+        # Sort Buttons
+        self.btn_sort_ram = QPushButton("RAM ↓")
+        self.btn_sort_ram.setFont(mono_font(6.5, bold=True))
+        self.btn_sort_ram.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_sort_ram.clicked.connect(lambda: self._set_sort("ram"))
+        hdr.addWidget(self.btn_sort_ram)
 
-        # Radar Canvas
-        self.radar = RadarCanvas()
-        c_lay.addWidget(self.radar)
+        self.btn_sort_cpu = QPushButton("CPU ↓")
+        self.btn_sort_cpu.setFont(mono_font(6.5, bold=True))
+        self.btn_sort_cpu.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_sort_cpu.clicked.connect(lambda: self._set_sort("cpu"))
+        hdr.addWidget(self.btn_sort_cpu)
 
-        # Top 5 Table
-        t_box = QVBoxLayout()
-        t_box.setSpacing(3)
+        self._update_sort_btn_styles()
+        c_lay.addLayout(hdr)
 
-        th = QHBoxLayout()
-        th.setContentsMargins(0, 0, 0, 0)
-        lbl_p = QLabel("PROCESS")
-        lbl_p.setFont(keena_font(7, bold=True))
-        lbl_p.setStyleSheet(f"color: {C.PRI_DIM};")
-        th.addWidget(lbl_p, stretch=3)
-        lbl_m = QLabel("RAM")
-        lbl_m.setFont(keena_font(7, bold=True))
-        lbl_m.setStyleSheet(f"color: {C.PRI_DIM};")
-        th.addWidget(lbl_m, stretch=2)
-        lbl_c = QLabel("CPU")
-        lbl_c.setFont(keena_font(7, bold=True))
-        lbl_c.setStyleSheet(f"color: {C.PRI_DIM};")
-        th.addWidget(lbl_c, stretch=1)
-        t_box.addLayout(th)
+        # Table Column Header
+        col_hdr = QHBoxLayout()
+        col_hdr.setContentsMargins(4, 2, 4, 2)
+        h_name = QLabel("PROCESS NAME")
+        h_name.setFont(sans_font(6.5, bold=True))
+        h_name.setStyleSheet(f"color: {TEXT_DIM};")
+        col_hdr.addWidget(h_name, stretch=4)
 
-        self.proc_rows = []
-        for _ in range(5):
-            r = QHBoxLayout()
-            r.setContentsMargins(0, 0, 0, 0)
-            n_lbl = QLabel("--")
-            n_lbl.setFont(keena_font(7))
-            n_lbl.setStyleSheet("color: #ffffff;")
-            m_lbl = QLabel("--")
-            m_lbl.setFont(keena_font(7, bold=True))
-            m_lbl.setStyleSheet("color: #00e5ff;")
-            c_lbl = QLabel("--")
-            c_lbl.setFont(keena_font(7))
-            c_lbl.setStyleSheet(f"color: {C.TEXT_DIM};")
+        h_ram = QLabel("MEMORY")
+        h_ram.setFont(sans_font(6.5, bold=True))
+        h_ram.setStyleSheet(f"color: {TEXT_DIM};")
+        col_hdr.addWidget(h_ram, stretch=3)
 
-            r.addWidget(n_lbl, stretch=3)
-            r.addWidget(m_lbl, stretch=2)
-            r.addWidget(c_lbl, stretch=1)
-            t_box.addLayout(r)
-            self.proc_rows.append((n_lbl, m_lbl, c_lbl))
+        h_cpu = QLabel("CPU %")
+        h_cpu.setFont(sans_font(6.5, bold=True))
+        h_cpu.setStyleSheet(f"color: {TEXT_DIM};")
+        col_hdr.addWidget(h_cpu, stretch=2)
+        c_lay.addLayout(col_hdr)
 
-        c_lay.addLayout(t_box, stretch=1)
+        # Process Rows Container (pre-allocated 8 rows for flicker-free in-place text updates)
+        self.rows_box = QVBoxLayout()
+        self.rows_box.setSpacing(2)
+
+        self._row_widgets = []
+        self.proc_rows = []  # Compatibility list of (lbl_name, lbl_ram, lbl_cpu) tuples
+
+        for i in range(self._max_rows):
+            rw = QFrame()
+            rw.setFixedHeight(22)
+            bg = "rgba(255, 255, 255, 0.02)" if i % 2 == 1 else "transparent"
+            rw.setStyleSheet(f"""
+                QFrame {{
+                    background: {bg};
+                    border-radius: 4px;
+                    border: none;
+                }}
+                QFrame:hover {{
+                    background: rgba(34, 211, 238, 0.06);
+                }}
+            """)
+            rl = QHBoxLayout(rw)
+            rl.setContentsMargins(6, 0, 6, 0)
+            rl.setSpacing(6)
+
+            # Icon + Name
+            nl = QLabel("--")
+            nl.setFont(sans_font(7, bold=True))
+            nl.setStyleSheet(f"color: {TEXT_PRIMARY}; background: transparent;")
+            rl.addWidget(nl, stretch=4)
+
+            # RAM readout with inline magnitude bar
+            ram_cont = QWidget()
+            ram_lay = QHBoxLayout(ram_cont)
+            ram_lay.setContentsMargins(0, 0, 0, 0)
+            ram_lay.setSpacing(4)
+            ml = QLabel("--")
+            ml.setFont(mono_font(7, bold=True))
+            ml.setStyleSheet(f"color: {ACCENT_VIOLET.name()}; background: transparent;")
+            ml.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            ram_bar = QProgressBar()
+            ram_bar.setRange(0, 100)
+            ram_bar.setValue(0)
+            ram_bar.setFixedHeight(3)
+            ram_bar.setTextVisible(False)
+            ram_bar.setStyleSheet(f"""
+                QProgressBar {{ background: rgba(255, 255, 255, 0.08); border: none; border-radius: 1px; }}
+                QProgressBar::chunk {{ background: {ACCENT_VIOLET.name()}; border-radius: 1px; }}
+            """)
+            ram_lay.addWidget(ml, stretch=3)
+            ram_lay.addWidget(ram_bar, stretch=2)
+            rl.addWidget(ram_cont, stretch=3)
+
+            # CPU % readout with inline magnitude bar
+            cpu_cont = QWidget()
+            cpu_lay = QHBoxLayout(cpu_cont)
+            cpu_lay.setContentsMargins(0, 0, 0, 0)
+            cpu_lay.setSpacing(4)
+            cl = QLabel("--")
+            cl.setFont(mono_font(7, bold=True))
+            cl.setStyleSheet(f"color: {ACCENT_CYAN.name()}; background: transparent;")
+            cl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            cpu_bar = QProgressBar()
+            cpu_bar.setRange(0, 100)
+            cpu_bar.setValue(0)
+            cpu_bar.setFixedHeight(3)
+            cpu_bar.setTextVisible(False)
+            cpu_bar.setStyleSheet(f"""
+                QProgressBar {{ background: rgba(255, 255, 255, 0.08); border: none; border-radius: 1px; }}
+                QProgressBar::chunk {{ background: {ACCENT_CYAN.name()}; border-radius: 1px; }}
+            """)
+            cpu_lay.addWidget(cl, stretch=2)
+            cpu_lay.addWidget(cpu_bar, stretch=2)
+            rl.addWidget(cpu_cont, stretch=2)
+
+            self.rows_box.addWidget(rw)
+            self._row_widgets.append((rw, nl, ml, ram_bar, cl, cpu_bar))
+            self.proc_rows.append((nl, ml, cl))
+
+        c_lay.addLayout(self.rows_box)
         root.addWidget(card)
 
+    def _set_sort(self, mode: str):
+        self._sort_by = mode
+        self._update_sort_btn_styles()
+        self._refresh_table()
+
+    def _update_sort_btn_styles(self):
+        active_style = f"""
+            QPushButton {{
+                color: #ffffff;
+                background: rgba(34, 211, 238, 0.25);
+                border: 1px solid {ACCENT_CYAN.name()};
+                border-radius: 3px;
+                padding: 1px 6px;
+            }}
+        """
+        inactive_style = f"""
+            QPushButton {{
+                color: {TEXT_MUTED};
+                background: rgba(255, 255, 255, 0.04);
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                border-radius: 3px;
+                padding: 1px 6px;
+            }}
+            QPushButton:hover {{
+                background: rgba(255, 255, 255, 0.08);
+                color: #ffffff;
+            }}
+        """
+        self.btn_sort_ram.setStyleSheet(active_style if self._sort_by == "ram" else inactive_style)
+        self.btn_sort_cpu.setStyleSheet(active_style if self._sort_by == "cpu" else inactive_style)
+
     def update_processes(self, procs: List[Dict[str, Any]]):
-        self.radar.set_processes(procs)
-        for idx in range(5):
-            n_lbl, m_lbl, c_lbl = self.proc_rows[idx]
-            if idx < len(procs):
-                p = procs[idx]
+        self._raw_procs = list(procs)
+        self._refresh_table()
+
+    def _refresh_table(self):
+        if not self._raw_procs:
+            for rw, nl, ml, rb, cl, cb in self._row_widgets:
+                nl.setText("--")
+                ml.setText("--")
+                cl.setText("--")
+                rb.setValue(0)
+                cb.setValue(0)
+            return
+
+        # Sort by active criteria descending
+        if self._sort_by == "cpu":
+            sorted_procs = sorted(self._raw_procs, key=lambda x: x.get("cpu_pct", 0.0), reverse=True)
+        else:
+            sorted_procs = sorted(self._raw_procs, key=lambda x: x.get("ram_bytes", 0), reverse=True)
+
+        # Find max RAM for normalized inline magnitude bar
+        max_ram = max(1.0, max((p.get("ram_bytes", 0) for p in sorted_procs), default=1.0))
+
+        for idx in range(self._max_rows):
+            rw, nl, ml, rb, cl, cb = self._row_widgets[idx]
+            if idx < len(sorted_procs):
+                p = sorted_procs[idx]
                 name = p.get("name", "unknown")
-                if len(name) > 16:
-                    name = name[:14] + ".."
                 cnt = p.get("count", 1)
-                cnt_str = f" (x{cnt})" if cnt > 1 else ""
-                n_lbl.setText(f"{name}{cnt_str}")
-                m_lbl.setText(p.get("ram_formatted", "--"))
-                c_lbl.setText(f"{p.get('cpu_pct', 0.0):.1f}%")
+                cnt_str = f" ×{cnt}" if cnt > 1 else ""
+                short_name = name if len(name) <= 18 else name[:16] + ".."
+                nl.setText(f"{short_name}{cnt_str}")
+                nl.setToolTip(f"{name} ({cnt} instance{'s' if cnt > 1 else ''})")
+
+                # RAM
+                ram_str = p.get("ram_formatted", "--")
+                ml.setText(ram_str)
+                ram_frac = min(100, int((p.get("ram_bytes", 0) / max_ram) * 100))
+                rb.setValue(ram_frac)
+
+                # CPU
+                cpu_val = p.get("cpu_pct", 0.0)
+                cl.setText(f"{cpu_val:.1f}%")
+                cb.setValue(min(100, int(cpu_val)))
+                rw.setVisible(True)
             else:
-                n_lbl.setText("--")
-                m_lbl.setText("--")
-                c_lbl.setText("--")
+                nl.setText("--")
+                ml.setText("--")
+                cl.setText("--")
+                rb.setValue(0)
+                cb.setValue(0)
+                if idx >= 4:
+                    rw.setVisible(False)
+
+
+# Backward compatibility alias
+ProcessRadarWidget = ProcessTable
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 4. Net Link Waveform Widget (NET LINK)
+# 8. Internet Speed Widget (Numbers only, no graph)
 # ─────────────────────────────────────────────────────────────────────────────
 
-class NetLinkWaveformWidget(QWidget):
+class SpeedStat(QWidget):
     """
-    Bi-directional / dual-series real-time sparkline showing
-    download (↓ cyan) and upload (↑ crimson) throughput.
+    Two large stat blocks: Download (↓) and Upload (↑)
+    with big bold numbers, auto-scaled units (kb/s, Mb/s, MB/s),
+    small direction arrows, connection name, and high-activity pulse. No graph.
     """
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
-        self.setMinimumHeight(110)
         self.setStyleSheet("background: transparent;")
-        self._history: List[Tuple[float, float, float]] = []  # (t, dl, ul)
-        self._dl_fmt = "↓ 0 kb/s"
-        self._ul_fmt = "↑ 0 kb/s"
+        self._pulse_alpha = 0
+        self._is_active = False
+
+        self._build_ui()
+
+    def _build_ui(self):
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(6)
+
+        card = StatCard()
+        c_lay = QVBoxLayout(card)
+        c_lay.setContentsMargins(12, 10, 12, 10)
+        c_lay.setSpacing(6)
+
+        # Card Title
+        hdr = QHBoxLayout()
+        hdr.setContentsMargins(0, 0, 0, 0)
+        title = QLabel("INTERNET SPEED")
+        title.setFont(sans_font(7, bold=True, letter_spacing=1.2))
+        title.setStyleSheet(f"color: {TEXT_MUTED}; background: transparent; border: none;")
+        hdr.addWidget(title)
+        hdr.addStretch()
+
+        self.lbl_conn = QLabel("WI-FI / ETHERNET")
+        self.lbl_conn.setFont(sans_font(6.5, bold=True))
+        self.lbl_conn.setStyleSheet(f"color: {TEXT_DIM}; background: transparent; border: none;")
+        hdr.addWidget(self.lbl_conn)
+        c_lay.addLayout(hdr)
+
+        # 2 Large Stat Blocks (Download & Upload)
+        stats_row = QHBoxLayout()
+        stats_row.setContentsMargins(0, 4, 0, 4)
+        stats_row.setSpacing(10)
+
+        # Block 1: Download
+        b_dl = QFrame()
+        b_dl.setStyleSheet("background: rgba(255, 255, 255, 0.02); border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.06);")
+        v_dl = QVBoxLayout(b_dl)
+        v_dl.setContentsMargins(10, 8, 10, 8)
+        v_dl.setSpacing(2)
+
+        lbl_dl_tag = QLabel("↓ DOWNLOAD")
+        lbl_dl_tag.setFont(sans_font(6.5, bold=True))
+        lbl_dl_tag.setStyleSheet(f"color: {ACCENT_CYAN.name()}; background: transparent; border: none;")
+        v_dl.addWidget(lbl_dl_tag)
+
+        h_dl_val = QHBoxLayout()
+        h_dl_val.setContentsMargins(0, 0, 0, 0)
+        h_dl_val.setSpacing(4)
+        self.lbl_dl_num = QLabel("0.0")
+        self.lbl_dl_num.setFont(mono_font(18, bold=True))
+        self.lbl_dl_num.setStyleSheet(f"color: {TEXT_PRIMARY}; background: transparent; border: none;")
+        h_dl_val.addWidget(self.lbl_dl_num)
+
+        self.lbl_dl_unit = QLabel("kb/s")
+        self.lbl_dl_unit.setFont(sans_font(8, bold=True))
+        self.lbl_dl_unit.setStyleSheet(f"color: {ACCENT_CYAN.name()}; background: transparent; border: none; padding-bottom: 2px;")
+        h_dl_val.addWidget(self.lbl_dl_unit, alignment=Qt.AlignmentFlag.AlignBottom)
+        h_dl_val.addStretch()
+        v_dl.addLayout(h_dl_val)
+        stats_row.addWidget(b_dl, stretch=1)
+
+        # Block 2: Upload
+        b_ul = QFrame()
+        b_ul.setStyleSheet("background: rgba(255, 255, 255, 0.02); border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.06);")
+        v_ul = QVBoxLayout(b_ul)
+        v_ul.setContentsMargins(10, 8, 10, 8)
+        v_ul.setSpacing(2)
+
+        lbl_ul_tag = QLabel("↑ UPLOAD")
+        lbl_ul_tag.setFont(sans_font(6.5, bold=True))
+        lbl_ul_tag.setStyleSheet(f"color: {ACCENT_VIOLET.name()}; background: transparent; border: none;")
+        v_ul.addWidget(lbl_ul_tag)
+
+        h_ul_val = QHBoxLayout()
+        h_ul_val.setContentsMargins(0, 0, 0, 0)
+        h_ul_val.setSpacing(4)
+        self.lbl_ul_num = QLabel("0.0")
+        self.lbl_ul_num.setFont(mono_font(18, bold=True))
+        self.lbl_ul_num.setStyleSheet(f"color: {TEXT_PRIMARY}; background: transparent; border: none;")
+        h_ul_val.addWidget(self.lbl_ul_num)
+
+        self.lbl_ul_unit = QLabel("kb/s")
+        self.lbl_ul_unit.setFont(sans_font(8, bold=True))
+        self.lbl_ul_unit.setStyleSheet(f"color: {ACCENT_VIOLET.name()}; background: transparent; border: none; padding-bottom: 2px;")
+        h_ul_val.addWidget(self.lbl_ul_unit, alignment=Qt.AlignmentFlag.AlignBottom)
+        h_ul_val.addStretch()
+        v_ul.addLayout(h_ul_val)
+        stats_row.addWidget(b_ul, stretch=1)
+
+        c_lay.addLayout(stats_row)
+        root.addWidget(card)
 
     def update_net(self, net_info: Dict[str, Any]):
-        self._dl_fmt = net_info.get("dl_formatted", "↓ 0 kb/s")
-        self._ul_fmt = net_info.get("ul_formatted", "↑ 0 kb/s")
-        self._history = list(net_info.get("net_history", []))
-        self.update()
+        dl_num = str(net_info.get("dl_num", "0.0"))
+        dl_unit = str(net_info.get("dl_unit", "kb/s"))
+        ul_num = str(net_info.get("ul_num", "0.0"))
+        ul_unit = str(net_info.get("ul_unit", "kb/s"))
 
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        # Fallback parsing if string formatted was provided
+        if "dl_formatted" in net_info and ("dl_num" not in net_info):
+            parts = net_info["dl_formatted"].replace("↓", "").strip().split()
+            if len(parts) >= 2:
+                dl_num, dl_unit = parts[0], parts[1]
+        if "ul_formatted" in net_info and ("ul_num" not in net_info):
+            parts = net_info["ul_formatted"].replace("↑", "").strip().split()
+            if len(parts) >= 2:
+                ul_num, ul_unit = parts[0], parts[1]
 
-        w = self.width()
-        h = self.height()
+        self.lbl_dl_num.setText(dl_num)
+        self.lbl_dl_unit.setText(dl_unit)
+        self.lbl_ul_num.setText(ul_num)
+        self.lbl_ul_unit.setText(ul_unit)
 
-        card_rect = QRectF(0, 0, w, h)
-        painter.fillRect(card_rect, QColor(14, 5, 12, 210))
-        painter.setPen(QPen(QColor(255, 30, 66, 60), 1))
-        painter.drawRoundedRect(card_rect.adjusted(0.5, 0.5, -0.5, -0.5), 4, 4)
+        conn = net_info.get("conn_name")
+        if conn:
+            self.lbl_conn.setText(str(conn).upper())
 
-        # Header
-        painter.setFont(QFont("Montserrat", 7, QFont.Weight.Bold))
-        painter.setPen(QColor(C.PRI))
-        painter.drawText(10, 16, "NET LINK THROUGHPUT")
-
-        # Live values
-        painter.setPen(QColor("#00e5ff"))
-        painter.drawText(w - 170, 16, self._dl_fmt)
-        painter.setPen(QColor("#FF1E42"))
-        painter.drawText(w - 85, 16, self._ul_fmt)
-
-        top_y = 26.0
-        bot_y = h - 14.0
-        left_x = 10.0
-        right_x = w - 10.0
-        plot_w = right_x - left_x
-        plot_h = bot_y - top_y
-
-        if plot_w <= 10 or plot_h <= 10 or len(self._history) < 2:
-            return
-
-        # Calculate max rate for dynamic scaling
-        max_rate = 1024.0 * 50.0  # minimum 50 KB/s ceiling
-        for _, dl, ul in self._history:
-            if dl > max_rate:
-                max_rate = dl
-            if ul > max_rate:
-                max_rate = ul
-
-        n = len(self._history)
-        step_x = plot_w / max(1, 60 - 1)
-        start_x = right_x - (n - 1) * step_x
-
-        path_dl = QPainterPath()
-        path_ul = QPainterPath()
-
-        for i, (_, dl, ul) in enumerate(self._history):
-            px = start_x + (i * step_x)
-            py_dl = bot_y - (dl / max_rate * plot_h)
-            py_ul = bot_y - (ul / max_rate * plot_h)
-
-            if i == 0:
-                path_dl.moveTo(px, py_dl)
-                path_ul.moveTo(px, py_ul)
-            else:
-                path_dl.lineTo(px, py_dl)
-                path_ul.lineTo(px, py_ul)
-
-        # Draw Download (Cyan)
-        painter.setPen(QPen(QColor("#00e5ff"), 1.8))
-        painter.drawPath(path_dl)
-
-        # Draw Upload (Crimson)
-        painter.setPen(QPen(QColor("#FF1E42"), 1.8))
-        painter.drawPath(path_ul)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 5. Live Event Stream Widget (EVENT STREAM)
-# ─────────────────────────────────────────────────────────────────────────────
-
-class EventStreamWidget(QWidget):
-    """
-    Real-time monospace structured event log feed matching the HUD theme.
-    """
-
-    def __init__(self, parent: Optional[QWidget] = None):
-        super().__init__(parent)
-        self.setStyleSheet("background: transparent;")
-        self._build_ui()
-
-    def _build_ui(self):
-        root = QVBoxLayout(self)
-        root.setContentsMargins(6, 6, 6, 6)
-        root.setSpacing(6)
-
-        hdr = QHBoxLayout()
-        hdr.setContentsMargins(0, 0, 0, 0)
-        h_icon = QLabel("⚡")
-        h_icon.setFont(keena_font(9, bold=True))
-        h_icon.setStyleSheet(f"color: {C.PRI};")
-        hdr.addWidget(h_icon)
-        h_title = QLabel("LIVE EVENT STREAM")
-        h_title.setFont(keena_font(9, bold=True, spacing=1.2))
-        h_title.setStyleSheet("color: #ffffff;")
-        hdr.addWidget(h_title)
-        hdr.addStretch()
-        root.addLayout(hdr)
-
-        self.log_text = QTextEdit()
-        self.log_text.setReadOnly(True)
-        self.log_text.setFont(QFont("Consolas", 8))
-        self.log_text.setStyleSheet(f"""
-            QTextEdit {{
-                background: rgba(14, 5, 12, 0.90);
-                border: 1px solid rgba(255, 30, 66, 0.25);
-                border-radius: 4px;
-                color: #e0e0e0;
-                padding: 6px;
-            }}
-        """)
-        root.addWidget(self.log_text)
-
-    def add_event(self, entry: Dict[str, Any]):
-        ts = entry.get("timestamp", "")
-        tag = entry.get("tag", "INFO")
-        msg = entry.get("message", "")
-        lvl = entry.get("level", "info")
-
-        if lvl == "error" or tag == "FAULT":
-            tag_col = "#ff1744"
-            msg_col = "#ff5252"
-        elif tag == "ROUTE":
-            tag_col = "#00e5ff"
-            msg_col = "#80d8ff"
-        elif tag == "TOOL":
-            tag_col = "#ffb300"
-            msg_col = "#ffe57f"
-        elif tag == "STATE":
-            tag_col = "#e040fb"
-            msg_col = "#ea80fc"
-        elif tag == "RECV":
-            tag_col = "#00e676"
-            msg_col = "#b9f6ca"
+        # Check for high throughput burst
+        dl_bps = net_info.get("dl_rate_bps", 0.0)
+        ul_bps = net_info.get("ul_rate_bps", 0.0)
+        if dl_bps > 500 * 1024.0 or ul_bps > 200 * 1024.0:
+            self.lbl_dl_num.setStyleSheet(f"color: {ACCENT_CYAN.name()}; background: transparent; border: none;")
         else:
-            tag_col = C.PRI
-            msg_col = "#ffffff"
+            self.lbl_dl_num.setStyleSheet(f"color: {TEXT_PRIMARY}; background: transparent; border: none;")
 
-        html = f"""
-            <div style="margin-bottom: 3px; font-family: Consolas, monospace; font-size: 8pt;">
-                <span style="color: {C.TEXT_DIM};">{ts}</span>
-                <span style="color: {tag_col}; font-weight: bold;"> [{tag}]</span>
-                <span style="color: {msg_col};"> {msg}</span>
-            </div>
-        """
-        self.log_text.append(html)
-        # Auto-scroll to end
-        sb = self.log_text.verticalScrollBar()
-        sb.setValue(sb.maximum())
+
+# Backward compatibility alias
+NetLinkWaveformWidget = SpeedStat
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 6. Model Bench Widget (MODEL BENCH)
-# ─────────────────────────────────────────────────────────────────────────────
-
-class ModelBenchWidget(QWidget):
-    """
-    Diagnostic cards for configured models: tier, latency, and pass ratio.
-    """
-
-    def __init__(self, parent: Optional[QWidget] = None):
-        super().__init__(parent)
-        self.setStyleSheet("background: transparent;")
-        self._cards: Dict[str, Tuple[QLabel, QLabel, QLabel]] = {}
-        self._build_ui()
-
-    def _build_ui(self):
-        root = QVBoxLayout(self)
-        root.setContentsMargins(6, 6, 6, 6)
-        root.setSpacing(6)
-
-        hdr = QHBoxLayout()
-        hdr.setContentsMargins(0, 0, 0, 0)
-        h_icon = QLabel("◆")
-        h_icon.setFont(keena_font(9, bold=True))
-        h_icon.setStyleSheet(f"color: {C.PRI};")
-        hdr.addWidget(h_icon)
-        h_title = QLabel("MODEL BENCHMARK & LATENCY")
-        h_title.setFont(keena_font(9, bold=True, spacing=1.2))
-        h_title.setStyleSheet("color: #ffffff;")
-        hdr.addWidget(h_title)
-        hdr.addStretch()
-        root.addLayout(hdr)
-
-        self.container = QVBoxLayout()
-        self.container.setSpacing(4)
-        root.addLayout(self.container)
-
-        # Pre-populate default models
-        defaults = [
-            ("gemini-2.5-flash", "FAST", "0.7s", "16/16 pass"),
-            ("gemini-3.6-flash", "FAST", "1.3s", "15/16 pass"),
-            ("gemini-2.5-pro", "SMART", "4.0s", "14/16 pass"),
-        ]
-        for name, tier, lat, ratio in defaults:
-            self._add_or_update_model(name, tier, lat, ratio)
-
-    def _add_or_update_model(self, name: str, tier: str, lat: str, ratio: str):
-        if name in self._cards:
-            lbl_tier, lbl_lat, lbl_rat = self._cards[name]
-            lbl_tier.setText(f"[ {tier} ]")
-            lbl_lat.setText(lat)
-            lbl_rat.setText(ratio)
-            return
-
-        c = QFrame()
-        c.setStyleSheet(f"""
-            QFrame {{
-                background: rgba(14, 5, 12, 0.85);
-                border: 1px solid rgba(255, 30, 66, 0.25);
-                border-radius: 4px;
-            }}
-        """)
-        h = QHBoxLayout(c)
-        h.setContentsMargins(8, 6, 8, 6)
-        h.setSpacing(6)
-
-        nl = QLabel(name)
-        nl.setFont(keena_font(7, bold=True))
-        nl.setStyleSheet("color: #ffffff;")
-        h.addWidget(nl, stretch=3)
-
-        tl = QLabel(f"[ {tier} ]")
-        tl.setFont(keena_font(7, bold=True))
-        tl.setStyleSheet("color: #00e5ff;" if tier == "FAST" else "color: #e040fb;")
-        h.addWidget(tl, stretch=1)
-
-        ll = QLabel(lat)
-        ll.setFont(keena_font(7, bold=True))
-        ll.setStyleSheet("color: #ffb300;")
-        h.addWidget(ll, stretch=1)
-
-        rl = QLabel(ratio)
-        rl.setFont(keena_font(7))
-        rl.setStyleSheet(f"color: {C.TEXT_DIM};")
-        h.addWidget(rl, stretch=1)
-
-        self.container.addWidget(c)
-        self._cards[name] = (tl, ll, rl)
-
-    def update_model(self, data: Dict[str, Any]):
-        name = data.get("model", "")
-        if name:
-            self._add_or_update_model(
-                name,
-                data.get("tier", "FAST"),
-                data.get("avg_latency", "--"),
-                data.get("pass_ratio", "--"),
-            )
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 7. Actions History Widget (ACTIONS)
+# 9. Actions History Widget (Kept as is, restyled)
 # ─────────────────────────────────────────────────────────────────────────────
 
 class ActionsHistoryWidget(QWidget):
     """
-    Live list of executed tool calls with completion checkmark, badge, and duration.
+    Live list of executed tool calls with completion checkmark, badge,
+    duration chip, and dark glass card style.
     """
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.setStyleSheet("background: transparent;")
+        self._max_actions = 12
+        self._actions_count = 0
         self._build_ui()
 
     def _build_ui(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(6, 6, 6, 6)
+        root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(6)
 
+        card = StatCard()
+        c_lay = QVBoxLayout(card)
+        c_lay.setContentsMargins(12, 10, 12, 10)
+        c_lay.setSpacing(6)
+
+        # Header
         hdr = QHBoxLayout()
         hdr.setContentsMargins(0, 0, 0, 0)
-        h_icon = QLabel("✓")
-        h_icon.setFont(keena_font(9, bold=True))
-        h_icon.setStyleSheet("color: #00e676;")
-        hdr.addWidget(h_icon)
-        h_title = QLabel("ACTIONS HISTORY")
-        h_title.setFont(keena_font(9, bold=True, spacing=1.2))
-        h_title.setStyleSheet("color: #ffffff;")
-        hdr.addWidget(h_title)
+        title = QLabel("ACTIONS HISTORY")
+        title.setFont(sans_font(7, bold=True, letter_spacing=1.2))
+        title.setStyleSheet(f"color: {TEXT_MUTED}; background: transparent; border: none;")
+        hdr.addWidget(title)
         hdr.addStretch()
-        root.addLayout(hdr)
+
+        self.lbl_counter = QLabel("0 EXECUTED")
+        self.lbl_counter.setFont(mono_font(6.5, bold=True))
+        self.lbl_counter.setStyleSheet(f"color: {ACCENT_CYAN.name()}; background: transparent; border: none;")
+        hdr.addWidget(self.lbl_counter)
+        c_lay.addLayout(hdr)
 
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
-        self.scroll.setStyleSheet("background: transparent; border: none;")
+        self.scroll.setFixedHeight(140)
+        self.scroll.setStyleSheet("""
+            QScrollArea { background: transparent; border: none; }
+            QScrollBar:vertical {
+                background: transparent;
+                width: 4px;
+                margin: 0px;
+            }
+            QScrollBar::handle:vertical {
+                background: rgba(255, 255, 255, 0.15);
+                min-height: 16px;
+                border-radius: 2px;
+            }
+        """)
 
         self.list_container = QWidget()
         self.list_container.setStyleSheet("background: transparent;")
@@ -931,9 +1455,13 @@ class ActionsHistoryWidget(QWidget):
         self.list_lay.addStretch()
 
         self.scroll.setWidget(self.list_container)
-        root.addWidget(self.scroll)
+        c_lay.addWidget(self.scroll)
+        root.addWidget(card)
 
     def add_action(self, action: Dict[str, Any]):
+        self._actions_count += 1
+        self.lbl_counter.setText(f"{self._actions_count} EXECUTED")
+
         check = action.get("checkmark", "✓")
         lbl = action.get("label", "")
         cat = action.get("category", "TO")
@@ -941,110 +1469,68 @@ class ActionsHistoryWidget(QWidget):
         succ = action.get("success", True)
 
         row = QFrame()
-        row.setStyleSheet(f"""
-            QFrame {{
-                background: rgba(14, 5, 12, 0.85);
-                border: 1px solid rgba(255, 30, 66, 0.20);
-                border-radius: 3px;
-            }}
+        row.setFixedHeight(24)
+        row.setStyleSheet("""
+            QFrame {
+                background: rgba(255, 255, 255, 0.02);
+                border: 1px solid rgba(255, 255, 255, 0.05);
+                border-radius: 4px;
+            }
+            QFrame:hover {
+                background: rgba(255, 255, 255, 0.05);
+            }
         """)
         h = QHBoxLayout(row)
-        h.setContentsMargins(6, 4, 6, 4)
+        h.setContentsMargins(8, 2, 8, 2)
         h.setSpacing(6)
 
-        c_lbl = QLabel(check)
-        c_lbl.setFont(keena_font(8, bold=True))
-        c_lbl.setStyleSheet("color: #00e676;" if succ else "color: #ff1744;")
+        c_lbl = QLabel("✓" if succ else "✗")
+        c_lbl.setFont(sans_font(8, bold=True))
+        c_lbl.setStyleSheet(f"color: {ACCENT_GREEN.name()};" if succ else f"color: {ACCENT_RED.name()};")
         h.addWidget(c_lbl)
 
         cat_lbl = QLabel(f"[{cat}]")
-        cat_lbl.setFont(keena_font(7, bold=True))
-        cat_lbl.setStyleSheet(f"color: {C.PRI_DIM};")
+        cat_lbl.setFont(sans_font(6.5, bold=True))
+        cat_lbl.setStyleSheet(f"color: {TEXT_DIM};")
         h.addWidget(cat_lbl)
 
         txt_lbl = QLabel(lbl)
-        txt_lbl.setFont(keena_font(7))
-        txt_lbl.setStyleSheet("color: #ffffff;")
+        txt_lbl.setFont(sans_font(7))
+        txt_lbl.setStyleSheet(f"color: {TEXT_PRIMARY};")
         h.addWidget(txt_lbl, stretch=1)
 
         dur_lbl = QLabel(f"{dur} ms")
-        dur_lbl.setFont(keena_font(7, bold=True))
-        dur_lbl.setStyleSheet("color: #00e5ff;")
+        dur_lbl.setFont(mono_font(6.5, bold=True))
+        dur_lbl.setStyleSheet(f"color: {ACCENT_CYAN.name()}; background: rgba(34, 211, 238, 0.12); border-radius: 3px; padding: 1px 4px;")
         h.addWidget(dur_lbl)
 
-        # Insert at the top of the list
         self.list_lay.insertWidget(0, row)
+
+        # Trim old rows
+        if self.list_lay.count() > self._max_actions + 1:
+            item = self.list_lay.takeAt(self._max_actions)
+            if item and item.widget():
+                item.widget().deleteLater()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 8. Top Status Bar Widget
+# 10. Standalone Compatibility Widgets (Exported for test/module compatibility)
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TopStatusBarWidget(QWidget):
-    """
-    Top status bar with live state pills:
-    [ CORE ONLINE ] [ IDLE ] [ HYBRID ] [ STOP CTRL+ALT+BACKSPACE ]
-    and live wall-clock with tenths, uppercase date, and session uptime.
-    """
+    """Compatibility widget representing top status pills and clock."""
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
-        self.setFixedHeight(34)
-        self.setStyleSheet(f"""
-            QWidget {{
-                background: rgba(10, 4, 6, 0.95);
-                border-bottom: 1px solid rgba(255, 30, 66, 0.35);
-            }}
-        """)
-        self._build_ui()
-
-    def _build_ui(self):
-        lay = QHBoxLayout(self)
-        lay.setContentsMargins(12, 0, 12, 0)
-        lay.setSpacing(8)
-
-        def _pill(text: str, color: str, bg: str):
-            lbl = QLabel(text)
-            lbl.setFont(keena_font(7, bold=True, spacing=1.0))
-            lbl.setStyleSheet(f"""
-                QLabel {{
-                    color: {color};
-                    background: {bg};
-                    border: 1px solid {color};
-                    border-radius: 3px;
-                    padding: 2px 7px;
-                }}
-            """)
-            return lbl
-
-        # State pills
-        self.pill_conn = _pill("CORE ONLINE", "#00e676", "rgba(0, 230, 118, 0.12)")
-        self.pill_state = _pill("IDLE", "#00e5ff", "rgba(0, 229, 255, 0.12)")
-        self.pill_mode = _pill("HYBRID", "#e040fb", "rgba(224, 64, 251, 0.12)")
-        self.pill_abort = _pill("STOP CTRL+ALT+BACKSPACE", "#ff1744", "rgba(255, 23, 68, 0.18)")
-
-        lay.addWidget(self.pill_conn)
-        lay.addWidget(self.pill_state)
-        lay.addWidget(self.pill_mode)
-        lay.addWidget(self.pill_abort)
-
-        lay.addStretch()
-
-        # Clock & Uptime readouts
-        self.lbl_clock = QLabel("00:00:00.0")
-        self.lbl_clock.setFont(keena_font(8, bold=True))
-        self.lbl_clock.setStyleSheet(f"color: {C.PRI}; background: transparent; border: none;")
-        lay.addWidget(self.lbl_clock)
-
-        self.lbl_date = QLabel("SAT, 28 NOV, 2026")
-        self.lbl_date.setFont(keena_font(7))
-        self.lbl_date.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent; border: none;")
-        lay.addWidget(self.lbl_date)
-
-        self.lbl_uptime = QLabel("UPTIME 00:00:00")
-        self.lbl_uptime.setFont(keena_font(7, bold=True))
-        self.lbl_uptime.setStyleSheet(f"color: {C.PRI_DIM}; background: transparent; border: none;")
-        lay.addWidget(self.lbl_uptime)
+        self.setFixedHeight(30)
+        self.lbl_clock = QLabel("00:00:00.0", self)
+        self.lbl_date = QLabel("DATE", self)
+        self.lbl_uptime = QLabel("UPTIME 00:00:00", self)
+        self.pill_conn = QLabel("CORE ONLINE", self)
+        self.pill_state = QLabel("IDLE", self)
+        self.pill_mode = QLabel("HYBRID", self)
+        self.pill_abort = QLabel("STOP", self)
+        self.setVisible(False)
 
     def update_clock(self, clock_info: Dict[str, Any]):
         self.lbl_clock.setText(clock_info.get("time_str", "00:00:00.0"))
@@ -1052,174 +1538,172 @@ class TopStatusBarWidget(QWidget):
         self.lbl_uptime.setText(f"UPTIME {clock_info.get('uptime_str', '00:00:00')}")
 
     def update_status_pill(self, status: Dict[str, Any]):
-        conn = status.get("connection", "CORE ONLINE")
-        self.pill_conn.setText(conn)
-        if "ONLINE" in conn:
-            self.pill_conn.setStyleSheet("color: #00e676; background: rgba(0, 230, 118, 0.12); border: 1px solid #00e676; border-radius: 3px; padding: 2px 7px;")
-        else:
-            self.pill_conn.setStyleSheet("color: #ff1744; background: rgba(255, 23, 68, 0.18); border: 1px solid #ff1744; border-radius: 3px; padding: 2px 7px;")
-
-        st = status.get("agent_state", "IDLE")
-        self.pill_state.setText(st)
-        if st == "THINKING":
-            col = "#ffb300"
-        elif st in ("ACTING", "SPEAKING"):
-            col = "#e040fb"
-        elif st == "LISTENING":
-            col = "#00e676"
-        else:
-            col = "#00e5ff"
-        self.pill_state.setStyleSheet(f"color: {col}; background: rgba(255, 255, 255, 0.08); border: 1px solid {col}; border-radius: 3px; padding: 2px 7px;")
-
-        mode = status.get("brain_mode", "HYBRID")
-        self.pill_mode.setText(mode)
-
-        abort = status.get("abort_badge", "STOP CTRL+ALT+BACKSPACE")
-        self.pill_abort.setText(abort)
+        self.pill_conn.setText(status.get("connection", "CORE ONLINE"))
+        self.pill_state.setText(status.get("agent_state", "IDLE"))
+        self.pill_mode.setText(status.get("brain_mode", "HYBRID"))
+        self.pill_abort.setText(status.get("abort_badge", "STOP"))
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 9. Response Card Performance Header
-# ─────────────────────────────────────────────────────────────────────────────
+class EventStreamWidget(QWidget):
+    """Compatibility widget for live event stream."""
+
+    def __init__(self, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self.log_text = QTextEdit(self)
+        self.log_text.setReadOnly(True)
+        self.setVisible(False)
+
+    def add_event(self, entry: Dict[str, Any]):
+        tag = entry.get("tag", "INFO")
+        msg = entry.get("message", "")
+        self.log_text.append(f"[{tag}] {msg}")
+
+
+class ModelBenchWidget(QWidget):
+    """Compatibility widget for model benchmarks."""
+
+    def __init__(self, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self.setVisible(False)
+
+    def update_model(self, data: Dict[str, Any]):
+        pass
+
 
 class ResponseCardPerfHeader(QFrame):
-    """
-    Metadata header attached to assistant response cards:
-    Model name, LINK latency, REQUESTS, ACTIONS, TOKENS.
-    """
+    """Metadata header attached to assistant response cards."""
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.setFixedHeight(22)
-        self.setStyleSheet(f"""
-            QFrame {{
-                background: rgba(10, 4, 6, 0.70);
-                border-bottom: 1px solid rgba(255, 30, 66, 0.20);
-                border-radius: 3px;
-            }}
-        """)
-        self._build_ui()
-
-    def _build_ui(self):
         h = QHBoxLayout(self)
         h.setContentsMargins(6, 0, 6, 0)
-        h.setSpacing(10)
-
-        self.lbl_model = QLabel("gemini-2.5-flash")
-        self.lbl_model.setFont(keena_font(7, bold=True))
-        self.lbl_model.setStyleSheet(f"color: {C.PRI};")
+        self.lbl_model = QLabel("gemini-2.5-flash", self)
+        self.lbl_link = QLabel("LINK 0 ms", self)
+        self.lbl_req = QLabel("REQUESTS 0", self)
+        self.lbl_act = QLabel("ACTIONS 0", self)
+        self.lbl_tok = QLabel("TOKENS 0", self)
         h.addWidget(self.lbl_model)
-
-        self.lbl_link = QLabel("LINK 0 ms")
-        self.lbl_link.setFont(keena_font(7))
-        self.lbl_link.setStyleSheet("color: #00e5ff;")
         h.addWidget(self.lbl_link)
-
-        self.lbl_req = QLabel("REQUESTS 0")
-        self.lbl_req.setFont(keena_font(7))
-        self.lbl_req.setStyleSheet(f"color: {C.TEXT_DIM};")
         h.addWidget(self.lbl_req)
-
-        self.lbl_act = QLabel("ACTIONS 0")
-        self.lbl_act.setFont(keena_font(7))
-        self.lbl_act.setStyleSheet(f"color: {C.TEXT_DIM};")
         h.addWidget(self.lbl_act)
-
-        self.lbl_tok = QLabel("TOKENS 0")
-        self.lbl_tok.setFont(keena_font(7))
-        self.lbl_tok.setStyleSheet(f"color: {C.TEXT_DIM};")
         h.addWidget(self.lbl_tok)
-
         h.addStretch()
 
     def update_perf(self, perf: Dict[str, Any]):
         self.lbl_model.setText(perf.get("model", "gemini-2.5-flash"))
-        self.lbl_link.setText(f"LINK {perf.get('latency_ms', 0)} ms")
+        self.lbl_link.setText(f"{perf.get('latency_ms', 0)} ms")
         self.lbl_req.setText(f"REQUESTS {perf.get('requests', 0)}")
         self.lbl_act.setText(f"ACTIONS {perf.get('actions', 0)}")
         self.lbl_tok.setText(f"TOKENS {perf.get('tokens', 0)}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 10. Master Telemetry Panel (Unified Command-Center View)
+# 11. Master Telemetry Panel (Unified Command-Center View)
 # ─────────────────────────────────────────────────────────────────────────────
 
 class MasterTelemetryPanel(QWidget):
     """
-    Comprehensive command-center layout combining all telemetry widgets.
-    Autonomously subscribes to TelemetryEventBus signals.
+    Redesigned, modern glassmorphic Telemetry Command Center:
+    - 1. System Vitals (Radial Gauges for CPU, RAM, GPU, VRAM; Drives; Battery)
+    - 2. Load, last 60 seconds (Smooth wide line chart with glow & gradient fill)
+    - 3. Processes (Top 8 consumers table with inline magnitude bars, no radar)
+    - 4. Internet Speed (Numbers only with auto-scaled units, no graph)
+    - 5. Actions History (Live tool executions with duration chips)
+    - Autonomously subscribes to TelemetryEventBus signals
+    - Fully responsive across window sizes
+    - Preserves all public methods, properties, and signals for backwards compatibility.
     """
 
     def __init__(self, main_win=None, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self._main_win = main_win
-        self.setStyleSheet("background: transparent;")
+        self._operating_mode = "Performance"
+        self.setStyleSheet(f"background-color: {BG_COLOR};")
         self._build_ui()
         self._wire_bus()
 
     def _build_ui(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(4, 4, 4, 4)
-        root.setSpacing(6)
+        root.setContentsMargins(6, 6, 6, 6)
+        root.setSpacing(8)
 
-        # Top status bar inside panel
-        self.top_status = TopStatusBarWidget()
-        root.addWidget(self.top_status)
-
-        # Main 3-column / split layout inside a scroll area for responsive scaling
+        # Responsive Scroll Area to allow graceful scaling from narrow to wide widths
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("background: transparent; border: none;")
+        scroll.setStyleSheet("""
+            QScrollArea { background: transparent; border: none; }
+            QScrollBar:vertical {
+                background: transparent;
+                width: 4px;
+                margin: 0px;
+            }
+            QScrollBar::handle:vertical {
+                background: rgba(255, 255, 255, 0.15);
+                min-height: 20px;
+                border-radius: 2px;
+            }
+        """)
 
         content = QWidget()
         content.setStyleSheet("background: transparent;")
-        c_lay = QHBoxLayout(content)
-        c_lay.setContentsMargins(0, 0, 0, 0)
-        c_lay.setSpacing(8)
+        c_lay = QVBoxLayout(content)
+        c_lay.setContentsMargins(2, 2, 2, 2)
+        c_lay.setSpacing(10)
 
-        # Left Column: System Vitals & Net Link
-        col_left = QVBoxLayout()
-        col_left.setSpacing(8)
-        self.vitals_widget = SystemVitalsWidget()
-        col_left.addWidget(self.vitals_widget)
-        self.net_widget = NetLinkWaveformWidget()
-        col_left.addWidget(self.net_widget)
-        c_lay.addLayout(col_left, stretch=4)
+        # ── 1. System Vitals (Radial Gauges, Drives, Battery) ──
+        self.vitals_widget = SystemVitalsWidget(content)
+        c_lay.addWidget(self.vitals_widget)
 
-        # Center Column: Rolling Load Chart & Process Radar
-        col_center = QVBoxLayout()
-        col_center.setSpacing(8)
-        self.load_chart = RollingLoadChartWidget()
-        col_center.addWidget(self.load_chart)
-        self.radar_widget = ProcessRadarWidget()
-        col_center.addWidget(self.radar_widget)
-        c_lay.addLayout(col_center, stretch=5)
+        # ── 2. Load, Last 60 Seconds: Visual Centerpiece Line Chart ──
+        self.load_chart = GlowLineChart(content)
+        c_lay.addWidget(self.load_chart)
 
-        # Right Column: Event Stream, Model Bench, Actions History
+        # ── 3. Bottom Grid: Processes Table (Left) + Internet Speed & Actions (Right) ──
+        bottom_row = QHBoxLayout()
+        bottom_row.setContentsMargins(0, 0, 0, 0)
+        bottom_row.setSpacing(10)
+
+        # Left Column: Processes Table (Top 8 Consumers, no radar)
+        self.process_table = ProcessTable(content)
+        self.radar_widget = self.process_table  # Backwards compatibility alias
+        bottom_row.addWidget(self.process_table, stretch=5)
+
+        # Right Column: Internet Speed + Actions History
         col_right = QVBoxLayout()
-        col_right.setSpacing(8)
-        self.event_stream = EventStreamWidget()
-        col_right.addWidget(self.event_stream, stretch=2)
-        self.model_bench = ModelBenchWidget()
-        col_right.addWidget(self.model_bench, stretch=1)
-        self.actions_history = ActionsHistoryWidget()
-        col_right.addWidget(self.actions_history, stretch=1)
-        c_lay.addLayout(col_right, stretch=5)
+        col_right.setContentsMargins(0, 0, 0, 0)
+        col_right.setSpacing(10)
+
+        self.net_widget = SpeedStat(content)
+        col_right.addWidget(self.net_widget)
+
+        self.actions_history = ActionsHistoryWidget(content)
+        col_right.addWidget(self.actions_history)
+
+        bottom_row.addLayout(col_right, stretch=4)
+        c_lay.addLayout(bottom_row)
 
         scroll.setWidget(content)
         root.addWidget(scroll, stretch=1)
+
+        # Retain hidden surrogate references for compatibility with any external caller
+        self.top_status = TopStatusBarWidget(self)
+        self.event_stream = EventStreamWidget(self)
+        self.model_bench = ModelBenchWidget(self)
 
     def _wire_bus(self):
         bus = get_event_bus()
         bus.vitals_updated.connect(self.vitals_widget.update_vitals)
         bus.load_history_updated.connect(self.load_chart.update_history)
-        bus.processes_updated.connect(self.radar_widget.update_processes)
+        bus.processes_updated.connect(self.process_table.update_processes)
         bus.net_updated.connect(self.net_widget.update_net)
         bus.clock_updated.connect(self.top_status.update_clock)
         bus.status_pill_updated.connect(self.top_status.update_status_pill)
         bus.event_logged.connect(self.event_stream.add_event)
         bus.model_bench_logged.connect(self.model_bench.update_model)
         bus.action_logged.connect(self.actions_history.add_action)
+
+    # ── Compatibility Properties & Methods ────────────────────────────────────
 
     @property
     def _mode(self) -> str:
@@ -1253,14 +1737,15 @@ class MasterTelemetryPanel(QWidget):
         return self.vitals_widget.bar_gpu
 
     def update_metrics(self, snap: Dict[str, Any]):
-        """Legacy compatibility slot for existing timer loops and tests."""
+        """Legacy compatibility slot for timer loops and unit tests."""
         cpu = snap.get("cpu", 0.0)
         gpu = snap.get("gpu", -1.0)
         tmp = snap.get("tmp", -1.0)
-        self.vitals_widget.lbl_cpu_val.setText(f"{cpu:.0f} %")
-        self.vitals_widget.bar_cpu.setValue(int(cpu))
-        if gpu >= 0:
-            self.vitals_widget.lbl_gpu_val.setText(f"{gpu:.0f} %")
-            self.vitals_widget.bar_gpu.setValue(int(gpu))
-        if tmp >= 0:
-            self.vitals_widget.lbl_gpu_temp.setText(f"{tmp:.0f} °C")
+
+        # Update vitals
+        vitals_payload: Dict[str, Any] = {
+            "cpu_pct": cpu,
+            "gpu_pct": gpu,
+            "gpu_temp_c": tmp,
+        }
+        self.vitals_widget.update_vitals(vitals_payload)

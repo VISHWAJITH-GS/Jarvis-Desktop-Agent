@@ -138,10 +138,11 @@ def press_mouse_click(button: str = "left") -> None:
 
 class FingerMouseTracker:
     """
-    Real-time fingertip cursor tracking and pinch-to-click detection.
+    Real-time fingertip cursor tracking and click detection.
     - Smoothly maps index fingertip (landmark 8) coordinates to desktop screen resolution.
     - Applies adaptive exponential moving average (EMA) smoothing to eliminate camera jitter.
-    - Uses Euclidean distance between thumb tip (4) and index tip (8) for pinch-to-click.
+    - Uses index finger for steering mouse pointer.
+    - Uses thumb extension for clicking (or pinch / both based on click_mode).
     """
 
     def __init__(
@@ -150,6 +151,8 @@ class FingerMouseTracker:
         smoothing: float = 0.35,
         margin: float = 0.15,
         pinch_threshold: float = 0.055,
+        thumb_extend_threshold: float = 1.05,
+        click_mode: str = "both",
         click_cooldown: float = 0.35,
         on_click: Optional[Callable[[int, int], None]] = None,
     ):
@@ -157,6 +160,8 @@ class FingerMouseTracker:
         self.smoothing = smoothing
         self.margin = margin
         self.pinch_threshold = pinch_threshold
+        self.thumb_extend_threshold = thumb_extend_threshold
+        self.click_mode = click_mode
         self.click_cooldown = click_cooldown
         self.on_click = on_click
 
@@ -164,6 +169,7 @@ class FingerMouseTracker:
         self.curr_y: Optional[float] = None
         self.last_click_time: float = 0.0
         self.is_pinched: bool = False
+        self.is_clicked: bool = False
         self._screen_w: int = 1920
         self._screen_h: int = 1080
         self._lock = threading.RLock()
@@ -213,6 +219,27 @@ class FingerMouseTracker:
         except Exception:
             return False
 
+    def is_thumb_extended(self, landmarks: Any) -> bool:
+        """
+        Determines if user is extending their thumb outward for clicking.
+        Compares distance from thumb tip (4) to index MCP (5), normalized by
+        palm scale (distance between wrist 0 and index MCP 5) for distance invariance.
+        """
+        if not landmarks or len(landmarks) < 21:
+            return False
+        try:
+            thumb_tip = landmarks[4]
+            index_mcp = landmarks[5]
+            wrist = landmarks[0]
+
+            palm_scale = max(0.01, ((index_mcp.x - wrist.x)**2 + (index_mcp.y - wrist.y)**2)**0.5)
+            d_thumb_mcp = ((thumb_tip.x - index_mcp.x)**2 + (thumb_tip.y - index_mcp.y)**2)**0.5
+            ratio = d_thumb_mcp / palm_scale
+
+            return bool(ratio >= self.thumb_extend_threshold or d_thumb_mcp >= 0.22)
+        except Exception:
+            return False
+
     def update(
         self,
         landmarks: Any,
@@ -220,7 +247,8 @@ class FingerMouseTracker:
         current_time: Optional[float] = None,
     ) -> Tuple[Optional[Tuple[int, int]], bool]:
         """
-        Process hand landmarks. If pointing, maps index fingertip to screen and detects pinch clicks.
+        Process hand landmarks. If pointing, maps index fingertip to screen and detects clicks.
+        Supports extending thumb for clicking (and/or pinch-to-click).
         Returns: ((screen_x, screen_y), clicked: bool)
         """
         if not self.enabled or not landmarks or len(landmarks) < 21:
@@ -238,18 +266,29 @@ class FingerMouseTracker:
         index_tip = landmarks[8]
         thumb_tip = landmarks[4]
 
-        # 1. Pinch detection: distance between Thumb tip (4) and Index tip (8)
+        # 1. Click detection: Thumb Extension and / or Pinch
         dist_pinch = ((thumb_tip.x - index_tip.x)**2 + (thumb_tip.y - index_tip.y)**2) ** 0.5
-        clicked = False
+        pinch_detected = dist_pinch <= self.pinch_threshold
+        thumb_extended = self.is_thumb_extended(landmarks)
 
-        if dist_pinch <= self.pinch_threshold:
+        if self.click_mode == "thumb_extend":
+            should_click = thumb_extended
+        elif self.click_mode == "pinch":
+            should_click = pinch_detected
+        else:  # "both" (default)
+            should_click = thumb_extended or pinch_detected
+
+        clicked = False
+        if should_click:
             with self._lock:
-                if not self.is_pinched and (now - self.last_click_time) >= self.click_cooldown:
-                    self.is_pinched = True
+                if not self.is_clicked and (now - self.last_click_time) >= self.click_cooldown:
+                    self.is_clicked = True
+                    self.is_pinched = True  # backward compatibility
                     self.last_click_time = now
                     clicked = True
         else:
             with self._lock:
+                self.is_clicked = False
                 self.is_pinched = False
 
         # 2. Coordinate mapping with margin and horizontal mirroring
@@ -261,10 +300,10 @@ class FingerMouseTracker:
         target_x = clamped_x * self._screen_w
         target_y = clamped_y * self._screen_h
 
-        # 3. Adaptive Exponential Moving Average (EMA) smoothing with pinch anti-jitter
+        # 3. Adaptive Exponential Moving Average (EMA) smoothing with click anti-jitter
         with self._lock:
-            # During pinch hold, freeze cursor to anchor click accurately without jitter
-            if self.is_pinched and self.curr_x is not None and self.curr_y is not None:
+            # During click hold (thumb extended or pinched), freeze cursor to anchor click accurately without jitter
+            if (self.is_clicked or self.is_pinched) and self.curr_x is not None and self.curr_y is not None:
                 final_x = int(self.curr_x)
                 final_y = int(self.curr_y)
             elif self.curr_x is None or self.curr_y is None:
@@ -499,6 +538,8 @@ class GestureControlService:
             smoothing=float(mouse_cfg.get("smoothing", 0.35)),
             margin=float(mouse_cfg.get("margin", 0.15)),
             pinch_threshold=float(mouse_cfg.get("pinch_threshold", 0.055)),
+            thumb_extend_threshold=float(mouse_cfg.get("thumb_extend_threshold", 1.05)),
+            click_mode=str(mouse_cfg.get("click_mode", "thumb_extend")),
             click_cooldown=float(mouse_cfg.get("click_cooldown", 0.35)),
             on_click=self._on_pinch_click,
         )
@@ -926,15 +967,24 @@ def get_gesture_status(parameters: Optional[Dict[str, Any]] = None, player: Any 
 
 
 def enable_mouse_control(parameters: Optional[Dict[str, Any]] = None, player: Any = None, **kwargs: Any) -> str:
-    """Enables one-finger index fingertip mouse cursor control and pinch-to-click."""
+    """Enables one-finger index fingertip mouse cursor control and click detection."""
+    params = parameters or {}
+    click_mode = params.get("click_mode")
     svc = GestureControlService.get_instance(player=player)
+    if click_mode:
+        svc.mouse_tracker.click_mode = str(click_mode)
     svc.mouse_tracker.enabled = True
     if not svc.is_enabled():
         svc.enable()
+    mode_desc = (
+        "extend thumb outward to click" if svc.mouse_tracker.click_mode == "thumb_extend"
+        else ("extend thumb or pinch to click" if svc.mouse_tracker.click_mode == "both" else "pinch to click")
+    )
     return json.dumps({
         "status": "enabled",
         "mouse_control": True,
-        "message": "One-finger mouse cursor tracking enabled. Point index finger to steer cursor, pinch thumb and index to click.",
+        "click_mode": svc.mouse_tracker.click_mode,
+        "message": f"One-finger mouse cursor tracking enabled. Point index finger to steer cursor, {mode_desc}.",
     })
 
 
@@ -976,11 +1026,16 @@ TOOLS = [
     {
         "name": "enable_mouse_control",
         "description": (
-            "Enables real-time one-finger mouse cursor steering using index fingertip and pinch-to-click."
+            "Enables real-time one-finger mouse cursor steering using index fingertip and thumb extension / pinch clicking."
         ),
         "parameters": {
             "type": "OBJECT",
-            "properties": {},
+            "properties": {
+                "click_mode": {
+                    "type": "STRING",
+                    "description": "Click trigger mechanism: 'thumb_extend' (extending thumb clicks, default), 'pinch', or 'both'.",
+                }
+            },
         },
         "handler": enable_mouse_control,
     },

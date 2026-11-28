@@ -580,3 +580,54 @@ def test_mouse_control_tool_functions():
 
             # Clean up
             svc.disable()
+
+
+def test_finger_mouse_thumb_extend_click():
+    """Verify extending thumb while index finger points triggers click."""
+    clicks: list[tuple[int, int]] = []
+    tracker = FingerMouseTracker(
+        smoothing=1.0,
+        margin=0.15,
+        thumb_extend_threshold=1.05,
+        click_mode="thumb_extend",
+        click_cooldown=0.35,
+        on_click=lambda x, y: clicks.append((x, y)),
+    )
+    tracker._screen_w = 1920
+    tracker._screen_h = 1080
+
+    with patch("actions.gesture_control.ctypes.windll.user32.SetCursorPos"):
+        with patch("actions.gesture_control.press_mouse_click") as mock_click:
+            t0 = 1000.0
+            # 1. Normal pointing (thumb tucked near palm: d_thumb_mcp / palm_scale = 0.79 < 1.05)
+            lms_normal = make_pointing_landmarks(index_x=0.5, index_y=0.5, thumb_x=0.35, thumb_y=0.65)
+            coords, clicked = tracker.update(lms_normal, "Pointing_Up", current_time=t0)
+            assert clicked is False
+            assert len(clicks) == 0
+            mock_click.assert_not_called()
+            assert coords == (960, 540)
+
+            # 2. Thumb extended outward (thumb_x=0.22, thumb_y=0.68 -> ratio = 1.40 >= 1.05)
+            lms_extended = make_pointing_landmarks(index_x=0.5, index_y=0.5, thumb_x=0.22, thumb_y=0.68)
+            coords, clicked = tracker.update(lms_extended, "Pointing_Up", current_time=t0 + 0.1)
+            assert clicked is True
+            assert len(clicks) == 1
+            assert clicks[0] == (960, 540)
+            mock_click.assert_called_once_with("left")
+
+            # 3. Holding thumb extended within cooldown (0.1s later < 0.35s cooldown) -> no double click
+            coords, clicked = tracker.update(lms_extended, "Pointing_Up", current_time=t0 + 0.2)
+            assert clicked is False
+            assert len(clicks) == 1
+
+            # 4. Retract thumb (moves back to normal)
+            coords, clicked = tracker.update(lms_normal, "Pointing_Up", current_time=t0 + 0.3)
+            assert clicked is False
+            assert tracker.is_clicked is False
+
+            # 5. Extend thumb again after cooldown (0.5s later > 0.35s cooldown) -> triggers second click
+            coords, clicked = tracker.update(lms_extended, "Pointing_Up", current_time=t0 + 0.6)
+            assert clicked is True
+            assert len(clicks) == 2
+            assert mock_click.call_count == 2
+

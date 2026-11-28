@@ -211,3 +211,94 @@ def test_telemetry_custom_widgets(qapp):
     tw = TelemetryDisplayWindow()
     assert tw.panel is not None
     tw.close()
+
+
+def test_telemetry_redesigned_widgets(qapp):
+    """Test modern glassmorphic telemetry modular widgets."""
+    from gui.telemetry_widgets import (
+        RadialGauge,
+        DriveBar,
+        BatteryWidget,
+        StatCard,
+        GlowLineChart,
+        ProcessTable,
+        SpeedStat,
+        load_color,
+    )
+    from PyQt6.QtGui import QColor
+
+    # 1. Color interpolation
+    c_low = load_color(25.0)
+    assert c_low.name() == "#22d3ee"  # Cyan
+    c_mid = load_color(70.0)
+    assert c_mid != c_low  # Blended to amber
+    c_high = load_color(95.0)
+    assert c_high != c_mid  # Blended to red
+
+    # 2. RadialGauge
+    rg = RadialGauge(title="CPU", sub_text="3.2 GHz", show_temp_chip=True)
+    rg.resize(120, 130)
+    rg.set_value(45.0, sub_text="3200 MHz")
+    assert rg._target_value == 45.0
+    assert rg._sub_text == "3200 MHz"
+    rg.set_temp(55.0)
+    assert rg._temp_c == 55.0
+    rg.set_mini_bars([20.0, 50.0, 80.0, 30.0])
+    assert len(rg._mini_bars) == 4
+    # Missing data / NA handling
+    rg.set_value(-1.0, is_na=True)
+    assert rg._is_na is True
+
+    # 3. DriveBar
+    db = DriveBar(mount_label="C:")
+    db.set_data("C:", 65.0, "150 GB free")
+    assert db._pct == 65.0
+    assert db._free_str == "150 GB free"
+
+    # 4. BatteryWidget
+    bw = BatteryWidget()
+    bw.set_battery(85.0, True)
+    assert bw._pct == 85.0
+    assert bw._plugged is True
+    bw.set_battery(None, None)
+    assert bw._is_na is True
+
+    # 5. GlowLineChart
+    glc = GlowLineChart()
+    glc.resize(500, 180)
+    samples = [(time.time() - (60 - i), 10.0 + i, 40.0 + (i % 5), 20.0) for i in range(60)]
+    glc.update_history(samples)
+    assert len(glc._history) == 60
+    assert glc._latest_cpu == 69.0
+
+    # 6. ProcessTable with sort toggling
+    pt = ProcessTable()
+    pt.resize(400, 250)
+    procs_data = [
+        {"name": "code.exe", "ram_bytes": 1024**3 * 2, "ram_formatted": "2.0 GB", "cpu_pct": 5.0, "count": 4},
+        {"name": "chrome.exe", "ram_bytes": 1024**3 * 1.5, "ram_formatted": "1.5 GB", "cpu_pct": 25.0, "count": 8},
+        {"name": "python.exe", "ram_bytes": 1024**2 * 300, "ram_formatted": "300 MB", "cpu_pct": 12.0, "count": 1},
+    ]
+    pt.update_processes(procs_data)
+    # Default sort by RAM
+    assert "code.exe" in pt.proc_rows[0][0].text()
+    # Switch sort to CPU
+    pt._set_sort("cpu")
+    assert "chrome.exe" in pt.proc_rows[0][0].text()
+
+    # 7. SpeedStat
+    ss = SpeedStat()
+    ss.update_net({
+        "dl_num": "24.5",
+        "dl_unit": "MB/s",
+        "ul_num": "1.8",
+        "ul_unit": "MB/s",
+        "conn_name": "Wi-Fi",
+        "dl_rate_bps": 24.5 * 1024 * 1024,
+        "ul_rate_bps": 1.8 * 1024 * 1024,
+    })
+    assert ss.lbl_dl_num.text() == "24.5"
+    assert ss.lbl_dl_unit.text() == "MB/s"
+    assert ss.lbl_ul_num.text() == "1.8"
+    assert ss.lbl_ul_unit.text() == "MB/s"
+    assert "WI-FI" in ss.lbl_conn.text()

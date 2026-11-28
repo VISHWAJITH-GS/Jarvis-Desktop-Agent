@@ -277,7 +277,7 @@ class TelemetryWorker(QThread):
             # ── 2.0s Process Radar & Top Consumers Collector ──
             if now - last_2s_tick >= 2.0:
                 last_2s_tick = now
-                top_procs = self._collect_top_processes()
+                top_procs = self._collect_top_processes(limit=16)
                 self.bus.processes_updated.emit(top_procs)
 
             # Sleep 100ms for next tick
@@ -422,15 +422,38 @@ class TelemetryWorker(QThread):
         except Exception:
             pass
 
-        def _fmt_rate(rate_bytes: float, arrow: str) -> str:
+        # Identify active connection name (e.g. Wi-Fi / Ethernet)
+        conn_name = "NET LINK"
+        try:
+            stats = psutil.net_if_stats()
+            for iface, stat in stats.items():
+                if stat.isup and not any(ign in iface.lower() for ign in ("loopback", "vethernet", "vbox", "vmnet", "wsl")):
+                    low = iface.lower()
+                    if "wi-fi" in low or "wireless" in low or "wlan" in low:
+                        conn_name = "Wi-Fi"
+                        break
+                    elif "ethernet" in low or "eth" in low or "local area" in low:
+                        conn_name = "Ethernet"
+                        break
+                    else:
+                        conn_name = iface
+        except Exception:
+            pass
+
+        def _split_rate(rate_bytes: float) -> Tuple[str, str]:
             kb = rate_bytes / 1024.0
             if kb < 1024.0:
-                return f"{arrow} {int(kb)} kb/s"
+                return f"{kb:.1f}" if kb >= 10 else f"{kb:.1f}", "kb/s"
             mb = kb / 1024.0
-            return f"{arrow} {mb:.1f} MB/s"
+            if mb < 1024.0:
+                return f"{mb:.1f}", "MB/s"
+            gb = mb / 1024.0
+            return f"{gb:.2f}", "GB/s"
 
-        dl_formatted = _fmt_rate(dl_rate, "↓")
-        ul_formatted = _fmt_rate(ul_rate, "↑")
+        dl_num, dl_unit = _split_rate(dl_rate)
+        ul_num, ul_unit = _split_rate(ul_rate)
+        dl_formatted = f"↓ {dl_num} {dl_unit}"
+        ul_formatted = f"↑ {ul_num} {ul_unit}"
 
         self._net_buffer.append((now, dl_rate, ul_rate))
 
@@ -439,11 +462,16 @@ class TelemetryWorker(QThread):
             "ul_rate_bps": ul_rate,
             "dl_formatted": dl_formatted,
             "ul_formatted": ul_formatted,
+            "dl_num": dl_num,
+            "dl_unit": dl_unit,
+            "ul_num": ul_num,
+            "ul_unit": ul_unit,
+            "conn_name": conn_name,
             "net_history": list(self._net_buffer),
         }
 
-    def _collect_top_processes(self) -> List[Dict[str, Any]]:
-        """Query processes, aggregate multi-process instances, and sort top 5 by RSS."""
+    def _collect_top_processes(self, limit: int = 5) -> List[Dict[str, Any]]:
+        """Query processes, aggregate multi-process instances, and sort top consumers by RSS."""
         from collections import defaultdict
         proc_map = defaultdict(lambda: {"rss": 0, "cpu": 0.0, "count": 0, "pids": []})
 
@@ -464,11 +492,12 @@ class TelemetryWorker(QThread):
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
 
-        top5 = sorted(proc_map.items(), key=lambda x: x[1]["rss"], reverse=True)[:5]
+        # Sort top consumers up to requested limit
+        top_procs = sorted(proc_map.items(), key=lambda x: x[1]["rss"], reverse=True)[:limit]
         result = []
         import math
 
-        for idx, (name, data) in enumerate(top5):
+        for idx, (name, data) in enumerate(top_procs):
             rss_bytes = data["rss"]
             rss_mb = rss_bytes / (1024**2)
             rss_gb = rss_bytes / (1024**3)
@@ -476,13 +505,14 @@ class TelemetryWorker(QThread):
             cpu_val = data["cpu"]
 
             # Map radar coordinates (angle based on index, radius based on resource load)
-            angle_rad = (idx / 5.0) * 2.0 * math.pi
+            angle_rad = (idx / max(1, len(top_procs))) * 2.0 * math.pi
             # Normalized radius 0.2 to 0.85
             norm_r = min(0.85, max(0.25, (rss_mb / 2048.0) * 0.6 + (cpu_val / 100.0) * 0.25))
 
             result.append({
                 "name": name,
                 "ram_bytes": rss_bytes,
+                "ram_mb": rss_mb,
                 "ram_formatted": ram_str,
                 "cpu_pct": cpu_val,
                 "count": data["count"],

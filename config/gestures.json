@@ -19,6 +19,8 @@
     "smoothing": 0.35,
     "margin": 0.15,
     "pinch_threshold": 0.055,
+    "thumb_extend_threshold": 1.05,
+    "click_mode": "thumb_extend",
     "click_cooldown": 0.35
   },
   "actions": {
