@@ -68,9 +68,9 @@ Following **Rule 7**, all 231 capabilities are consolidated into **35–45 actio
 | `codereview_log` | Show recent git commit log. | **partial** | `actions/dev_tools.py` | `action` | Cross-platform | `READ_ONLY` | git |
 | `codereview_blame` | Run git blame on a file, optionally for a line range. | **partial** | `actions/dev_tools.py` | `action` | Cross-platform | `READ_ONLY` | git |
 | `codereview_stats` | Show file-level change statistics (git diff --stat). | **partial** | `actions/dev_tools.py` | `action` | Cross-platform | `READ_ONLY` | git |
-| `email_list` | List recent emails (newest first), optionally filtered by words, sender or unread. | **missing** | `plugins/email_manager.py` | `plugin` | Cross-platform | `READ_ONLY` | imaplib, smtplib |
-| `email_read` | Read one email in full. | **missing** | `plugins/email_manager.py` | `plugin` | Cross-platform | `READ_ONLY` | imaplib, smtplib |
-| `email_send` | Send an email from the user's account. Show the user the exact text first when it is long. | **missing** | `plugins/email_manager.py` | `plugin` | Cross-platform | `SENSITIVE` | imaplib, smtplib |
+| `email_list` | List recent emails (newest first), optionally filtered by words, sender or unread. | **exists** | `plugins/email_manager.py` | `plugin` | Cross-platform | `READ_ONLY` | imaplib, smtplib |
+| `email_read` | Read one email in full. | **exists** | `plugins/email_manager.py` | `plugin` | Cross-platform | `READ_ONLY` | imaplib, smtplib |
+| `email_send` | Send an email from the user's account. Show the user the exact text first when it is long. | **exists** | `plugins/email_manager.py` | `plugin` | Cross-platform | `SENSITIVE` | imaplib, smtplib |
 | `call_start` |  | **partial** | `plugins/email_manager.py` | `plugin` | Cross-platform | `SENSITIVE` | imaplib, smtplib |
 | `settings_open` | Open a page of {var} (then use ui_snapshot / ui_click to change something). | **partial** | `plugins/email_manager.py` | `plugin` | Cross-platform | `NORMAL` | imaplib, smtplib |
 | `ui_snapshot` | List the controls (buttons, fields, menus, links…) of the window in the foreground, each with coordinates. | **exists** | `actions/windows_uia.py` | `action` | Windows | `READ_ONLY` | uiautomation / ctypes |
@@ -121,8 +121,8 @@ Following **Rule 7**, all 231 capabilities are consolidated into **35–45 actio
 | `fitness_check` | Check all active health reminders and see which are currently due. | **partial** | `plugins/productivity.py` | `plugin` | Cross-platform | `READ_ONLY` | sqlite3 |
 | `fitness_log` | Log a health/fitness activity (steps, water intake, exercise, etc.). | **partial** | `plugins/productivity.py` | `plugin` | Cross-platform | `NORMAL` | sqlite3 |
 | `fitness_summary` | Summarise today's logged fitness/health activities with totals per type. | **partial** | `plugins/productivity.py` | `plugin` | Cross-platform | `READ_ONLY` | sqlite3 |
-| `flight_search` | Search for flights between two cities. Returns Google Flights and Skyscanner links with tr | **missing** | `plugins/weather_travel.py` | `plugin` | Cross-platform | `READ_ONLY` | requests |
-| `flight_open` | Open a flight search URL in the default browser. | **missing** | `plugins/weather_travel.py` | `plugin` | Cross-platform | `SENSITIVE` | requests |
+| `flight_search` | Search for flights between two cities. Returns Google Flights and Skyscanner links with travel options. | **exists** | `plugins/weather_travel.py` | `plugin` | Cross-platform | `READ_ONLY` | requests |
+| `flight_open` | Open a flight search URL in the default browser. | **exists** | `plugins/weather_travel.py` | `plugin` | Cross-platform | `SENSITIVE` | requests |
 | `focus_start` | Start a timed deep-work session. Tracks distractions via the ambient context radar. Does N | **partial** | `plugins/modes.py` | `plugin` | Windows/macOS/Linux | `SENSITIVE` | hosts file, psutil |
 | `focus_status` | Check the current focus session: active, time remaining, distractions detected. | **partial** | `plugins/modes.py` | `plugin` | Windows/macOS/Linux | `READ_ONLY` | hosts file, psutil |
 | `focus_end` | End the current focus session early and return a summary. | **partial** | `plugins/modes.py` | `plugin` | Windows/macOS/Linux | `NORMAL` | hosts file, psutil |
@@ -221,8 +221,8 @@ Following **Rule 7**, all 231 capabilities are consolidated into **35–45 actio
 | `system_status` | Current CPU, memory, GPU, disk, battery and network usage of this computer. | **exists** | `actions/system_monitor.py` | `action` | Windows/macOS/Linux | `READ_ONLY` | psutil |
 | `process_list` | List running processes, sorted by memory or CPU. | **exists** | `actions/system_monitor.py` | `action` | Windows/macOS/Linux | `READ_ONLY` | psutil |
 | `process_kill` | Terminate a process by pid. Unsaved work in it is lost. | **exists** | `actions/system_monitor.py` | `action` | Windows/macOS/Linux | `SENSITIVE` | psutil |
-| `telegram_send` | Send a message to the user via Telegram. | **missing** | `plugins/telegram_manager.py` | `plugin` | Cross-platform | `SENSITIVE` | requests / httpx |
-| `telegram_status` | Check Telegram bot connection status. | **missing** | `plugins/telegram_manager.py` | `plugin` | Cross-platform | `READ_ONLY` | requests / httpx |
+| `telegram_send` | Send a message to the user via Telegram. | **exists** | `plugins/telegram_manager.py` | `plugin` | Cross-platform | `SENSITIVE` | requests / httpx |
+| `telegram_status` | Check Telegram bot connection status. | **exists** | `plugins/telegram_manager.py` | `plugin` | Cross-platform | `READ_ONLY` | requests / httpx |
 | `timer_set` | Set a countdown timer. Plays a chime when done. | **exists** | `actions/timers_stopwatch.py` | `action` | Cross-platform | `READ_ONLY` | threading, time |
 | `timer_list` | List all active timers and their remaining time. | **exists** | `actions/timers_stopwatch.py` | `action` | Cross-platform | `READ_ONLY` | threading, time |
 | `timer_cancel` | Cancel an active timer. | **exists** | `actions/timers_stopwatch.py` | `action` | Cross-platform | `READ_ONLY` | threading, time |
@@ -239,7 +239,7 @@ Following **Rule 7**, all 231 capabilities are consolidated into **35–45 actio
 | `voice_call` | Call the user's phone and speak a message using text-to-speech (Twilio). Use when Jarvis n | **missing** | `plugins/voice_call.py` | `plugin` | Cross-platform | `SENSITIVE` | twilio |
 | `voice_call_status` | Check the status of a Twilio voice call (queued, ringing, in-progress, completed, failed,  | **missing** | `plugins/voice_call.py` | `plugin` | Cross-platform | `READ_ONLY` | twilio |
 | `voice_call_config` | Check whether voice calling is configured (Twilio credentials and phone number). | **missing** | `plugins/voice_call.py` | `plugin` | Cross-platform | `READ_ONLY` | twilio |
-| `weather_get` | Get current weather and 3-day forecast. Defaults to the user's current location if none sp | **partial** | `plugins/weather_travel.py` | `plugin` | Cross-platform | `READ_ONLY` | requests |
+| `weather_get` | Get current weather and 3-day forecast. Defaults to the user's current location if none specified. | **exists** | `plugins/weather_travel.py` | `plugin` | Cross-platform | `READ_ONLY` | requests |
 | `workflow_record_start` | Start recording a named workflow (macro). Subsequent workflow_record_step calls add steps. | **partial** | `actions/workflow_recorder.py` | `action` | Windows/macOS/Linux | `SENSITIVE` | pyautogui, sqlite3 |
 | `workflow_record_step` | Add a step to the workflow currently being recorded. | **partial** | `actions/workflow_recorder.py` | `action` | Windows/macOS/Linux | `NORMAL` | pyautogui, sqlite3 |
 | `workflow_record_stop` | Stop recording and save the current workflow. | **partial** | `actions/workflow_recorder.py` | `action` | Windows/macOS/Linux | `READ_ONLY` | pyautogui, sqlite3 |

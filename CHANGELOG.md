@@ -7,7 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased] - Phase 3: Desktop UI Automation, Timers, and Stopwatch
+## [Unreleased] - Phase 4: Universal Email, Telegram, and Weather/Travel
+
+### Added
+- **Universal Email Manager (`plugins/email_manager.py`)**:
+  - IMAP/SMTP integration across Gmail, Outlook, Yahoo, iCloud, and custom hosts with presets.
+  - Actions: `email_list`, `email_read` (with untrusted content wrapping), `email_send` (with strict confirmation gating), and `email_search`.
+- **Telegram Bot Assistant (`plugins/telegram_manager.py`)**:
+  - Telegram Bot API integration for direct messaging (`telegram_send`), connectivity audit (`telegram_status`), and incoming updates (`telegram_updates`).
+  - Untrusted text wrapping on incoming chat updates.
+- **Weather & Travel Finder (`plugins/weather_travel.py`)**:
+  - Real-time weather and 3-day forecast via Open-Meteo & wttr.in keyless APIs (`weather_get`).
+  - Multi-provider flight comparison and deep-linking across Google Flights and Skyscanner (`flight_search`, `flight_open`).
+- **Testing**:
+  - Dedicated test suite `tests/test_phase4_comms.py` verifying email confirmation gating, IMAP error safety, Telegram bot messaging, flight deep-links, and weather forecasting.
+
+---
+
+## [1.4.0] - 2026-11-28 - Phase 3: Desktop UI Automation, Timers, and Stopwatch
 
 ### Added
 - **Timers and Stopwatch Engine (`actions/timers_stopwatch.py`)**:

@@ -172,6 +172,9 @@ ACTION_PERMISSIONS: dict[str, str] = {
     "notes_manager": NORMAL,
     "conversation_search": READ_ONLY,
     "timers_stopwatch": NORMAL,
+    "email_manager": SENSITIVE,
+    "telegram_manager": SENSITIVE,
+    "weather_travel": READ_ONLY,
     # Gesture & Workflow Watcher controls
     "enable_gesture_mode": NORMAL,
     "disable_gesture_mode": NORMAL,
