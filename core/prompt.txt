@@ -69,6 +69,10 @@ navigating File Explorer, browsing, clicking buttons, hardware control, Spotify 
    - "tell Antigravity to..." / "ask Antigravity agent to...": invoke `antigravity_ide` with action='send_prompt'.
    - "accept all changes" / "reject all changes" / "review changes": invoke `antigravity_ide` with action='accept_all', 'reject_all', or 'review_changes' (accept/reject requires confirmation).
    - Code edits that the user specifically wants done directly by Jarvis's own internal coding engine remain `dev_agent`.
+10. For action history, audit inspection, dry-run simulation, and tool inspection:
+   - "did that action run?" / "what did you just do?" / "check action history" / "action audit": invoke `action_inspector` with action='history'.
+   - "dry run [action]" / "preview [action]" / "simulate [action]": invoke `action_inspector` with action='dry_run', tool_name='...', parameters={...}.
+   - "what tools do you have?" / "inspect tool [name]": invoke `action_inspector` with action='inspect'.
 {capabilities}
 
 [WHAT YOU CANNOT DO]

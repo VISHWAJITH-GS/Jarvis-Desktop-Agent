@@ -17,17 +17,17 @@ Authoritative permission and confirmation system for all JARVIS voice-controlled
 
 from __future__ import annotations
 
+import inspect
+import json
+import re
+import sqlite3
+import time
+import traceback
 from contextvars import ContextVar
 from datetime import datetime
 from enum import Enum
-import inspect
-import json
 from pathlib import Path
-import re
-import sqlite3
 from threading import Lock
-import time
-import traceback
 from typing import Any, Callable, Dict, Optional, Tuple
 
 from core import outcome
@@ -167,6 +167,21 @@ ACTION_PERMISSIONS: dict[str, str] = {
     "antigravity_prompt": SENSITIVE,
     "antigravity_status": READ_ONLY,
     "tool_performance_report": READ_ONLY,
+    "action_inspector": READ_ONLY,
+    # Gesture & Workflow Watcher controls
+    "enable_gesture_mode": NORMAL,
+    "disable_gesture_mode": NORMAL,
+    "enable_mouse_control": NORMAL,
+    "disable_mouse_control": NORMAL,
+    "get_gesture_status": READ_ONLY,
+    "dispatch_background_workflow": NORMAL,
+    "get_worker_status": READ_ONLY,
+    "cancel_background_task": NORMAL,
+    "resolve_worker_approval": SENSITIVE,
+    "watch_contact_messages": SENSITIVE,
+    "stop_watching_contact": SENSITIVE,
+    "watch_antigravity_task": SENSITIVE,
+    "stop_watching_antigravity": SENSITIVE,
     # Destructive actions (High-impact)
     "sleep_jarvis": NORMAL,
     "shutdown_jarvis": DESTRUCTIVE,
@@ -295,15 +310,6 @@ class PermissionRegistry:
     def find_by_action(self, action_name: str, parameters: dict | None = None) -> Optional[PermissionEntry]:
         act = str(action_name or "").lower().strip()
         params = parameters or {}
-        sub_act = str(params.get("action") or "").lower().strip()
-        target = str(
-            params.get("target")
-            or params.get("device")
-            or params.get("name")
-            or params.get("ssid")
-            or params.get("path")
-            or ""
-        ).strip().lower()
         sub_act = str(params.get("action") or "").lower().strip()
 
         if act in self._entries:
@@ -690,15 +696,6 @@ class ActionPermissionManager:
         """Check if an action or its parameters attempt drive or volume formatting."""
         act = str(action_name or "").lower().strip()
         params = parameters or {}
-        sub_act = str(params.get("action") or "").lower().strip()
-        target = str(
-            params.get("target")
-            or params.get("device")
-            or params.get("name")
-            or params.get("ssid")
-            or params.get("path")
-            or ""
-        ).strip().lower()
         sub_act = str(params.get("action") or "").lower().strip()
 
         # Tools that only display UI, search, or process non-system text cannot format drives
@@ -1776,10 +1773,10 @@ def get_action_permission(action_name: str, parameters: dict | None = None) -> s
 def requires_confirmation(action_name: str, parameters: dict | None = None, from_untrusted: bool | None = None) -> bool:
     """Authoritative check: returns True if action requires explicit confirmation."""
     from memory.config_manager import (
-        get_trust_level,
-        TRUST_LEVEL_STRICT,
         TRUST_LEVEL_BALANCED,
+        TRUST_LEVEL_STRICT,
         TRUST_LEVEL_TRUSTED,
+        get_trust_level,
     )
 
     act = (action_name or "").lower().strip()
@@ -1865,6 +1862,10 @@ def _get_audit_db_path() -> Path:
 
 
 def _init_audit_db(conn: sqlite3.Connection) -> None:
+    try:
+        conn.execute("PRAGMA journal_mode=WAL;")
+    except Exception:
+        pass
     conn.execute("""
         CREATE TABLE IF NOT EXISTS audit_trail (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1883,6 +1884,7 @@ def _init_audit_db(conn: sqlite3.Connection) -> None:
     except Exception:
         pass
     conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_time ON audit_trail (timestamp);")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_trail (action);")
     conn.commit()
 
 
@@ -2025,3 +2027,150 @@ def clear_audit_trail(confirm: bool = False) -> None:
                     conn.close()
         except Exception:
             pass
+
+
+def query_audit_log(
+    action: Optional[str] = None,
+    status: Optional[str] = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> list[dict]:
+    """Retrieve filtered action audit events from persistent SQLite database."""
+    with _audit_lock:
+        try:
+            db_path = _get_audit_db_path()
+            if db_path.exists():
+                conn = sqlite3.connect(str(db_path), timeout=5.0)
+                try:
+                    _init_audit_db(conn)
+                    query = "SELECT id, timestamp, action, permission_level, status, verified, parameters, error, task_id FROM audit_trail WHERE 1=1"
+                    params: list[Any] = []
+                    if action:
+                        query += " AND action LIKE ?"
+                        params.append(f"%{action.strip()}%")
+                    if status:
+                        query += " AND status LIKE ?"
+                        params.append(f"%{status.strip()}%")
+                    query += " ORDER BY id DESC LIMIT ? OFFSET ?"
+                    params.extend([int(limit), int(offset)])
+                    cursor = conn.execute(query, tuple(params))
+                    rows = cursor.fetchall()
+                    results = []
+                    for r in rows:
+                        results.append({
+                            "id": r[0],
+                            "timestamp": r[1],
+                            "action": r[2],
+                            "permission_level": r[3],
+                            "status": r[4],
+                            "verified": bool(r[5]),
+                            "parameters": r[6],
+                            "error": r[7],
+                            "task_id": r[8],
+                        })
+                    return results
+                finally:
+                    conn.close()
+        except Exception:
+            pass
+        # In-memory fallback
+        res = []
+        for e in reversed(_audit_log):
+            if action and action.lower() not in e["action"].lower():
+                continue
+            if status and status.lower() not in e["status"].lower():
+                continue
+            res.append(e)
+            if len(res) >= limit:
+                break
+        return res
+
+
+def get_audit_entry_by_id(entry_id: int) -> Optional[dict]:
+    """Fetch complete detail for a single audit entry by primary key ID."""
+    with _audit_lock:
+        try:
+            db_path = _get_audit_db_path()
+            if db_path.exists():
+                conn = sqlite3.connect(str(db_path), timeout=5.0)
+                try:
+                    _init_audit_db(conn)
+                    cursor = conn.execute(
+                        "SELECT id, timestamp, action, permission_level, status, verified, parameters, error, task_id FROM audit_trail WHERE id = ?",
+                        (int(entry_id),),
+                    )
+                    r = cursor.fetchone()
+                    if r:
+                        return {
+                            "id": r[0],
+                            "timestamp": r[1],
+                            "action": r[2],
+                            "permission_level": r[3],
+                            "status": r[4],
+                            "verified": bool(r[5]),
+                            "parameters": r[6],
+                            "error": r[7],
+                            "task_id": r[8],
+                        }
+                finally:
+                    conn.close()
+        except Exception:
+            pass
+        return None
+
+
+def get_audit_summary(hours: int = 24) -> dict:
+    """Aggregate execution statistics across recent audit history."""
+    with _audit_lock:
+        summary: dict[str, Any] = {
+            "total_actions": 0,
+            "status_counts": {},
+            "top_actions": {},
+            "verified_count": 0,
+            "failed_count": 0,
+        }
+        try:
+            db_path = _get_audit_db_path()
+            if db_path.exists():
+                conn = sqlite3.connect(str(db_path), timeout=5.0)
+                try:
+                    _init_audit_db(conn)
+                    # Status counts
+                    cursor = conn.execute(
+                        "SELECT status, count(*) FROM audit_trail GROUP BY status"
+                    )
+                    for st, count in cursor.fetchall():
+                        summary["status_counts"][st] = count
+                        summary["total_actions"] += count
+                        if st in ("failed", "blocked", "error"):
+                            summary["failed_count"] += count
+
+                    # Verified count
+                    cur_v = conn.execute("SELECT count(*) FROM audit_trail WHERE verified = 1")
+                    row_v = cur_v.fetchone()
+                    summary["verified_count"] = row_v[0] if row_v else 0
+
+                    # Top actions
+                    cur_act = conn.execute(
+                        "SELECT action, count(*) FROM audit_trail GROUP BY action ORDER BY count(*) DESC LIMIT 5"
+                    )
+                    for act, count in cur_act.fetchall():
+                        summary["top_actions"][act] = count
+                    return summary
+                finally:
+                    conn.close()
+        except Exception:
+            pass
+        # In-memory fallback
+        for e in _audit_log:
+            summary["total_actions"] += 1
+            st = e.get("status", "unknown")
+            summary["status_counts"][st] = summary["status_counts"].get(st, 0) + 1
+            act = e.get("action", "unknown")
+            summary["top_actions"][act] = summary["top_actions"].get(act, 0) + 1
+            if e.get("verified"):
+                summary["verified_count"] += 1
+            if st in ("failed", "blocked"):
+                summary["failed_count"] += 1
+        return summary
+

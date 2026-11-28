@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased] - Phase 1: Action Inspector, Audit Store & Metadata Routing
+
+### Added
+- **Action Inspector Tool (`actions/action_inspector.py`)**:
+  - Unified inspection tool consolidating reference capabilities `action_history`, `action_detail`, `action_summary`, `dry_run`, and `tool_inspect`.
+  - Full dry-run preview simulation evaluating argument validity, risk tier, confirmation requirement, and autonomous execution readiness without executing handlers.
+  - Comprehensive catalog introspection listing tools, brief descriptions, and permission levels.
+- **Persistent SQLite Audit Log (`core/permissions.py`)**:
+  - SQLite WAL mode journal configuration for audit database (`audit.db`).
+  - Added query methods: `query_audit_log` (with action/status/limit filters), `get_audit_entry_by_id`, and `get_audit_summary`.
+- **ActionResult Extensions (`core/outcome.py`)**:
+  - Added `ActionResult.unsupported` classmethod for clean machine-readable rejection of invalid actions.
+- **Unit Testing**:
+  - Dedicated test suite `tests/test_action_inspector.py` covering history, detail, summary, dry-run simulations, and error boundaries.
+
+---
+
 ## [1.1.0] - 2026-11-23
 
 ### Added

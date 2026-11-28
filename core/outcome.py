@@ -64,8 +64,8 @@ WHY FACTS AND NOT SENTENCES
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import re
+from dataclasses import dataclass, field
 from typing import Any, Optional
 
 # Standard Result Contract Statuses
@@ -219,6 +219,26 @@ class ActionResult:
             success=False,
             verified=False,
             message=message or "Action requires confirmation.",
+            data=data or {},
+            duration_ms=duration_ms,
+        )
+
+    @classmethod
+    def unsupported(
+        cls,
+        action: str,
+        message: str = "",
+        error: Optional[str] = None,
+        data: Optional[dict] = None,
+        duration_ms: float = 0.0,
+    ) -> ActionResult:
+        return cls(
+            status=STATUS_UNSUPPORTED,
+            action=action,
+            success=False,
+            verified=False,
+            message=message or str(error or "Action unsupported."),
+            error=error or message,
             data=data or {},
             duration_ms=duration_ms,
         )
