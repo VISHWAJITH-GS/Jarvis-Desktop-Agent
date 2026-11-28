@@ -65,6 +65,7 @@ def main():
         ui.wait_for_api_key()
         jarvis = JarvisLive(ui)
         platform_hooks.register_hook("request_session_reconnect", jarvis.request_reconnect)
+        platform_hooks.register_hook("speak", jarvis.speak)
         try:
             asyncio.run(jarvis.run())
         except (KeyboardInterrupt, SystemExit, asyncio.CancelledError):

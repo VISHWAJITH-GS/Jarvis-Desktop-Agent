@@ -154,6 +154,51 @@ class ToolDispatcher:
                 else:
                     result = "System status hook unavailable."
 
+            elif name == "dispatch_background_workflow":
+                from core.dispatcher import BackgroundWorkflowDispatcher
+                dispatcher = BackgroundWorkflowDispatcher.get_instance(player=live.ui, live_session=live)
+                goal = str(args.get("goal") or "").strip()
+                steps = args.get("steps") or []
+                res = dispatcher.dispatch_background_workflow(goal=goal, steps=steps)
+                import json
+                result = json.dumps(res)
+
+            elif name == "get_worker_status":
+                from core.dispatcher import BackgroundWorkflowDispatcher
+                dispatcher = BackgroundWorkflowDispatcher.get_instance(player=live.ui, live_session=live)
+                import json
+                result = json.dumps(dispatcher.get_worker_status())
+
+            elif name == "cancel_background_task":
+                from core.dispatcher import BackgroundWorkflowDispatcher
+                dispatcher = BackgroundWorkflowDispatcher.get_instance(player=live.ui, live_session=live)
+                import json
+                result = json.dumps(dispatcher.cancel_background_task(task_id=str(args.get("task_id") or "")))
+
+            elif name == "resolve_worker_approval":
+                from core.dispatcher import BackgroundWorkflowDispatcher
+                dispatcher = BackgroundWorkflowDispatcher.get_instance(player=live.ui, live_session=live)
+                import json
+                result = json.dumps(dispatcher.resolve_worker_approval(
+                    task_id=str(args.get("task_id") or ""),
+                    approved=bool(args.get("approved", True)),
+                ))
+
+            elif name == "watch_contact_messages":
+                from core.watchers import WatcherService
+                ws = WatcherService.get_instance(player=live.ui, live_session=live)
+                import json
+                result = json.dumps(ws.watch_contact_messages(
+                    contact_name=str(args.get("contact_name") or args.get("contact") or ""),
+                    app_filter=args.get("app_filter"),
+                ))
+
+            elif name == "watch_antigravity_task":
+                from core.watchers import WatcherService
+                ws = WatcherService.get_instance(player=live.ui, live_session=live)
+                import json
+                result = json.dumps(ws.watch_antigravity_task())
+
             elif name == "manage_monitor":
                 action = args.get("action", "").lower().strip()
                 topic = args.get("topic", "").strip()

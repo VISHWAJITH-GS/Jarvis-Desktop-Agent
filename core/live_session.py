@@ -664,6 +664,19 @@ class JarvisLive(LiveAudioMixin, LiveMonitorsMixin, LiveVoiceMixin):
         # and background Bluetooth/Windows endpoint hot-switch monitor.
         await asyncio.to_thread(self.audio_manager.initialize)
 
+        # ── Initialize and start 3-Key Dispatcher & Event Watchers ────────────
+        try:
+            from core.dispatcher import BackgroundWorkflowDispatcher
+            from core.watchers import WatcherService
+
+            self._dispatcher = BackgroundWorkflowDispatcher.get_instance(player=self.ui, live_session=self)
+            self._dispatcher.start(loop=self._loop)
+
+            self._watcher_service = WatcherService.get_instance(player=self.ui, live_session=self)
+            self._watcher_service.start()
+        except Exception as e:
+            print(f"[JARVIS] Background dispatcher / watcher start note: {e}")
+
         # Dashboard server starts on-demand when Remote Control is opened,
         # conserving ~50 MB of FastAPI/uvicorn dependencies until requested.
         self._dashboard = None
@@ -1018,5 +1031,15 @@ class JarvisLive(LiveAudioMixin, LiveMonitorsMixin, LiveVoiceMixin):
         try:
             if getattr(self, "_ptt", None) is not None:
                 self._ptt.stop()
+        except Exception:
+            pass
+        try:
+            if getattr(self, "_dispatcher", None) is not None:
+                self._dispatcher.stop()
+        except Exception:
+            pass
+        try:
+            if getattr(self, "_watcher_service", None) is not None:
+                self._watcher_service.stop()
         except Exception:
             pass

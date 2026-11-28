@@ -304,6 +304,51 @@ def get_gemini_key() -> str | None:
     return None
 
 
+def get_gemini_worker_key_1() -> str | None:
+    """Return GEMINI_WORKER_KEY_1 with clean fallback to main GEMINI_API_KEY."""
+    env_key = os.environ.get("GEMINI_WORKER_KEY_1")
+    if env_key and len(env_key.strip()) > 8:
+        return env_key.strip()
+
+    if CONFIG_FILE.exists():
+        try:
+            raw_data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+            file_key = str(raw_data.get("gemini_worker_key_1") or "").strip()
+            if file_key and len(file_key) > 8:
+                return file_key
+        except Exception:
+            pass
+
+    return get_gemini_key()
+
+
+def get_gemini_worker_key_2() -> str | None:
+    """Return GEMINI_WORKER_KEY_2 with clean fallback to main GEMINI_API_KEY."""
+    env_key = os.environ.get("GEMINI_WORKER_KEY_2")
+    if env_key and len(env_key.strip()) > 8:
+        return env_key.strip()
+
+    if CONFIG_FILE.exists():
+        try:
+            raw_data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+            file_key = str(raw_data.get("gemini_worker_key_2") or "").strip()
+            if file_key and len(file_key) > 8:
+                return file_key
+        except Exception:
+            pass
+
+    return get_gemini_key()
+
+
+def get_gemini_key_pool() -> dict[str, str | None]:
+    """Return isolated key pool mapping: main, worker_1, worker_2."""
+    return {
+        "main": get_gemini_key(),
+        "worker_1": get_gemini_worker_key_1(),
+        "worker_2": get_gemini_worker_key_2(),
+    }
+
+
 def is_configured() -> bool:
     key = get_gemini_key()
     return bool(key and len(key) > 15)
