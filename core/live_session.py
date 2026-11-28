@@ -220,7 +220,7 @@ class JarvisLive(LiveAudioMixin, LiveMonitorsMixin, LiveVoiceMixin):
         self._auto_sleep_enabled = get_auto_sleep_enabled()
         self._wake_words = get_wake_words()
         self._wake_threshold = get_wake_word_threshold()
-        self._awake = not self._wake_enabled
+        self._awake = True
         self._wake_detector: WakeWordDetector | None = None
         self._wake_detector_lock = threading.Lock()
         self._wake_sleep_timeout = get_idle_sleep_timeout()
@@ -245,8 +245,6 @@ class JarvisLive(LiveAudioMixin, LiveMonitorsMixin, LiveVoiceMixin):
         # ── Central Voice State & Global Input Controller ─────────────────────
         if getattr(self.ui, "muted", False):
             _init_voice_state = VoiceState.DISABLED
-        elif self._wake_enabled:
-            _init_voice_state = VoiceState.SLEEPING
         else:
             _init_voice_state = VoiceState.LISTENING
 
@@ -748,35 +746,20 @@ class JarvisLive(LiveAudioMixin, LiveMonitorsMixin, LiveVoiceMixin):
 
                     # Startup / reconnect voice state:
                     # Preserve MUTED if user muted before reconnect; otherwise
-                    # start asleep if wake-word mode is on, or LISTENING with the
-                    # 3-minute idle auto-sleep timer armed.
+                    # start awake and in LISTENING state ready for user commands.
                     if self.voice_state.is_disabled:
                         self._sync_ui_state(True, "MUTED")
                         self.ui.write_log(
                             "SYS: JARVIS online — muted (press Ctrl+Alt+J to restore or Ctrl+Alt+K for listening)."
-                        )
-                    elif self._wake_enabled:
-                        self._ensure_wake_detector_async()
-                        self._awake = False
-                        self.voice_state.enter_sleep()
-                        self._sync_ui_state(False, "SLEEPING")
-                        self.ui.write_log(
-                            f"SYS: JARVIS online — sleeping. Say {self._wake_words_label()} "
-                            f"or press Ctrl+Alt+K to wake me."
-                        )
-                    elif self.voice_state.is_sleeping:
-                        self._awake = False
-                        self._sync_ui_state(False, "SLEEPING")
-                        self.ui.write_log(
-                            "SYS: JARVIS online — sleeping (wake word disabled). "
-                            "Press Ctrl+Alt+K or tap WAKE NOW to wake me."
                         )
                     else:
                         self._awake = True
                         self._record_activity()
                         self.voice_state.enable_listening()
                         self._sync_ui_state(False, "LISTENING")
-                        self.ui.write_log("SYS: JARVIS online.")
+                        self.ui.write_log("SYS: JARVIS online — listening for commands.")
+                        if self._wake_enabled:
+                            self._ensure_wake_detector_async()
 
                     # What this machine will not permit, said once, on screen.
                     #
@@ -825,10 +808,8 @@ class JarvisLive(LiveAudioMixin, LiveMonitorsMixin, LiveVoiceMixin):
                         self._pending_fallback_speech = None
                         tg.create_task(self._announce_fallback(fb_msg))
 
-                    # Morning briefing — fires once per process launch (if enabled).
-                    # Skipped in wake-word mode: it comes up asleep, and a briefing
-                    # would mean talking while "asleep".
-                    if not self._briefing_sent and get_brief_enabled() and self._awake:
+                    # Startup greeting — fires once per process launch.
+                    if not self._briefing_sent and self._awake:
                         self._briefing_sent = True
                         tg.create_task(self._send_startup_briefing())
 

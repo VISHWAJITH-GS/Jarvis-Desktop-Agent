@@ -36,9 +36,17 @@ class LiveMonitorsMixin:
         else:
             period = "Good evening"
 
+        def _ordinal_suffix(d: int) -> str:
+            if 11 <= (d % 100) <= 13:
+                return "th"
+            return {1: "st", 2: "nd", 3: "rd"}.get(d % 10, "th")
+
         time_str = now.strftime("%I:%M %p").lstrip("0")
-        date_str = now.strftime("%A, %B %d, %Y")
-        greeting_text = f"{period}, sir! It is {time_str}, {date_str}."
+        day = now.day
+        suffix = _ordinal_suffix(day)
+        date_str = f"{now.strftime('%A')}, {now.strftime('%B')} {day}{suffix}"
+        user_title = name if name else "sir"
+        greeting_text = f"{period}, {user_title}! It is {time_str}, {date_str}."
 
         await asyncio.sleep(0.3)
         if not self.session:
@@ -50,9 +58,10 @@ class LiveMonitorsMixin:
         await asyncio.to_thread(pop_last_session)
 
         prompt = (
-            f"Say exactly: '{greeting_text}'. "
+            f"[STARTUP_BRIEFING] Say exactly: '{greeting_text}'. "
+            f"Do not mention the year. "
             f"Do not include any motivational speech, talks, inspiration, advice, session recap, or extra commentary. "
-            f"Speak little: exactly that short greeting with time and date and stop. Do not call any tools.{lang_clause}{name_clause}"
+            f"Speak little: exactly that short greeting with time, date, and month and stop. Do not call any tools.{lang_clause}{name_clause}"
         )
 
         if self._turn_done_event:
@@ -62,7 +71,13 @@ class LiveMonitorsMixin:
             turns={"role": "user", "parts": [{"text": prompt}]},
             turn_complete=True,
         )
-        print("[JARVIS] Motivating greeting sent.")
+        self._record_activity()
+        print(f"[JARVIS] Startup greeting sent: {greeting_text}")
+        if self.ui:
+            try:
+                self.ui.write_log(f"JARVIS: {greeting_text}")
+            except Exception:
+                pass
 
     async def _save_session_summary(self) -> None:
         log = self._session_log

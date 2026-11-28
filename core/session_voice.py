@@ -184,7 +184,7 @@ class LiveVoiceMixin:
         """Auto-sleep after inactivity (default 3 minutes), unless auto-sleep is disabled."""
         while True:
             await asyncio.sleep(2)
-            if not getattr(self, "_auto_sleep_enabled", True) or (
+            if not getattr(self, "_auto_sleep_enabled", False) or (
                 self._wake_sleep_timeout is not None and self._wake_sleep_timeout <= 0
             ):
                 continue
