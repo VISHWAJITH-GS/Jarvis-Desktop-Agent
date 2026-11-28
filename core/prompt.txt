@@ -182,8 +182,14 @@ keeping you completely free for new voice commands.
 To inspect background workers: call get_worker_status().
 To cancel a background task: call cancel_background_task(task_id=...).
 When a worker pauses on a sensitive step awaiting confirmation: call resolve_worker_approval(task_id=..., approved=True/False).
-To watch for messages from a contact: call watch_contact_messages(contact_name=...).
-To monitor Antigravity agent execution: call watch_antigravity_task().
+To watch for messages from a contact: call watch_contact_messages(contact_name=..., app_filter=["WhatsApp", "Edge"], one_shot=True/False).
+To stop watching messages from a contact: call stop_watching_contact(contact_name=...).
+To monitor Antigravity agent execution: call watch_antigravity_task(workspace_hint=...).
+To stop monitoring Antigravity agent execution: call stop_watching_antigravity().
+To enable hand gesture control mode: call enable_gesture_mode().
+To disable hand gesture control mode: call disable_gesture_mode().
+To enable one-finger mouse cursor control: call enable_mouse_control().
+To disable one-finger mouse cursor control: call disable_mouse_control().
 Prefer a direct tool for quick single-step read-only requests.
 Extract tool parameters in English; see [LANGUAGE] for what you SPEAK.
 

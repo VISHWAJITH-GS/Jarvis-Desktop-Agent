@@ -76,6 +76,13 @@ wmi;        sys_platform == "win32"
 # game_updater (Steam's install dialog).
 pywinauto;  sys_platform == "win32"
 pytesseract; sys_platform == "win32"  # optional secondary OCR fallback for windows_uia
+uiautomation; sys_platform == "win32"
+winrt-Windows.UI.Notifications.Management; sys_platform == "win32"
+winrt-Windows.UI.Notifications; sys_platform == "win32"
+winrt-Windows.ApplicationModel; sys_platform == "win32"
+watchdog>=4.0.0
+rapidfuzz>=3.0.0
+mediapipe>=0.10.0
 
 # ── Documents, media & hardware readouts ──────────────────────────────────────
 # Also try/except-guarded at the point of use. They are declared because a

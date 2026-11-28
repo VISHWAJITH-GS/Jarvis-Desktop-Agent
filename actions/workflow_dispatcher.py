@@ -16,7 +16,14 @@ import json
 from typing import Any, Dict, List, Optional
 
 from core.dispatcher import BackgroundWorkflowDispatcher
-from core.watchers import WatcherService
+from core.watchers import WatcherManager, WatcherService
+from actions.gesture_control import (
+    enable_gesture_mode,
+    disable_gesture_mode,
+    get_gesture_status,
+    enable_mouse_control,
+    disable_mouse_control,
+)
 
 
 def dispatch_background_workflow(parameters: Optional[Dict[str, Any]] = None, player: Any = None, **kwargs: Any) -> str:
@@ -88,15 +95,39 @@ def watch_contact_messages(parameters: Optional[Dict[str, Any]] = None, player: 
     if isinstance(app_filter, str):
         app_filter = [a.strip() for a in app_filter.split(",") if a.strip()]
 
-    watcher_svc = WatcherService.get_instance(player=player)
-    res = watcher_svc.watch_contact_messages(contact_name=contact_name, app_filter=app_filter)
+    one_shot = bool(p.get("one_shot", True))
+    watcher_mgr = WatcherManager.get_instance(player=player)
+    res = watcher_mgr.watch_contact_messages(contact_name=contact_name, app_filter=app_filter, one_shot=one_shot)
+    return json.dumps(res)
+
+
+def stop_watching_contact(parameters: Optional[Dict[str, Any]] = None, player: Any = None, **kwargs: Any) -> str:
+    """Stops monitoring system toast notifications for contact_name."""
+    p = dict(parameters or {})
+    p.update(kwargs)
+    contact_name = str(p.get("contact_name") or p.get("contact") or "").strip()
+    if not contact_name:
+        return "A 'contact_name' is required to stop watching messages."
+
+    watcher_mgr = WatcherManager.get_instance(player=player)
+    res = watcher_mgr.stop_watching_contact(contact_name=contact_name)
     return json.dumps(res)
 
 
 def watch_antigravity_task(parameters: Optional[Dict[str, Any]] = None, player: Any = None, **kwargs: Any) -> str:
-    """Monitors Google Antigravity processes and logs for task completion or review approval."""
-    watcher_svc = WatcherService.get_instance(player=player)
-    res = watcher_svc.watch_antigravity_task()
+    """Monitors Google Antigravity processes, UI, and logs for task completion or review approval."""
+    p = dict(parameters or {})
+    p.update(kwargs)
+    workspace_hint = str(p.get("workspace_hint") or "").strip()
+    watcher_mgr = WatcherManager.get_instance(player=player)
+    res = watcher_mgr.watch_antigravity_task(workspace_hint=workspace_hint)
+    return json.dumps(res)
+
+
+def stop_watching_antigravity(parameters: Optional[Dict[str, Any]] = None, player: Any = None, **kwargs: Any) -> str:
+    """Stops monitoring Google Antigravity processes and logs."""
+    watcher_mgr = WatcherManager.get_instance(player=player)
+    res = watcher_mgr.stop_watching_antigravity()
     return json.dumps(res)
 
 
@@ -195,21 +226,104 @@ TOOLS = [
                     "items": {"type": "STRING"},
                     "description": "Optional list of apps to filter, e.g. ['WhatsApp', 'Edge']",
                 },
+                "one_shot": {
+                    "type": "BOOLEAN",
+                    "description": "True to remove watch rule automatically after triggering once (default True)",
+                },
             },
             "required": ["contact_name"],
         },
         "handler": watch_contact_messages,
     },
     {
+        "name": "stop_watching_contact",
+        "description": "Stops monitoring toast notifications for a specific contact.",
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "contact_name": {
+                    "type": "STRING",
+                    "description": "Name of contact to stop watching",
+                }
+            },
+            "required": ["contact_name"],
+        },
+        "handler": stop_watching_contact,
+    },
+    {
         "name": "watch_antigravity_task",
         "description": (
-            "Monitors Google Antigravity CLI and IDE processes and logs for task completion or "
+            "Monitors Google Antigravity CLI and IDE processes, UI state, and logs for task completion or "
             "pauses waiting for review approval, proactively alerting the user verbally."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "workspace_hint": {
+                    "type": "STRING",
+                    "description": "Optional workspace path hint to monitor active .gemini logs",
+                }
+            },
+        },
+        "handler": watch_antigravity_task,
+    },
+    {
+        "name": "stop_watching_antigravity",
+        "description": "Stops monitoring Google Antigravity agent execution and logs.",
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {},
+        },
+        "handler": stop_watching_antigravity,
+    },
+    {
+        "name": "enable_gesture_mode",
+        "description": (
+            "Activates on-demand local MediaPipe hand gesture control mode to control media, "
+            "approve/reject worker tasks, and trigger voice listening from across the room."
         ),
         "parameters": {
             "type": "OBJECT",
             "properties": {},
         },
-        "handler": watch_antigravity_task,
+        "handler": enable_gesture_mode,
+    },
+    {
+        "name": "disable_gesture_mode",
+        "description": (
+            "Deactivates hand gesture control mode and immediately closes the webcam to ensure 0% CPU usage."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {},
+        },
+        "handler": disable_gesture_mode,
+    },
+    {
+        "name": "get_gesture_status",
+        "description": "Returns whether gesture control mode is active and the current state machine status.",
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {},
+        },
+        "handler": get_gesture_status,
+    },
+    {
+        "name": "enable_mouse_control",
+        "description": "Enables real-time one-finger mouse cursor steering using index fingertip and pinch-to-click.",
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {},
+        },
+        "handler": enable_mouse_control,
+    },
+    {
+        "name": "disable_mouse_control",
+        "description": "Disables real-time one-finger mouse cursor tracking.",
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {},
+        },
+        "handler": disable_mouse_control,
     },
 ]

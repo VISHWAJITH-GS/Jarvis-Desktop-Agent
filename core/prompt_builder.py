@@ -137,6 +137,107 @@ TOOL_DECLARATIONS = [
             "required": [],
         },
     },
+    {
+        "name": "watch_contact_messages",
+        "description": (
+            "Monitors system toast notifications for incoming messages from a specific contact "
+            "(fuzzy match on WhatsApp, Edge, etc.) and injects proactive voice alerts."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "contact_name": {
+                    "type": "STRING",
+                    "description": "Name of contact to watch for incoming messages",
+                },
+                "app_filter": {
+                    "type": "ARRAY",
+                    "items": {"type": "STRING"},
+                    "description": "Optional list of apps to filter, e.g. ['WhatsApp', 'Edge']",
+                },
+                "one_shot": {
+                    "type": "BOOLEAN",
+                    "description": "True to remove watch rule automatically after triggering once (default True)",
+                },
+            },
+            "required": ["contact_name"],
+        },
+    },
+    {
+        "name": "stop_watching_contact",
+        "description": "Stops monitoring toast notifications for a specific contact.",
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "contact_name": {
+                    "type": "STRING",
+                    "description": "Name of contact to stop watching",
+                }
+            },
+            "required": ["contact_name"],
+        },
+    },
+    {
+        "name": "watch_antigravity_task",
+        "description": (
+            "Monitors Google Antigravity CLI and IDE processes, UI state, and logs for task completion or "
+            "pauses waiting for review approval, proactively alerting the user verbally."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "workspace_hint": {
+                    "type": "STRING",
+                    "description": "Optional workspace path hint to monitor active .gemini logs",
+                }
+            },
+        },
+    },
+    {
+        "name": "stop_watching_antigravity",
+        "description": "Stops monitoring Google Antigravity agent execution and logs.",
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {},
+        },
+    },
+    {
+        "name": "enable_gesture_mode",
+        "description": (
+            "Activates on-demand local MediaPipe hand gesture control mode to control media, "
+            "approve/reject worker tasks, and trigger voice listening from across the room."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {},
+        },
+    },
+    {
+        "name": "disable_gesture_mode",
+        "description": (
+            "Deactivates hand gesture control mode and immediately closes the webcam to ensure 0% CPU usage."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {},
+        },
+    },
+    {
+        "name": "enable_mouse_control",
+        "description": "Enables real-time one-finger mouse cursor steering using index fingertip and pinch-to-click.",
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {},
+        },
+    },
+    {
+        "name": "disable_mouse_control",
+        "description": "Disables real-time one-finger mouse cursor tracking.",
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {},
+        },
+    },
 ]
 
 

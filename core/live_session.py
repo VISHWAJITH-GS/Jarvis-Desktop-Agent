@@ -667,12 +667,12 @@ class JarvisLive(LiveAudioMixin, LiveMonitorsMixin, LiveVoiceMixin):
         # ── Initialize and start 3-Key Dispatcher & Event Watchers ────────────
         try:
             from core.dispatcher import BackgroundWorkflowDispatcher
-            from core.watchers import WatcherService
+            from core.watchers import WatcherManager
 
             self._dispatcher = BackgroundWorkflowDispatcher.get_instance(player=self.ui, live_session=self)
             self._dispatcher.start(loop=self._loop)
 
-            self._watcher_service = WatcherService.get_instance(player=self.ui, live_session=self)
+            self._watcher_service = WatcherManager.get_instance(player=self.ui, live_session=self)
             self._watcher_service.start()
         except Exception as e:
             print(f"[JARVIS] Background dispatcher / watcher start note: {e}")

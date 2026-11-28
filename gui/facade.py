@@ -688,6 +688,22 @@ class JarvisUI:
         except (RuntimeError, AttributeError):
             pass
 
+    def set_watcher_badge(self, text: str, active: bool = True):
+        """Thread-safe: Update the HUD active watcher badge."""
+        try:
+            if self._is_alive():
+                self._win._watcher_badge_sig.emit(str(text), bool(active))
+        except (RuntimeError, AttributeError):
+            pass
+
+    def set_gesture_state(self, enabled: bool):
+        """Thread-safe: Sync gesture control toggle state in GUI Settings Drawer."""
+        try:
+            if self._is_alive():
+                self._win._gesture_state_sig.emit(bool(enabled))
+        except (RuntimeError, AttributeError):
+            pass
+
     def show_reminders(self, scope: str = "upcoming"):
         """Thread-safe: Show or update reminders dock."""
         try:

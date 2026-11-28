@@ -1,0 +1,31 @@
+{
+  "enabled": false,
+  "camera_index": 0,
+  "frame_width": 320,
+  "frame_height": 240,
+  "target_fps": 15,
+  "lock_confidence": 0.75,
+  "action_confidence": 0.70,
+  "lock_to_arm_duration": 1.0,
+  "armed_timeout": 5.0,
+  "action_hold_duration": 0.45,
+  "cooldown_duration": 1.5,
+  "continuous_mode": false,
+  "auto_enable_on_idle": false,
+  "idle_timeout_seconds": 120,
+  "chime_enabled": true,
+  "mouse_tracking": {
+    "enabled": true,
+    "smoothing": 0.35,
+    "margin": 0.15,
+    "pinch_threshold": 0.055,
+    "click_cooldown": 0.35
+  },
+  "actions": {
+    "Closed_Fist": "toggle_play_pause",
+    "Thumb_Up": "confirm_or_enter",
+    "Thumb_Down": "reject_or_mute",
+    "Victory": "next_track_or_tab",
+    "Pointing_Up": "trigger_push_to_talk"
+  }
+}

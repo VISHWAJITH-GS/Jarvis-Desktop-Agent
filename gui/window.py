@@ -103,6 +103,8 @@ class MainWindow(
     _refresh_audio_sig = pyqtSignal()  # Trigger audio device dropdown refresh
     _audio_status_sig = pyqtSignal(object)  # Thread-safe AudioManager status snapshot
     _model_picker_sig = pyqtSignal()  # Thread-safe local brain model picker request
+    _watcher_badge_sig = pyqtSignal(str, bool)  # (text, active) — HUD active watcher badge
+    _gesture_state_sig = pyqtSignal(bool)  # (enabled) — Settings Drawer gesture control state
 
     def __init__(self, face_path: str):
         super().__init__()
@@ -342,6 +344,8 @@ class MainWindow(
         self._refresh_audio_sig.connect(self._refresh_audio_tab)
         self._audio_status_sig.connect(self._apply_audio_status)
         self._model_picker_sig.connect(self._open_local_model_picker)
+        self._watcher_badge_sig.connect(self._set_watcher_badge)
+        self._gesture_state_sig.connect(self._refresh_gesture_btn)
         self._screen_glow_overlay = ScreenGlowOverlay(self)
         self._search_dock_minimized_to_bar = False
         self._reminders_dock_minimized_to_bar = False
@@ -1029,6 +1033,20 @@ class MainWindow(
         self._ctrl_btn.clicked.connect(self._toggle_controls)
         lay.addSpacing(4)
         lay.addWidget(self._ctrl_btn)
+        lay.addSpacing(6)
+        self._watcher_badge = QLabel("")
+        self._watcher_badge.setFont(QFont("Montserrat", 8, QFont.Weight.Bold))
+        self._watcher_badge.setStyleSheet(f"""
+            QLabel {{
+                color: #00d2ff;
+                background: rgba(0, 210, 255, 0.12);
+                border: 1px solid rgba(0, 210, 255, 0.4);
+                border-radius: 4px;
+                padding: 2px 7px;
+            }}
+        """)
+        self._watcher_badge.setVisible(False)
+        lay.addWidget(self._watcher_badge)
         lay.addStretch()
 
         mid = QVBoxLayout()
@@ -1068,6 +1086,40 @@ class MainWindow(
             self._clock_lbl.setText(time.strftime("%I:%M:%S %p"))
         if hasattr(self, "_date_lbl"):
             self._date_lbl.setText(time.strftime("%a %d %b %Y"))
+
+    def _set_watcher_badge(self, text: str, active: bool):
+        """Thread-safe slot: update or hide active watcher badge in HUD header."""
+        if hasattr(self, "_watcher_badge"):
+            if active and text:
+                self._watcher_badge.setText(str(text))
+                self._watcher_badge.setVisible(True)
+            else:
+                self._watcher_badge.setVisible(False)
+                self._watcher_badge.setText("")
+
+    def _toggle_gesture_mode(self):
+        try:
+            from actions.gesture_control import GestureControlService
+            svc = GestureControlService.get_instance(player=getattr(self, "facade", None))
+            if svc.is_enabled():
+                svc.disable()
+                self._refresh_gesture_btn(False)
+            else:
+                svc.enable()
+                self._refresh_gesture_btn(True)
+        except Exception as e:
+            print(f"[JARVIS] Gesture toggle note: {e}")
+
+    def _refresh_gesture_btn(self, enabled: bool):
+        if hasattr(self, "_gesture_btn"):
+            if enabled:
+                self._gesture_btn.setText("🖐  GESTURE CONTROL: ON")
+                if hasattr(self, "_BTN_PRI"):
+                    self._gesture_btn.setStyleSheet(self._BTN_PRI)
+            else:
+                self._gesture_btn.setText("🖐  GESTURE CONTROL: OFF")
+                if hasattr(self, "_BTN_DIM"):
+                    self._gesture_btn.setStyleSheet(self._BTN_DIM)
 
     def _build_left_panel(self) -> QWidget:
         w = QWidget()
@@ -1343,6 +1395,14 @@ class MainWindow(
         prov_btn.setStyleSheet(_BTN_STYLE_DIM)
         prov_btn.clicked.connect(self._open_providers)
         lay.addWidget(prov_btn)
+
+        self._gesture_btn = QPushButton("🖐  GESTURE CONTROL: OFF")
+        self._gesture_btn.setFixedHeight(26)
+        self._gesture_btn.setFont(QFont("Montserrat", 7))
+        self._gesture_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._gesture_btn.setStyleSheet(_BTN_STYLE_DIM)
+        self._gesture_btn.clicked.connect(self._toggle_gesture_mode)
+        lay.addWidget(self._gesture_btn)
 
         w.adjustSize()
         return w

@@ -185,19 +185,56 @@ class ToolDispatcher:
                 ))
 
             elif name == "watch_contact_messages":
-                from core.watchers import WatcherService
-                ws = WatcherService.get_instance(player=live.ui, live_session=live)
+                from core.watchers import WatcherManager
+                ws = WatcherManager.get_instance(player=live.ui, live_session=live)
                 import json
                 result = json.dumps(ws.watch_contact_messages(
                     contact_name=str(args.get("contact_name") or args.get("contact") or ""),
                     app_filter=args.get("app_filter"),
+                    one_shot=bool(args.get("one_shot", True)),
+                ))
+
+            elif name == "stop_watching_contact":
+                from core.watchers import WatcherManager
+                ws = WatcherManager.get_instance(player=live.ui, live_session=live)
+                import json
+                result = json.dumps(ws.stop_watching_contact(
+                    contact_name=str(args.get("contact_name") or args.get("contact") or ""),
                 ))
 
             elif name == "watch_antigravity_task":
-                from core.watchers import WatcherService
-                ws = WatcherService.get_instance(player=live.ui, live_session=live)
+                from core.watchers import WatcherManager
+                ws = WatcherManager.get_instance(player=live.ui, live_session=live)
                 import json
-                result = json.dumps(ws.watch_antigravity_task())
+                result = json.dumps(ws.watch_antigravity_task(
+                    workspace_hint=str(args.get("workspace_hint") or ""),
+                ))
+
+            elif name == "stop_watching_antigravity":
+                from core.watchers import WatcherManager
+                ws = WatcherManager.get_instance(player=live.ui, live_session=live)
+                import json
+                result = json.dumps(ws.stop_watching_antigravity())
+
+            elif name == "enable_gesture_mode":
+                from actions.gesture_control import GestureControlService
+                svc = GestureControlService.get_instance(player=live.ui, live_session=live)
+                import json
+                result = json.dumps(svc.enable())
+
+            elif name == "disable_gesture_mode":
+                from actions.gesture_control import GestureControlService
+                svc = GestureControlService.get_instance(player=live.ui, live_session=live)
+                import json
+                result = json.dumps(svc.disable())
+
+            elif name == "enable_mouse_control":
+                from actions.gesture_control import enable_mouse_control
+                result = enable_mouse_control(player=live.ui, live_session=live)
+
+            elif name == "disable_mouse_control":
+                from actions.gesture_control import disable_mouse_control
+                result = disable_mouse_control(player=live.ui, live_session=live)
 
             elif name == "manage_monitor":
                 action = args.get("action", "").lower().strip()
