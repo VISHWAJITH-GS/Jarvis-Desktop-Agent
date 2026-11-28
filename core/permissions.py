@@ -178,6 +178,8 @@ ACTION_PERMISSIONS: dict[str, str] = {
     "dev_tools": NORMAL,
     "sandboxed_shell": SENSITIVE,
     "home_assistant": NORMAL,
+    "workflow_recorder": SENSITIVE,
+    "deep_research": SENSITIVE,
     # Gesture & Workflow Watcher controls
     "enable_gesture_mode": NORMAL,
     "disable_gesture_mode": NORMAL,

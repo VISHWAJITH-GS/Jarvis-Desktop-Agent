@@ -178,8 +178,8 @@ Following **Rule 7**, all 231 capabilities are consolidated into **35–45 actio
 | `quick_bluetooth_toggle` | Enable or disable Bluetooth (quick settings). | **exists** | `actions/computer_settings.py` | `action` | Windows/macOS | `SENSITIVE` | pycaw, screen_brightness_control |
 | `night_light_toggle` | Toggle Windows Night Light. | **partial** | `actions/computer_settings.py` | `action` | Windows/macOS | `SENSITIVE` | pycaw, screen_brightness_control |
 | `regulatory_compare` | Compare two local numbered regulation revisions, with page or line evidence and optional c | **partial** | `plugins/compliance_tools.py` | `plugin` | Cross-platform | `READ_ONLY` | difflib |
-| `deep_research` | Run a multi-step deep research pipeline: decomposes the question into sub-questions, searc | **partial** | `actions/deep_research.py` | `action` | Cross-platform | `SENSITIVE` | requests, bs4 |
-| `research_status` | Check the status of deep research tasks. Returns active/completed reports. | **partial** | `actions/deep_research.py` | `action` | Cross-platform | `READ_ONLY` | requests, bs4 |
+| `deep_research` | Run a multi-step deep research pipeline: decomposes the question into sub-questions, searches sources, and writes reports. | **exists** | `actions/deep_research.py` | `action` | Cross-platform | `SENSITIVE` | requests, bs4 |
+| `research_status` | Check the status of deep research tasks. Returns active/completed reports. | **exists** | `actions/deep_research.py` | `action` | Cross-platform | `READ_ONLY` | requests, bs4 |
 | `rc_subscriber` | Get a RevenueCat subscriber's entitlements and purchase history. | **partial** | `plugins/mobile_companion.py` | `plugin` | Cross-platform | `READ_ONLY` | requests (Opt-in) |
 | `rc_offerings` | List available RevenueCat offerings and packages. | **partial** | `plugins/mobile_companion.py` | `plugin` | Cross-platform | `READ_ONLY` | requests (Opt-in) |
 | `rc_grant` | Grant a promotional entitlement to a subscriber. | **partial** | `plugins/mobile_companion.py` | `plugin` | Cross-platform | `SENSITIVE` | requests (Opt-in) |

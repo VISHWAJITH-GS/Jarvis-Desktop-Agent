@@ -7,7 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased] - Phase 5: Dev Tools, Code Review, Sandboxed Shell, and Smart Home
+## [Unreleased] - Phase 6: Macro Recorder, Deep Research, and Task Checkpointing
+
+### Added
+- **Desktop Macro Recorder & Playback (`actions/workflow_recorder.py`)**:
+  - Macro engine for recording, saving, listing, deleting, and replaying input automation sequences (mouse clicks, typing, hotkeys, delays).
+  - SQLite WAL persistence in `memory/macros.db` with execution statistics.
+- **Autonomous Deep Research Engine (`actions/deep_research.py`)**:
+  - Decomposes complex inquiries into sub-queries, queries multi-angle sources, extracts citations, and synthesizes structured executive markdown reports saved to `memory/research/{slug}.md`.
+  - Research status reporting (`research_status`) listing generated briefs and word counts.
+- **Testing**:
+  - Dedicated test suite `tests/test_phase6_agents_workflows.py` verifying macro recording, playback dispatch, citation synthesis, and report storage.
+
+---
+
+## [1.6.0] - 2026-11-28 - Phase 5: Dev Tools, Code Review, Sandboxed Shell, and Smart Home
 
 ### Added
 - **Developer Tools & Git Code Review (`actions/dev_tools.py`)**:
