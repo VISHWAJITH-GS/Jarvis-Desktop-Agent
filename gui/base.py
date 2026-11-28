@@ -270,6 +270,258 @@ class _FramelessWindowResizeMixin:
         return False
 
 
+class StandardTitleBarControls(QWidget):
+    """
+    Standardized, uniform top-right title bar controls for all floating displays & modals:
+      — (Minimize) | □ / ❐ (Maximize / Restore Toggle) | ✕ (Close)
+    """
+
+    def __init__(
+        self,
+        target_window: QWidget,
+        on_minimize=None,
+        on_maximize=None,
+        on_close=None,
+        parent=None,
+    ):
+        super().__init__(parent or target_window)
+        self.target = target_window
+        self._on_minimize_cb = on_minimize
+        self._on_maximize_cb = on_maximize
+        self._on_close_cb = on_close
+
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(4)
+
+        btn_style = f"""
+            QPushButton {{
+                background: rgba(24, 4, 8, 200);
+                color: {C.TEXT_DIM};
+                border: 1px solid rgba(255, 23, 68, 0.35);
+                border-radius: 3px;
+                font-family: 'Montserrat', sans-serif;
+                font-size: 11px;
+                font-weight: bold;
+                min-width: 24px;
+                height: 20px;
+                padding: 0 4px;
+            }}
+            QPushButton:hover {{
+                color: #ffffff;
+                background: rgba(255, 23, 68, 0.35);
+                border-color: {C.PRI};
+            }}
+            QPushButton#CloseBtn:hover {{
+                background: rgba(255, 23, 68, 0.85);
+                color: #ffffff;
+                border-color: #ff1744;
+            }}
+        """
+
+        self._min_btn = QPushButton("—")
+        self._min_btn.setToolTip("Minimize")
+        self._min_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._min_btn.setStyleSheet(btn_style)
+        self._min_btn.clicked.connect(self._handle_min)
+        lay.addWidget(self._min_btn)
+
+        self._max_btn = QPushButton("□")
+        self._max_btn.setToolTip("Maximize")
+        self._max_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._max_btn.setStyleSheet(btn_style)
+        self._max_btn.clicked.connect(self._handle_max)
+        lay.addWidget(self._max_btn)
+
+        self._close_btn = QPushButton("✕")
+        self._close_btn.setObjectName("CloseBtn")
+        self._close_btn.setToolTip("Close")
+        self._close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._close_btn.setStyleSheet(btn_style)
+        self._close_btn.clicked.connect(self._handle_close)
+        lay.addWidget(self._close_btn)
+
+    def _handle_min(self):
+        if self._on_minimize_cb:
+            self._on_minimize_cb()
+            return
+        if hasattr(self.target, "toggle_collapse"):
+            self.target.toggle_collapse()
+        elif hasattr(self.target, "minimize_to_dock"):
+            self.target.minimize_to_dock()
+        else:
+            self.target.showMinimized()
+
+    def _handle_max(self):
+        if self._on_maximize_cb:
+            self._on_maximize_cb()
+            return
+        is_max = getattr(self.target, "_is_maximized_disp", False) or self.target.isMaximized()
+        if is_max:
+            norm = getattr(self.target, "_normal_geom", None)
+            if norm:
+                self.target.setGeometry(norm)
+            else:
+                self.target.showNormal()
+            self._max_btn.setText("□")
+            self._max_btn.setToolTip("Maximize")
+            self.target._is_maximized_disp = False
+        else:
+            self.target._normal_geom = self.target.geometry()
+            scr = QApplication.screenAt(self.target.pos()) or QApplication.primaryScreen()
+            if scr:
+                self.target.setGeometry(scr.availableGeometry())
+            else:
+                self.target.showMaximized()
+            self._max_btn.setText("❐")
+            self._max_btn.setToolTip("Restore")
+            self.target._is_maximized_disp = True
+
+    def _handle_close(self):
+        if self._on_close_cb:
+            self._on_close_cb()
+            return
+        if hasattr(self.target, "close_display"):
+            self.target.close_display()
+        else:
+            self.target.hide()
+
+
+class DetachedTabWindow(_FramelessWindowResizeMixin, QWidget):
+    """
+    Independent floating frameless window for detached Jarvis Matrix tabs.
+    Supports interactive resizing, draggable custom title bar, z-order focus,
+    and docking back to the intelligence matrix.
+    """
+
+    re_dock_requested = pyqtSignal(int, object)  # (tab_index, tab_widget)
+
+    def __init__(self, tab_index: int, title: str, content_widget: QWidget, parent=None):
+        super().__init__(None)
+        self.tab_index = tab_index
+        self.title_text = title
+        self.content_widget = content_widget
+        self.setWindowTitle(f"JARVIS MATRIX — {title}")
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.Tool
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setMinimumSize(420, 340)
+        self._init_frameless_resize()
+        self._is_maximized_disp = False
+        self._normal_geom = None
+
+        screen = QApplication.primaryScreen().availableGeometry()
+        w = min(680, max(460, screen.width() // 2))
+        h = min(620, screen.height() - 100)
+        x = max(screen.left() + 40, screen.center().x() - w // 2)
+        y = screen.top() + (screen.height() - h) // 2
+        self.setGeometry(x, y, w, h)
+
+        self._build_ui()
+
+    def _build_ui(self):
+        self._outer = QFrame(self)
+        self._outer.setObjectName("DetachedTabOuter")
+        self._outer.setStyleSheet(f"""
+            QFrame#DetachedTabOuter {{
+                background: {getattr(C, 'PANEL_BG_ALPHA', 'rgba(10, 4, 6, 0.94)')};
+                border: 1px solid rgba(255, 23, 68, 0.55);
+                border-radius: 8px;
+            }}
+        """)
+        self._outer.setMouseTracking(True)
+        self._outer.installEventFilter(self)
+
+        v_outer = QVBoxLayout(self)
+        v_outer.setContentsMargins(0, 0, 0, 0)
+        v_outer.addWidget(self._outer)
+
+        lay = QVBoxLayout(self._outer)
+        lay.setContentsMargins(12, 10, 12, 10)
+        lay.setSpacing(8)
+
+        # Header bar
+        hdr = QHBoxLayout()
+        hdr.setSpacing(8)
+
+        dot = QLabel("◈")
+        dot.setFont(QFont("Montserrat", 9, QFont.Weight.Bold))
+        dot.setStyleSheet(f"color: {C.PRI}; background: transparent;")
+        hdr.addWidget(dot)
+
+        self._title_lbl = QLabel(f"JARVIS MATRIX — {self.title_text.upper()}")
+        self._title_lbl.setFont(QFont("Montserrat", 8, QFont.Weight.Bold))
+        self._title_lbl.setStyleSheet(f"color: {C.PRI}; background: transparent; letter-spacing: 1.2px;")
+        hdr.addWidget(self._title_lbl, stretch=1)
+
+        # Dock back button
+        dock_btn = QPushButton("↙ DOCK")
+        dock_btn.setFont(QFont("Montserrat", 8, QFont.Weight.Bold))
+        dock_btn.setFixedHeight(20)
+        dock_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        dock_btn.setToolTip("Dock tab back into Intelligence Matrix")
+        dock_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: rgba(255, 23, 68, 0.15);
+                color: {C.PRI};
+                border: 1px solid rgba(255, 23, 68, 0.4);
+                border-radius: 3px;
+                padding: 0 6px;
+            }}
+            QPushButton:hover {{
+                background: rgba(255, 23, 68, 0.4);
+                color: #ffffff;
+                border-color: {C.PRI};
+            }}
+        """)
+        dock_btn.clicked.connect(self.dock_back)
+        hdr.addWidget(dock_btn)
+
+        # Standard window controls
+        self.controls = StandardTitleBarControls(
+            self,
+            on_minimize=self.showMinimized,
+            on_close=self.dock_back,
+        )
+        hdr.addWidget(self.controls)
+        lay.addLayout(hdr)
+
+        # Content container
+        if self.content_widget is not None:
+            self.content_widget.setParent(self._outer)
+            lay.addWidget(self.content_widget, stretch=1)
+            self.content_widget.show()
+
+    def dock_back(self):
+        self.re_dock_requested.emit(self.tab_index, self.content_widget)
+        self.close()
+
+    def closeEvent(self, e):
+        self.re_dock_requested.emit(self.tab_index, self.content_widget)
+        super().closeEvent(e)
+
+    def mousePressEvent(self, e):
+        if not self._handle_mouse_press(e):
+            super().mousePressEvent(e)
+
+    def mouseMoveEvent(self, e):
+        if not self._handle_mouse_move(e):
+            super().mouseMoveEvent(e)
+
+    def mouseReleaseEvent(self, e):
+        if not self._handle_mouse_release(e):
+            super().mouseReleaseEvent(e)
+
+    def eventFilter(self, watched, event):
+        if self._filter_child_mouse_event(watched, event):
+            return True
+        return super().eventFilter(watched, event)
+
+
+
 def current_palette() -> dict[str, str]:
     """A snapshot of the accent-linked colours currently on class C."""
     return {k: getattr(C, k) for k in _HUE_LINKED}

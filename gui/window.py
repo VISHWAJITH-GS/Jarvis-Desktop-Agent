@@ -249,8 +249,9 @@ class MainWindow(
 
         # ── Compact HUD container (only the compact HUD!)
         self.hud_box = QWidget()
-        self.hud_box.setMinimumWidth(300)
-        self.hud_box.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.hud_box.setMinimumWidth(380)
+        self.hud_box.setFixedWidth(420)
+        self.hud_box.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
         self.hud_box.setStyleSheet("background: transparent;")
         self.hud_box.setMouseTracking(True)
         self.hud_box.installEventFilter(self)
@@ -789,12 +790,18 @@ class MainWindow(
             self._was_expanded = self._expanded
             if hasattr(self, "hud_ctrl_bar"):
                 self.hud_ctrl_bar.setVisible(False)
+            if hasattr(self, "hud_box"):
+                self.hud_box.setMaximumWidth(16777215)
+                self.hud_box.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
             screen = QApplication.primaryScreen().geometry()
             self.setGeometry(screen)
             self.hud.set_big_mode(True)
         else:
             if hasattr(self, "hud_ctrl_bar"):
                 self.hud_ctrl_bar.setVisible(True)
+            if hasattr(self, "hud_box"):
+                self.hud_box.setFixedWidth(420)
+                self.hud_box.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
             self.hud.set_big_mode(False)
             target = getattr(self, "_normal_geom", None) or getattr(self, "_prev_geom", None)
             if not target:

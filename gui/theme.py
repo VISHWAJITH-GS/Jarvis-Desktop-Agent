@@ -25,6 +25,7 @@ class C:
     WHITE = "#ffffff"
     DARK = "#0a0203"
     BAR_BG = "#180406"
+    PANEL_BG_ALPHA = "rgba(10, 4, 6, 0.94)"
 
 
 # Keys tied to the accent colour — status colours (ACC, GREEN, RED…) stay fixed

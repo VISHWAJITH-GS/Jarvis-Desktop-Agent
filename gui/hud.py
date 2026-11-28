@@ -63,22 +63,23 @@ class HudFadeOverlay(QWidget):
             p.end()
             return
 
-        fade_h = min(30, max(12, int(h * 0.18)))
+        fade_h = min(36, max(16, int(h * 0.22)))
 
         # Top blur / gradient fade
+        bg_col = QColor(10, 4, 6, 245)
         top_grad = QLinearGradient(0, 0, 0, fade_h)
-        top_grad.setColorAt(0.0, QColor(14, 4, 12, 245))
-        top_grad.setColorAt(0.5, QColor(14, 4, 12, 175))
-        top_grad.setColorAt(0.85, QColor(14, 4, 12, 70))
-        top_grad.setColorAt(1.0, QColor(14, 4, 12, 0))
+        top_grad.setColorAt(0.0, bg_col)
+        top_grad.setColorAt(0.5, QColor(10, 4, 6, 175))
+        top_grad.setColorAt(0.85, QColor(10, 4, 6, 60))
+        top_grad.setColorAt(1.0, QColor(10, 4, 6, 0))
         p.fillRect(QRect(0, 0, w, fade_h), top_grad)
 
         # Bottom blur / gradient fade
         bot_grad = QLinearGradient(0, h - fade_h, 0, h)
-        bot_grad.setColorAt(0.0, QColor(14, 4, 12, 0))
-        bot_grad.setColorAt(0.15, QColor(14, 4, 12, 70))
-        bot_grad.setColorAt(0.5, QColor(14, 4, 12, 175))
-        bot_grad.setColorAt(1.0, QColor(14, 4, 12, 245))
+        bot_grad.setColorAt(0.0, QColor(10, 4, 6, 0))
+        bot_grad.setColorAt(0.15, QColor(10, 4, 6, 60))
+        bot_grad.setColorAt(0.5, QColor(10, 4, 6, 175))
+        bot_grad.setColorAt(1.0, bg_col)
         p.fillRect(QRect(0, h - fade_h, w, fade_h), bot_grad)
 
         p.end()
@@ -101,7 +102,7 @@ class HudConversationWidget(QTextEdit):
                 background: transparent;
                 color: {C.TEXT};
                 border: none;
-                padding: 10px 4px;
+                padding: 22px 6px 12px 6px;
                 selection-background-color: rgba(255, 23, 68, 0.35);
             }}
             QScrollBar:vertical {{
@@ -255,6 +256,7 @@ class HudCanvas(QWidget):
         self.muted = False
         self.speaking = False
         self.hud_style = "core"
+        self._suppress_transcript: bool = False
 
         # Embedded Conversation History widget
         self.conversation = HudConversationWidget(assistant_name=self._assistant_name, parent=self)
@@ -344,10 +346,19 @@ class HudCanvas(QWidget):
         super().changeEvent(e)
         self._update_timer_interval()
 
+    def set_suppress_transcript(self, suppress: bool) -> None:
+        """Collapse / hide the mini-transcript in the HUD canvas when chat log is open elsewhere."""
+        self._suppress_transcript = bool(suppress)
+        self._update_conversation_geometry()
+
     def _update_conversation_geometry(self):
         if not hasattr(self, "conversation") or not self.conversation:
             return
-        if getattr(self, "_mini_mode", False) or getattr(self, "_big_mode", False):
+        if (
+            getattr(self, "_mini_mode", False)
+            or getattr(self, "_big_mode", False)
+            or getattr(self, "_suppress_transcript", False)
+        ):
             self.conversation.hide()
             return
 

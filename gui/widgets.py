@@ -115,10 +115,7 @@ class LogWidget(QTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setReadOnly(True)
-        # Cap scrollback so an hours-long session can't grow the document
-        # without bound — keeps memory flat and every insert cheap. Oldest
-        # lines drop off the top automatically.
-        self.document().setMaximumBlockCount(600)
+        self.document().setMaximumBlockCount(400)
         self.setFont(QFont("Montserrat", 9))
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -137,83 +134,102 @@ class LogWidget(QTextEdit):
                 height: 0px;
                 border: none;
             }}
-            QScrollBar::handle:vertical, QScrollBar::handle:horizontal {{
-                background: transparent;
-                width: 0px;
-                height: 0px;
-            }}
         """)
-        self._queue: list[str] = []
-        self._typing = False
-        self._text = ""
-        self._pos = 0
-        self._tag = "sys"
-        self._ai_name_lc = "jarvis"  # updated when assistant name changes
-        self._tmr = QTimer(self)
-        self._tmr.timeout.connect(self._step)
-        self._sig.connect(self._enqueue)
-        self.document().setMaximumBlockCount(300)
+        self._ai_name_lc = "jarvis"
+        self._last_msg = ""
+        self._last_time = 0.0
+        self._last_greeting = ""
+        self._last_greeting_time = 0.0
+        self._sig.connect(self._handle_append)
 
     def append_log(self, text: str):
         self._sig.emit(text)
 
-    def _enqueue(self, text: str):
-        self._queue.append(text)
-        if not self._typing:
-            self._next()
-
-    def _next(self):
-        if not self._queue:
-            self._typing = False
+    def _handle_append(self, text: str):
+        clean = str(text or "").strip()
+        if not clean:
             return
-        self._typing = True
-        self._text = self._queue.pop(0)
-        self._pos = 0
-        tl = self._text.lower()
-        _ai_pfx = f"{self._ai_name_lc}:"
-        if tl.startswith("you:"):
-            self._tag = "you"
-        elif tl.startswith(_ai_pfx) or tl.startswith("jarvis:"):
-            self._tag = "ai"
-        elif tl.startswith("file:"):
-            self._tag = "file"
-        elif "err" in tl:
-            self._tag = "err"
-        else:
-            self._tag = "sys"
-        self._tmr.start(6)
 
-    def _step(self):
-        if self._pos < len(self._text):
-            ch = self._text[self._pos]
-            cur = self.textCursor()
-            fmt = cur.charFormat()
-            col = {
-                "you": qcol(C.WHITE),
-                "ai": qcol(C.PRI),
-                "err": qcol(C.RED),
-                "file": qcol(C.GREEN),
-                # SYS lines are the bulk of the log. Amber fought the cyan HUD
-                # and, being a fixed status colour rather than a hue-linked one,
-                # stayed amber even after the accent picker retinted everything
-                # else. TEXT_MED follows the theme and drops the contrast to a
-                # level you can read past.
-                "sys": qcol(C.TEXT_MED),
-            }.get(self._tag, qcol(C.TEXT))
-            fmt.setForeground(QBrush(col))
-            cur.movePosition(cur.MoveOperation.End)
-            cur.insertText(ch, fmt)
-            self.setTextCursor(cur)
-            self.ensureCursorVisible()
-            self._pos += 1
+        now_ts = time.time()
+        # Deduplicate consecutive identical messages within 4 seconds
+        if clean == self._last_msg and (now_ts - self._last_time < 4.0):
+            return
+
+        # Deduplicate startup greetings and identical system status announcements within 12 seconds
+        is_greeting = any(
+            g in clean.lower()
+            for g in ["good morning", "good afternoon", "good evening", "listening for commands", "systems online", "voice session active"]
+        )
+        if is_greeting and self._last_greeting == clean and (now_ts - self._last_greeting_time < 12.0):
+            return
+
+        if is_greeting:
+            self._last_greeting = clean
+            self._last_greeting_time = now_ts
+
+        self._last_msg = clean
+        self._last_time = now_ts
+
+        timestamp_str = time.strftime("%H:%M:%S")
+        tl = clean.lower()
+        _ai_pfx = f"{self._ai_name_lc}:"
+
+        if tl.startswith("you:"):
+            spk = "YOU"
+            body = clean[4:].strip()
+            bg = "rgba(255, 255, 255, 0.03)"
+            border = "3px solid #555555"
+            tag_color = "#ffffff"
+            text_color = "#ffffff"
+        elif tl.startswith(_ai_pfx) or tl.startswith("jarvis:"):
+            spk = "JARVIS"
+            body = clean.split(":", 1)[1].strip()
+            bg = "rgba(255, 30, 66, 0.05)"
+            border = "3px solid #FF1E42"
+            tag_color = "#FF1E42"
+            text_color = C.TEXT
+        elif tl.startswith("file:"):
+            spk = "FILE"
+            body = clean[5:].strip()
+            bg = "rgba(0, 230, 118, 0.05)"
+            border = "3px solid #00e676"
+            tag_color = "#00e676"
+            text_color = C.TEXT
+        elif "err" in tl or tl.startswith("error:"):
+            spk = "ERROR"
+            body = clean.split(":", 1)[1].strip() if ":" in clean else clean
+            bg = "rgba(255, 23, 68, 0.08)"
+            border = "3px solid #ff1744"
+            tag_color = "#ff1744"
+            text_color = "#ff8a80"
         else:
-            self._tmr.stop()
-            cur = self.textCursor()
-            cur.movePosition(cur.MoveOperation.End)
-            cur.insertText("\n")
-            self.setTextCursor(cur)
-            self.ensureCursorVisible()
-            QTimer.singleShot(20, self._next)
+            spk = "SYS"
+            body = clean[4:].strip() if tl.startswith("sys:") else clean
+            bg = "rgba(0, 0, 0, 0.22)"
+            border = "3px solid rgba(255, 23, 68, 0.35)"
+            tag_color = "#d69da4"
+            text_color = "#d69da4"
+
+        esc_body = (
+            body.replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("\n", "<br>")
+        )
+
+        html_block = (
+            f'<div style="background: {bg}; border-left: {border}; padding: 4px 8px; margin: 3px 0; border-radius: 2px;">'
+            f'<span style="font-family: \'Consolas\', monospace; font-size: 8pt; color: #777777;">[{timestamp_str}]</span>'
+            f'<span style="font-family: \'Montserrat\', sans-serif; font-weight: bold; font-size: 8pt; color: {tag_color}; letter-spacing: 1px;"> {spk}:</span>'
+            f'<div style="color: {text_color}; font-size: 8.5pt; margin-top: 2px; line-height: 1.35;">{esc_body}</div>'
+            f'</div>'
+        )
+
+        cur = self.textCursor()
+        cur.movePosition(cur.MoveOperation.End)
+        cur.insertHtml(html_block)
+        self.setTextCursor(cur)
+        self.ensureCursorVisible()
 
 
 _FILE_ICONS = {
@@ -332,7 +348,7 @@ class FileDropZone(QWidget):
         super().__init__(parent)
         self.setAcceptDrops(True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setFixedHeight(100)
+        self.setFixedHeight(28)
         self._current_file: str | None = None
         self._folder_files = 0
         self._hovering = False
@@ -348,10 +364,6 @@ class FileDropZone(QWidget):
         layout.addWidget(self._canvas)
 
     def _animate(self):
-        # The marching-ants dashed border is only meaningful while the user is
-        # hovering or dragging a file over the zone. When idle, skip the repaint
-        # entirely instead of redrawing the whole zone 25×/s forever — that idle
-        # repaint held the GIL and stole time from the audio/response threads.
         if not (self._hovering or self._drag_over):
             return
         self._dash_offset = (self._dash_offset + 0.8) % 20
@@ -361,14 +373,17 @@ class FileDropZone(QWidget):
         if e.mimeData().hasUrls():
             e.acceptProposedAction()
             self._drag_over = True
+            self.setFixedHeight(75)
             self._canvas.update()
 
     def dragLeaveEvent(self, e):
         self._drag_over = False
+        self.setFixedHeight(28)
         self._canvas.update()
 
     def dropEvent(self, e: QDropEvent):
         self._drag_over = False
+        self.setFixedHeight(28)
         urls = e.mimeData().urls()
         if urls:
             path = urls[0].toLocalFile()
@@ -483,6 +498,17 @@ class _DropCanvas(QWidget):
         p.end()
 
     def _paint_idle(self, p, W, H, hover):
+        if H <= 36:
+            p.setFont(QFont("Montserrat", 8, QFont.Weight.Bold))
+            col = qcol(C.PRI if hover else C.TEXT_DIM)
+            p.setPen(QPen(col, 1))
+            p.drawText(
+                QRectF(0, 0, W, H),
+                Qt.AlignmentFlag.AlignCenter,
+                "📎  ATTACH FILE / FOLDER  (CLICK TO BROWSE OR DRAG & DROP)",
+            )
+            return
+
         cx, cy = W / 2, H / 2
         col = qcol(C.PRI_DIM if not hover else C.PRI)
         p.setPen(QPen(col, 2))
@@ -524,6 +550,20 @@ class _DropCanvas(QWidget):
             n = self._z._folder_files
             ext_str, size_str = "FOLDER", f"{n}{'+' if n >= 5000 else ''} files"
 
+        if H <= 36:
+            p.setFont(QFont("Montserrat", 8, QFont.Weight.Bold))
+            p.setPen(QPen(qcol(C.WHITE), 1))
+            name = path.name if len(path.name) <= 28 else path.name[:25] + "..."
+            p.drawText(
+                QRectF(10, 0, W - 44, H),
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                f"📎 [{ext_str}] {name}  ·  {size_str}",
+            )
+            p.setFont(QFont("Montserrat", 8, QFont.Weight.Bold))
+            p.setPen(QPen(qcol(C.RED, 200), 1))
+            p.drawText(QRectF(W - 30, 0, 24, H), Qt.AlignmentFlag.AlignCenter, "✕")
+            return
+
         block_x, block_w = 10, 60
         p.setFont(QFont("Segoe UI Emoji", 22) if _OS == "Windows" else QFont("Arial", 22))
         p.setPen(QPen(qcol(icon_col), 1))
@@ -555,6 +595,127 @@ class _DropCanvas(QWidget):
         p.setFont(QFont("Montserrat", 9, QFont.Weight.Bold))
         p.setPen(QPen(qcol(C.RED, 180), 1))
         p.drawText(QRectF(W - 34, 0, 28, H), Qt.AlignmentFlag.AlignCenter, "✕")
+
+
+class PillToggleSwitch(QWidget):
+    """
+    Inline pill toggle switch ([ ON | OFF ]) with sleek cyberpunk styling.
+    """
+
+    toggled = pyqtSignal(bool)
+
+    def __init__(self, checked: bool = False, label_on: str = "ON", label_off: str = "OFF", parent=None):
+        super().__init__(parent)
+        self._checked = bool(checked)
+        self._label_on = label_on
+        self._label_off = label_off
+        self.setFixedSize(56, 22)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def isChecked(self) -> bool:
+        return self._checked
+
+    def setChecked(self, checked: bool):
+        if self._checked != bool(checked):
+            self._checked = bool(checked)
+            self.update()
+            self.toggled.emit(self._checked)
+
+    def mousePressEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            self.setChecked(not self._checked)
+            e.accept()
+
+    def paintEvent(self, e):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        w, h = self.width(), self.height()
+        r = (h - 2) / 2.0
+
+        track_path = QPainterPath()
+        track_path.addRoundedRect(QRectF(1, 1, w - 2, h - 2), r, r)
+
+        if self._checked:
+            bg_col = QColor(255, 23, 68, 70)
+            border_col = QColor(255, 23, 68, 220)
+            knob_col = QColor(255, 23, 68)
+            txt = self._label_on
+            txt_col = QColor(255, 255, 255)
+            knob_x = w - h + 2
+            txt_rect = QRectF(2, 0, w - h, h)
+        else:
+            bg_col = QColor(14, 4, 10, 200)
+            border_col = QColor(80, 20, 30, 180)
+            knob_col = QColor(130, 40, 50)
+            txt = self._label_off
+            txt_col = QColor(180, 140, 150)
+            knob_x = 2
+            txt_rect = QRectF(h, 0, w - h, h)
+
+        p.fillPath(track_path, QBrush(bg_col))
+        p.setPen(QPen(border_col, 1))
+        p.drawPath(track_path)
+
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(knob_col))
+        p.drawEllipse(QRectF(knob_x, 2, h - 4, h - 4))
+
+        p.setPen(txt_col)
+        p.setFont(QFont("Montserrat", 7, QFont.Weight.Bold))
+        p.drawText(txt_rect, Qt.AlignmentFlag.AlignCenter, txt)
+        p.end()
+
+
+class AudioWaveformVisualizer(QWidget):
+    """
+    Real-time audio waveform / input level meter visualizer reacting to mic input.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedHeight(30)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self._level = 0.0
+        self._bars = [0.05] * 24
+        self._phase = 0.0
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._animate)
+        self._timer.start(50)
+
+    def set_level(self, level: float):
+        self._level = max(0.0, min(1.0, float(level)))
+
+    def _animate(self):
+        self._phase += 0.18
+        for i in range(len(self._bars)):
+            target = max(0.08, (0.15 + 0.85 * self._level) * abs(math.sin(self._phase + i * 0.35)))
+            self._bars[i] = self._bars[i] * 0.65 + target * 0.35
+        self.update()
+
+    def paintEvent(self, e):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        w, h = self.width(), self.height()
+        if w <= 0 or h <= 0:
+            p.end()
+            return
+
+        n = len(self._bars)
+        spacing = 3.0
+        bar_w = max(2.0, (w - (n - 1) * spacing) / n)
+
+        for i, val in enumerate(self._bars):
+            bh = max(3.0, val * (h - 4))
+            x = i * (bar_w + spacing)
+            y = (h - bh) / 2.0
+            grad = QLinearGradient(x, y, x, y + bh)
+            grad.setColorAt(0.0, QColor(255, 82, 82, 230))
+            grad.setColorAt(1.0, QColor(255, 23, 68, 160))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(grad))
+            p.drawRoundedRect(QRectF(x, y, bar_w, bh), 1.5, 1.5)
+        p.end()
+
 
     def mousePressEvent(self, e):
         z = self._z

@@ -143,14 +143,14 @@ class ArmouryCrateTelemetryWidget(QWidget):
             """)
             return pb
 
-        # ── Vertical Stack of Cards (CPU, RAM, GPU, Storage in 1-by-1 order)
-        cards_lay = QVBoxLayout()
-        cards_lay.setSpacing(6)
+        # ── 2x2 Responsive Grid Layout of Cards (CPU, RAM, GPU, Storage)
+        cards_lay = QGridLayout()
+        cards_lay.setSpacing(8)
 
         # 1. CPU Card
         c_cpu, v_cpu = _make_card("CPU")
         r_cu, self.lbl_cpu_usage = _make_row("Usage")
-        self.bar_cpu = _make_bar("#ff7a00")
+        self.bar_cpu = _make_bar("#00e5ff")
         r_cf, self.lbl_cpu_freq = _make_row("Frequency")
         r_ct, self.lbl_cpu_temp = _make_row("Temperature")
         r_cv, self.lbl_cpu_volt = _make_row("Voltage")
@@ -159,20 +159,20 @@ class ArmouryCrateTelemetryWidget(QWidget):
         v_cpu.addLayout(r_cf)
         v_cpu.addLayout(r_ct)
         v_cpu.addLayout(r_cv)
-        cards_lay.addWidget(c_cpu)
+        cards_lay.addWidget(c_cpu, 0, 0)
 
         # 2. RAM Card
         c_ram, v_ram = _make_card("RAM")
         r_mr, self.lbl_ram = _make_row("Memory Usage")
-        self.bar_ram = _make_bar("#ff1744")
+        self.bar_ram = _make_bar("#00e5ff")
         v_ram.addLayout(r_mr)
         v_ram.addWidget(self.bar_ram)
-        cards_lay.addWidget(c_ram)
+        cards_lay.addWidget(c_ram, 0, 1)
 
         # 3. GPU Card
         c_gpu, v_gpu = _make_card("GPU")
         r_gu, self.lbl_gpu_usage = _make_row("Usage")
-        self.bar_gpu = _make_bar("#ff1744")
+        self.bar_gpu = _make_bar("#00e5ff")
         r_gf, self.lbl_gpu_freq = _make_row("Frequency")
         r_gt, self.lbl_gpu_temp = _make_row("Temperature")
         r_gv, self.lbl_gpu_volt = _make_row("Voltage")
@@ -181,7 +181,7 @@ class ArmouryCrateTelemetryWidget(QWidget):
         v_gpu.addLayout(r_gf)
         v_gpu.addLayout(r_gt)
         v_gpu.addLayout(r_gv)
-        cards_lay.addWidget(c_gpu)
+        cards_lay.addWidget(c_gpu, 1, 0)
 
         # 4. Storage Card
         c_store, v_store = _make_card("Storage")
@@ -189,11 +189,37 @@ class ArmouryCrateTelemetryWidget(QWidget):
         self.bar_storage = _make_bar("#00e5ff")
         v_store.addLayout(r_ms)
         v_store.addWidget(self.bar_storage)
-        cards_lay.addWidget(c_store)
+        cards_lay.addWidget(c_store, 1, 1)
+
+        cards_lay.setColumnStretch(0, 1)
+        cards_lay.setColumnStretch(1, 1)
+        cards_lay.setRowStretch(0, 1)
+        cards_lay.setRowStretch(1, 1)
 
         self.lbl_net = QLabel("")
         root.addLayout(cards_lay)
         root.addStretch()
+
+    def _apply_bar_color(self, bar: QProgressBar, pct: float):
+        if pct > 90:
+            col = "#ff1744"
+        elif pct >= 75:
+            col = "#ffb300"
+        else:
+            col = "#00e5ff"
+        bar.setStyleSheet(f"""
+            QProgressBar {{
+                background: rgba(10, 4, 10, 180);
+                border: 1px solid rgba(255, 23, 68, 0.25);
+                border-radius: 2px;
+                text-align: center;
+                height: 5px;
+            }}
+            QProgressBar::chunk {{
+                background: {col};
+                border-radius: 2px;
+            }}
+        """)
 
     def set_operating_mode(self, mode: str):
         self._mode = mode
@@ -215,6 +241,7 @@ class ArmouryCrateTelemetryWidget(QWidget):
         # CPU Usage
         self.lbl_cpu_usage.setText(f"{cpu:.0f} %")
         self.bar_cpu.setValue(int(max(0, min(100, cpu))))
+        self._apply_bar_color(self.bar_cpu, cpu)
 
         # CPU Temp & Voltage
         c_temp = int(tmp if tmp > 0 else (46 + (cpu / 100.0) * 36))
@@ -231,6 +258,7 @@ class ArmouryCrateTelemetryWidget(QWidget):
             r_used, r_total, r_pct = 9.0, 15.8, 57.0
         self.lbl_ram.setText(f"{r_used:.1f} / {r_total:.1f} GB ({r_pct:.0f} %)")
         self.bar_ram.setValue(int(r_pct))
+        self._apply_bar_color(self.bar_ram, r_pct)
 
         # GPU
         if gpu >= 0:
@@ -238,6 +266,7 @@ class ArmouryCrateTelemetryWidget(QWidget):
             self.lbl_gpu_freq.setText(f"{g_freq} MHz")
             self.lbl_gpu_usage.setText(f"{gpu:.0f} %")
             self.bar_gpu.setValue(int(max(0, min(100, gpu))))
+            self._apply_bar_color(self.bar_gpu, gpu)
             g_temp = int(tmp if tmp > 0 else (42 + (gpu / 100.0) * 32))
             self.lbl_gpu_temp.setText(f"{g_temp} °C")
             self.lbl_gpu_volt.setText(f"{0.72 + (gpu / 100.0) * 0.38:.2f} V")
@@ -245,6 +274,7 @@ class ArmouryCrateTelemetryWidget(QWidget):
             self.lbl_gpu_freq.setText("210 MHz")
             self.lbl_gpu_usage.setText("0 %")
             self.bar_gpu.setValue(0)
+            self._apply_bar_color(self.bar_gpu, 0.0)
             self.lbl_gpu_temp.setText("42 °C")
             self.lbl_gpu_volt.setText("0.65 V")
 
@@ -259,6 +289,7 @@ class ArmouryCrateTelemetryWidget(QWidget):
             s_used, s_total, s_pct = 105.7, 446.4, 23.7
         self.lbl_storage.setText(f"{s_used:.1f} / {s_total:.1f} GB ({s_pct:.0f} %)")
         self.bar_storage.setValue(int(s_pct))
+        self._apply_bar_color(self.bar_storage, s_pct)
 
         # Network (if label present)
         if hasattr(self, "lbl_net"):

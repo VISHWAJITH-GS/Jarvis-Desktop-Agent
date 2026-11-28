@@ -88,7 +88,7 @@ class RemindersDisplayWindow(_FramelessWindowResizeMixin, QWidget):
         self._outer.setObjectName("RemindersOuter")
         self._outer.setStyleSheet(f"""
             QFrame#RemindersOuter {{
-                background: rgba(12, 3, 6, 248);
+                background: {getattr(C, 'PANEL_BG_ALPHA', 'rgba(10, 4, 6, 0.94)')};
                 border: 1px solid rgba(255, 23, 68, 0.45);
                 border-radius: 8px;
             }}
@@ -140,36 +140,16 @@ class RemindersDisplayWindow(_FramelessWindowResizeMixin, QWidget):
         self._ref_btn.clicked.connect(self.load_reminders)
         hdr.addWidget(self._ref_btn)
 
-        self._min_btn = QPushButton(" MIN")
-        self._min_btn.setIcon(get_uicon("minus", color=C.PRI, size=11))
-        self._min_btn.setFont(QFont("Montserrat", 7))
-        self._min_btn.setFixedHeight(18)
-        self._min_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._min_btn.setToolTip("Minimize reminders display")
-        self._min_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: rgba(255, 23, 68, 0.12); color: {C.TEXT_DIM};
-                border: 1px solid rgba(255, 23, 68, 0.35); border-radius: 2px; padding: 0 5px;
-            }}
-            QPushButton:hover {{ color: #ffffff; background: rgba(255, 23, 68, 0.35); border-color: {C.PRI}; }}
-        """)
-        self._min_btn.clicked.connect(self.toggle_collapse)
-        hdr.addWidget(self._min_btn)
-
-        close_btn = QPushButton(" DISMISS")
-        close_btn.setIcon(get_uicon("cross", color=C.TEXT_DIM, size=11))
-        close_btn.setFont(QFont("Montserrat", 7))
-        close_btn.setFixedHeight(18)
-        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        close_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: rgba(255, 23, 68, 0.12); color: {C.TEXT_DIM};
-                border: 1px solid rgba(255, 23, 68, 0.35); border-radius: 2px; padding: 0 5px;
-            }}
-            QPushButton:hover {{ color: #ffffff; background: rgba(255, 23, 68, 0.35); border-color: {C.PRI}; }}
-        """)
-        close_btn.clicked.connect(self.hide)
-        hdr.addWidget(close_btn)
+        from gui.base import StandardTitleBarControls
+        self.controls = StandardTitleBarControls(
+            self,
+            on_minimize=self.toggle_collapse,
+            on_close=self.hide,
+        )
+        self._min_btn = self.controls._min_btn
+        self._max_btn = self.controls._max_btn
+        self._close_btn = self.controls._close_btn
+        hdr.addWidget(self.controls)
 
         self._main_lay.addLayout(hdr)
 

@@ -136,25 +136,27 @@ class WindowAudioMixin:
         if active:
             return f"""
                 QPushButton {{
-                    background: rgba(255, 23, 68, 0.25);
+                    background: rgba(255, 23, 68, 0.15);
                     color: #ffffff;
-                    border: 1px solid {C.PRI};
-                    border-radius: 3px;
+                    border: none;
+                    border-bottom: 2px solid {C.PRI};
+                    border-radius: 0px;
                     padding: 5px 8px;
+                    font-weight: bold;
                 }}
             """
         return f"""
             QPushButton {{
-                background: rgba(20, 5, 18, 180);
+                background: transparent;
                 color: {C.TEXT_DIM};
-                border: 1px solid {C.BORDER};
-                border-radius: 3px;
+                border: none;
+                border-bottom: 2px solid transparent;
+                border-radius: 0px;
                 padding: 5px 8px;
             }}
             QPushButton:hover {{
-                background: rgba(255, 23, 68, 0.12);
+                background: rgba(255, 23, 68, 0.08);
                 color: {C.TEXT};
-                border-color: {C.BORDER_B};
             }}
         """
 
@@ -164,7 +166,7 @@ class WindowAudioMixin:
         w.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         w.setStyleSheet(f"""
             QWidget#CyberDrawer {{
-                background: rgba(14, 4, 12, 238);
+                background: {getattr(C, 'PANEL_BG_ALPHA', 'rgba(10, 4, 6, 0.94)')};
                 border: 1px solid {C.BORDER_B};
                 border-radius: 6px;
             }}
@@ -178,9 +180,11 @@ class WindowAudioMixin:
         # Header
         hdr = QHBoxLayout()
         hdr.setContentsMargins(0, 0, 0, 0)
+        hdr.setSpacing(6)
         title = QLabel("JARVIS INTELLIGENCE MATRIX")
         title.setFont(keena_font(9, True, 2))
         title.setStyleSheet(f"color: {C.PRI}; background: transparent;")
+        title.setMaximumWidth(260)
         hdr.addWidget(title)
         hdr.addStretch()
 
@@ -222,6 +226,22 @@ class WindowAudioMixin:
         self._hud_mem_btn = self._drawer_mem_btn
         hdr.addWidget(self._drawer_mem_btn)
 
+        # Pop-out / Detach current tab into independent floating window
+        btn_detach = QPushButton("⧉")
+        btn_detach.setFont(keena_font(10, True))
+        btn_detach.setFixedSize(24, 24)
+        btn_detach.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_detach.setToolTip("Detach active tab into floating window")
+        btn_detach.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent; color: {C.TEXT_DIM};
+                border: 1px solid {C.BORDER}; border-radius: 3px;
+            }}
+            QPushButton:hover {{ color: {C.PRI}; border-color: {C.PRI}; }}
+        """)
+        btn_detach.clicked.connect(self._detach_current_tab)
+        hdr.addWidget(btn_detach)
+
         btn_close = QPushButton("")
         btn_close.setIcon(get_uicon("angle-small-up", color=C.TEXT_DIM, size=14))
         btn_close.setIconSize(QSize(14, 14))
@@ -245,7 +265,7 @@ class WindowAudioMixin:
         tabs_row.setSpacing(4)
         self._drawer_tabs = QStackedWidget()
 
-        tab_names = [("CHAT & LOG", 0), ("TELEMETRY", 1), ("AUDIO CORE", 2), ("SETTINGS", 3), ("TASKS", 4)]
+        tab_names = [("CHAT LOG", 0), ("TELEMETRY", 1), ("AUDIO CORE", 2), ("SETTINGS", 3), ("TASKS", 4)]
         self._tab_btns = []
 
         def _make_tab_btn(name, idx):
@@ -263,6 +283,8 @@ class WindowAudioMixin:
                 btn.setChecked(True)
                 btn.setStyleSheet(self._tab_btn_style(True))
                 self._drawer_tabs.setCurrentIndex(idx)
+                if hasattr(self, "hud"):
+                    self.hud.set_suppress_transcript(idx == 0 and self._expanded)
                 if idx == 2:
                     self._refresh_audio_tab()
                 elif idx == 3:
@@ -340,6 +362,87 @@ class WindowAudioMixin:
 
         v.addWidget(self._drawer_tabs, stretch=1)
         return w
+
+    def _detach_current_tab(self):
+        cur_idx = self._drawer_tabs.currentIndex()
+        if not hasattr(self, "_detached_windows"):
+            self._detached_windows = {}
+        if cur_idx in self._detached_windows:
+            det_win = self._detached_windows[cur_idx][0]
+            det_win.show()
+            det_win.raise_()
+            det_win.activateWindow()
+            return
+
+        w = self._drawer_tabs.widget(cur_idx)
+        if not w:
+            return
+
+        tab_title = ["CHAT LOG", "TELEMETRY", "AUDIO CORE", "SETTINGS", "TASKS"][cur_idx] if cur_idx < 5 else f"TAB {cur_idx}"
+
+        # Create sleek placeholder inside the matrix
+        placeholder = QWidget()
+        p_lay = QVBoxLayout(placeholder)
+        p_lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        p_lay.setSpacing(10)
+
+        p_lbl = QLabel(f"◈  {tab_title} DETACHED AS FLOATING DISPLAY")
+        p_lbl.setFont(keena_font(8, True))
+        p_lbl.setStyleSheet(f"color: {C.TEXT_DIM};")
+        p_lay.addWidget(p_lbl, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        redock_btn = QPushButton("↙  RE-DOCK TO MATRIX")
+        redock_btn.setFont(keena_font(8, True))
+        redock_btn.setFixedHeight(28)
+        redock_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        redock_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: rgba(255, 23, 68, 0.2);
+                color: #ffffff;
+                border: 1px solid {C.PRI};
+                border-radius: 4px;
+                padding: 4px 14px;
+            }}
+            QPushButton:hover {{
+                background: rgba(255, 23, 68, 0.45);
+            }}
+        """)
+        redock_btn.clicked.connect(lambda _, idx=cur_idx: self._redock_tab(idx))
+        p_lay.addWidget(redock_btn, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        self._drawer_tabs.removeWidget(w)
+        self._drawer_tabs.insertWidget(cur_idx, placeholder)
+        self._drawer_tabs.setCurrentIndex(cur_idx)
+
+        # Build detached window
+        from gui.base import DetachedTabWindow
+        det_win = DetachedTabWindow(cur_idx, tab_title, w, parent=self)
+        det_win.re_dock_requested.connect(self._on_tab_redock_signal)
+        self._detached_windows[cur_idx] = (det_win, w, placeholder)
+        det_win.show()
+        det_win.raise_()
+        det_win.activateWindow()
+
+        if cur_idx == 0 and hasattr(self, "hud"):
+            self.hud.set_suppress_transcript(True)
+
+    def _on_tab_redock_signal(self, tab_idx: int, widget):
+        self._redock_tab(tab_idx)
+
+    def _redock_tab(self, tab_idx: int):
+        if not hasattr(self, "_detached_windows") or tab_idx not in self._detached_windows:
+            return
+        det_win, orig_widget, placeholder = self._detached_windows.pop(tab_idx)
+        self._drawer_tabs.removeWidget(placeholder)
+        placeholder.deleteLater()
+        self._drawer_tabs.insertWidget(tab_idx, orig_widget)
+        self._drawer_tabs.setCurrentIndex(tab_idx)
+        try:
+            det_win.close()
+        except Exception:
+            pass
+        if tab_idx == 0 and hasattr(self, "hud"):
+            self.hud.set_suppress_transcript(getattr(self, "_expanded", False))
 
     def _build_tasks_tab(self) -> QWidget:
         w = QWidget()
@@ -506,10 +609,46 @@ class WindowAudioMixin:
 
             self._tasks_layout.addStretch(1)
         except Exception as e:
-            err_lbl = QLabel("Tasks panel: Productivity plugin not loaded")
-            err_lbl.setFont(QFont("Montserrat", 8))
-            err_lbl.setStyleSheet("color: #ef4444; padding: 6px;")
-            self._tasks_layout.addWidget(err_lbl)
+            card = QWidget()
+            card.setStyleSheet(f"background: {C.PANEL2}; border: 1px solid {C.BORDER}; border-radius: 6px; padding: 12px;")
+            c_lay = QVBoxLayout(card)
+            c_lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            c_lay.setSpacing(8)
+
+            err_lbl = QLabel("PRODUCTIVITY PLUGIN NOT LOADED")
+            err_lbl.setFont(keena_font(8, True))
+            err_lbl.setStyleSheet(f"color: {C.TEXT_DIM};")
+            c_lay.addWidget(err_lbl, alignment=Qt.AlignmentFlag.AlignCenter)
+
+            enable_btn = QPushButton("[ + ENABLE PRODUCTIVITY PLUGIN ]")
+            enable_btn.setFont(keena_font(8, True))
+            enable_btn.setFixedHeight(28)
+            enable_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            enable_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background: rgba(255, 23, 68, 0.2);
+                    color: #ffffff;
+                    border: 1px solid {C.PRI};
+                    border-radius: 4px;
+                    padding: 4px 14px;
+                }}
+                QPushButton:hover {{
+                    background: rgba(255, 23, 68, 0.45);
+                }}
+            """)
+            enable_btn.clicked.connect(self._ui_enable_productivity)
+            c_lay.addWidget(enable_btn, alignment=Qt.AlignmentFlag.AlignCenter)
+            self._tasks_layout.addWidget(card)
+
+    def _ui_enable_productivity(self) -> None:
+        try:
+            import plugins.productivity
+            self._refresh_tasks_tab()
+            if hasattr(self, "write_log"):
+                self.write_log("SYS: Productivity plugin refreshed.")
+        except Exception as exc:
+            if hasattr(self, "write_log"):
+                self.write_log(f"SYS: Productivity plugin setup: {exc}")
 
     def _ui_complete_task(self, task_id: str) -> None:
         try:
@@ -569,17 +708,33 @@ class WindowAudioMixin:
         self._lbl_audio_state = _st_lbl("STATUS: Initializing · Switch: Idle")
         self._lbl_audio_routing = _st_lbl("ROUTING: Automatic Hybrid · A2DP Stereo: Restored")
         self._lbl_audio_dest = _st_lbl("AUDIO DESTINATION: Initializing...")
+        self._waveform_viz = AudioWaveformVisualizer(self._audio_status_card)
+        st_lay.addWidget(self._waveform_viz)
         lay.addWidget(self._audio_status_card)
+
+        combo_style = f"""
+            QComboBox {{
+                background: {C.PANEL2}; color: {C.TEXT};
+                border: 1px solid {C.BORDER}; border-radius: 3px;
+                padding: 5px 24px 5px 8px;
+                font-family: 'Montserrat', sans-serif;
+                font-size: 8pt;
+            }}
+            QComboBox::drop-down {{
+                subcontrol-origin: padding;
+                subcontrol-position: top right;
+                width: 20px;
+                border-left: 1px solid {C.BORDER};
+            }}
+            QComboBox QAbstractItemView {{
+                background: #0d0205; color: #ffffff;
+                selection-background-color: {C.PRI};
+            }}
+        """
 
         lay.addWidget(_hdr("AUDIO ROUTING ARCHITECTURE"))
         self._combo_routing = QComboBox()
-        self._combo_routing.setStyleSheet(f"""
-            QComboBox {{
-                background: {C.PANEL2}; color: {C.TEXT};
-                border: 1px solid {C.BORDER}; border-radius: 3px; padding: 5px;
-            }}
-            QComboBox::drop-down {{ border: none; }}
-        """)
+        self._combo_routing.setStyleSheet(combo_style)
         from memory.config_manager import (
             get_audio_routing_mode,
             ROUTING_MODE_AUTO_HYBRID,
@@ -598,13 +753,7 @@ class WindowAudioMixin:
 
         lay.addWidget(_hdr("AUDIO INPUT (MICROPHONE)"))
         self._combo_mic = QComboBox()
-        self._combo_mic.setStyleSheet(f"""
-            QComboBox {{
-                background: {C.PANEL2}; color: {C.TEXT};
-                border: 1px solid {C.BORDER}; border-radius: 3px; padding: 5px;
-            }}
-            QComboBox::drop-down {{ border: none; }}
-        """)
+        self._combo_mic.setStyleSheet(combo_style)
         try:
             from core.audio_devices import DEFAULT_LABEL
             from memory.config_manager import get_input_device
@@ -621,7 +770,7 @@ class WindowAudioMixin:
 
         lay.addWidget(_hdr("AUDIO OUTPUT (SPEAKERS)"))
         self._combo_spk = QComboBox()
-        self._combo_spk.setStyleSheet(self._combo_mic.styleSheet())
+        self._combo_spk.setStyleSheet(combo_style)
         try:
             from core.audio_devices import DEFAULT_LABEL
             from memory.config_manager import get_output_device
@@ -638,41 +787,59 @@ class WindowAudioMixin:
 
         lay.addWidget(_hdr("VOICE PERSONA"))
         self._combo_voice = QComboBox()
-        self._combo_voice.setStyleSheet(self._combo_mic.styleSheet())
+        self._combo_voice.setStyleSheet(combo_style)
         self._combo_voice.addItems(["Puck", "Charon", "Kore", "Fenrir", "Aoede"])
         self._combo_voice.currentTextChanged.connect(self._on_voice_combo_changed)
         lay.addWidget(self._combo_voice)
 
         lay.addWidget(_hdr("WAKE ENGINE & SHORTCUTS"))
-        self._wake_toggle_btn = QPushButton("WAKE WORD: DISABLED (CLICK TO TOGGLE)")
-        self._wake_toggle_btn.setFont(keena_font(8, True))
-        self._wake_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._wake_toggle_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: {C.PANEL2}; color: {C.TEXT_DIM};
-                border: 1px solid {C.BORDER_A}; border-radius: 3px; padding: 6px;
-            }}
-            QPushButton:hover {{ border-color: {C.PRI}; color: {C.TEXT}; }}
-        """)
-        self._wake_toggle_btn.clicked.connect(self._ui_toggle_wake)
-        lay.addWidget(self._wake_toggle_btn)
 
-        self._auto_sleep_toggle_btn = QPushButton("AUTO-SLEEP: ENABLED (CLICK TO TOGGLE)")
-        self._auto_sleep_toggle_btn.setFont(keena_font(8, True))
-        self._auto_sleep_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._auto_sleep_toggle_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: {C.PANEL2}; color: {C.TEXT_DIM};
-                border: 1px solid {C.BORDER_A}; border-radius: 3px; padding: 6px;
-            }}
-            QPushButton:hover {{ border-color: {C.PRI}; color: {C.TEXT}; }}
-        """)
-        self._auto_sleep_toggle_btn.clicked.connect(self._toggle_auto_sleep)
-        lay.addWidget(self._auto_sleep_toggle_btn)
+        def _make_switch_row(label_txt: str, init_val: bool, toggle_fn):
+            row = QWidget()
+            row.setStyleSheet(f"background: {C.PANEL2}; border: 1px solid {C.BORDER}; border-radius: 4px;")
+            rl = QHBoxLayout(row)
+            rl.setContentsMargins(8, 4, 8, 4)
+            lbl = QLabel(label_txt)
+            lbl.setFont(keena_font(8, True))
+            lbl.setStyleSheet(f"color: {C.TEXT}; background: transparent; border: none;")
+            rl.addWidget(lbl, stretch=1)
+            sw = PillToggleSwitch(checked=init_val)
+            sw.toggled.connect(toggle_fn)
+            rl.addWidget(sw)
+            return row, sw
+
+        wake_init = False
+        if hasattr(self, "wake_get_state") and self.wake_get_state:
+            try:
+                wake_init = bool(self.wake_get_state().get("enabled", False))
+            except Exception:
+                pass
+
+        sleep_init = True
+        if hasattr(self, "auto_sleep_is_enabled") and self.auto_sleep_is_enabled:
+            try:
+                sleep_init = bool(self.auto_sleep_is_enabled())
+            except Exception:
+                pass
+
+        r_wake, self._wake_pill = _make_switch_row("WAKE WORD DETECTION", wake_init, lambda val: self._ui_toggle_wake_val(val))
+        lay.addWidget(r_wake)
+
+        r_sleep, self._sleep_pill = _make_switch_row("AUTO-SLEEP POWER SAVING", sleep_init, lambda val: self._toggle_auto_sleep_val(val))
+        lay.addWidget(r_sleep)
+
+        r_mute, self._mute_pill = _make_switch_row("MICROPHONE MUTE (F4)", getattr(self, "_muted", False), lambda val: self._toggle_mute())
+        lay.addWidget(r_mute)
+
+        self._wake_toggle_btn = QPushButton("WAKE WORD")
+        self._wake_toggle_btn.setVisible(False)
+        self._auto_sleep_toggle_btn = QPushButton("AUTO-SLEEP")
+        self._auto_sleep_toggle_btn.setVisible(False)
 
         ptt_info = QLabel("PUSH-TO-TALK: Hold Space or Alt to speak")
         ptt_info.setFont(keena_font(8))
         ptt_info.setStyleSheet(f"color: {C.TEXT_DIM};")
+        lay.addWidget(ptt_info)
         lay.addWidget(ptt_info)
 
         lay.addStretch()
@@ -862,66 +1029,114 @@ class WindowAudioMixin:
         w.setStyleSheet("background: transparent;")
         lay = QVBoxLayout(w)
         lay.setContentsMargins(4, 6, 4, 6)
-        lay.setSpacing(8)
+        lay.setSpacing(6)
 
-        def _hdr(txt):
-            l = QLabel(txt)
-            l.setFont(keena_font(8, True))
-            l.setStyleSheet(f"color: {C.PRI}; border-bottom: 1px solid {C.BORDER}; padding-bottom: 3px;")
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("background: transparent; border: none;")
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        content = QWidget()
+        content.setStyleSheet("background: transparent;")
+        c_lay = QVBoxLayout(content)
+        c_lay.setContentsMargins(0, 0, 4, 0)
+        c_lay.setSpacing(8)
+
+        def _sec_header(txt):
+            l = QLabel(f"◈  {txt}")
+            l.setFont(keena_font(8, True, 1))
+            l.setStyleSheet(f"color: {C.PRI}; border-bottom: 1px solid {C.BORDER}; padding-bottom: 3px; letter-spacing: 1.2px;")
             return l
 
         def _action_btn(txt, cb, icon_name=None):
-            btn_txt = f" {txt.strip()}" if icon_name and txt.strip() else txt
-            b = QPushButton(btn_txt)
-            b.setFont(keena_font(9, True))
+            btn_txt = f"  {txt.strip()}" if icon_name and txt.strip() else txt
+            b = QPushButton()
+            b.setFont(keena_font(8, True))
             b.setCursor(Qt.CursorShape.PointingHandCursor)
-            if icon_name:
-                b.setIcon(get_uicon(icon_name, color=C.PRI, size=15))
-                b.setIconSize(QSize(15, 15))
             b.setStyleSheet(f"""
                 QPushButton {{
                     background: {C.PANEL2}; color: {C.TEXT};
-                    border: 1px solid {C.BORDER_B}; border-radius: 4px; padding: 8px 12px;
+                    border: 1px solid {C.BORDER_B}; border-radius: 4px; padding: 7px 10px;
+                    text-align: left;
                 }}
                 QPushButton:hover {{
-                    background: rgba(255, 23, 68, 0.25);
+                    background: rgba(255, 23, 68, 0.22);
                     border: 1px solid {C.PRI}; color: #ffffff;
                 }}
             """)
+            b_lay = QHBoxLayout(b)
+            b_lay.setContentsMargins(6, 0, 6, 0)
+            b_lay.setSpacing(6)
+            if icon_name:
+                ic = QLabel()
+                ic.setPixmap(get_uicon(icon_name, color=C.PRI, size=14).pixmap(14, 14))
+                ic.setStyleSheet("background: transparent; border: none;")
+                b_lay.addWidget(ic)
+            t_lbl = QLabel(btn_txt)
+            t_lbl.setFont(keena_font(8, True))
+            t_lbl.setStyleSheet("color: inherit; background: transparent; border: none;")
+            b_lay.addWidget(t_lbl, stretch=1)
+            arr = QLabel("›")
+            arr.setFont(QFont("Montserrat", 12, QFont.Weight.Bold))
+            arr.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent; border: none;")
+            b_lay.addWidget(arr)
             b.clicked.connect(cb)
             return b
 
-        lay.addWidget(_hdr("NEURAL INTELLIGENCE CONFIGURATION"))
+        # Section 1: Intelligence & Models
+        c_lay.addWidget(_sec_header("INTELLIGENCE & MODELS"))
         self._settings_brain_btn = _action_btn(
-            "BRAIN: ☁ GEMINI LIVE (CLICK TO SWITCH TO LOCAL)",
+            "BRAIN: GEMINI LIVE / LOCAL",
             self._toggle_brain_engine,
             "cpu",
         )
-        lay.addWidget(self._settings_brain_btn)
-        lay.addWidget(
-            _action_btn("CONFIGURE ENGINE & PROVIDERS (LOCAL / GEMINI)", self._open_providers, "settings")
+        c_lay.addWidget(self._settings_brain_btn)
+        c_lay.addWidget(
+            _action_btn("CONFIGURE ENGINE & PROVIDERS", self._open_providers, "settings")
         )
-        lay.addWidget(_action_btn("OPEN REMINDERS MATRIX", lambda: self._show_reminders("upcoming"), "calendar"))
-        lay.addWidget(
-            _action_btn("OPEN MEMORY & ACTIONS PLATFORM", lambda: self._show_memory_actions("memory"), "database")
-        )
-        lay.addWidget(_action_btn("CONFIGURE GEMINI API KEY", self._show_setup, "settings"))
-        lay.addWidget(_action_btn("ACTION CONFIRMATION TIERS", self._open_confirmation_tiers, "shield"))
-        lay.addWidget(_action_btn("ACTION PERMISSIONS DRAWER", self._open_permissions_drawer, "shield"))
-        lay.addWidget(_action_btn("OPEN PLUGIN MANAGER", self._open_plugin_manager))
-        lay.addWidget(_action_btn("CUSTOMIZE APPEARANCE & IDENTITY", self._open_customize))
-        lay.addWidget(_action_btn("PAIR PHONE WEB DASHBOARD", self._open_remote))
-        lay.addWidget(_action_btn("ENTER BIG SCREEN MODE (F11)", self._toggle_fullscreen))
+        c_lay.addWidget(_action_btn("CONFIGURE GEMINI API KEY", self._show_setup, "settings"))
 
-        lay.addStretch()
+        # Section 2: Security & Permissions
+        c_lay.addWidget(_sec_header("SECURITY & PERMISSIONS"))
+        c_lay.addWidget(_action_btn("ACTION CONFIRMATION TIERS", self._open_confirmation_tiers, "shield"))
+        c_lay.addWidget(_action_btn("ACTION PERMISSIONS DRAWER", self._open_permissions_drawer, "shield"))
+
+        # Section 3: Modules & Interface
+        c_lay.addWidget(_sec_header("MODULES & INTERFACE"))
+        c_lay.addWidget(_action_btn("REMINDERS MATRIX", lambda: self._show_reminders("upcoming"), "calendar"))
+        c_lay.addWidget(
+            _action_btn("MEMORY & ACTIONS PLATFORM", lambda: self._show_memory_actions("memory"), "database")
+        )
+        c_lay.addWidget(_action_btn("PLUGIN & EXTENSIONS MANAGER", self._open_plugin_manager))
+        c_lay.addWidget(_action_btn("APPEARANCE & IDENTITY CUSTOMIZATION", self._open_customize))
+        c_lay.addWidget(_action_btn("PAIR PHONE WEB DASHBOARD", self._open_remote))
+        c_lay.addWidget(_action_btn("BIG SCREEN HUD MODE (F11)", self._toggle_fullscreen))
+
+        c_lay.addStretch(1)
+        scroll.setWidget(content)
+        lay.addWidget(scroll, stretch=1)
         return w
+
+    def _ui_toggle_wake_val(self, val: bool):
+        if self.on_wake_toggle:
+            self.on_wake_toggle(val)
+        if hasattr(self, "_wake_toggle_btn"):
+            self._wake_toggle_btn.setText(f"WAKE WORD: {'ENABLED' if val else 'DISABLED'}")
+
+    def _toggle_auto_sleep_val(self, val: bool):
+        if self.on_auto_sleep_toggle:
+            self.on_auto_sleep_toggle(val)
+        if hasattr(self, "_auto_sleep_toggle_btn"):
+            self._auto_sleep_toggle_btn.setText(f"AUTO-SLEEP: {'ENABLED' if val else 'DISABLED'}")
 
     def _ui_toggle_wake(self):
         if self.on_wake_toggle:
             st = self.wake_get_state() if self.wake_get_state else {}
             curr = st.get("enabled", False)
-            self.on_wake_toggle(not curr)
-            self._wake_toggle_btn.setText(f"WAKE WORD: {'ENABLED' if not curr else 'DISABLED'}")
+            self._ui_toggle_wake_val(not curr)
+            if hasattr(self, "_wake_pill"):
+                self._wake_pill.setChecked(not curr)
 
     def _toggle_expanded(self, state: bool | None = None):
         if state is None:
