@@ -934,8 +934,8 @@ class MainWindow(
             parts = text.split(":", 1)
             if len(parts) > 1:
                 clean = parts[1].strip().lstrip("▶ 🎤 🔊 🛑 🔇 🎙 ").strip()
-                if clean and len(clean) < 50:
-                    self.hud.add_card(clean[:32])
+                if clean and len(clean) < 64:
+                    self.hud.add_card(clean[:48])
 
     def _on_stream_user(self, text: str):
         if hasattr(self, "hud") and hasattr(self.hud, "stream_user_text"):

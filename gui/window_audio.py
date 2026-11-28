@@ -166,7 +166,7 @@ class WindowAudioMixin:
         w.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         w.setStyleSheet(f"""
             QWidget#CyberDrawer {{
-                background: {getattr(C, 'PANEL_BG_ALPHA', 'rgba(10, 4, 6, 0.94)')};
+                background: rgba(10, 4, 6, 0.96);
                 border: 1px solid {C.BORDER_B};
                 border-radius: 6px;
             }}
@@ -1054,20 +1054,34 @@ class WindowAudioMixin:
             b = QPushButton()
             b.setFont(keena_font(8, True))
             b.setCursor(Qt.CursorShape.PointingHandCursor)
-            b.setStyleSheet(f"""
-                QPushButton {{
-                    background: {C.PANEL2}; color: {C.TEXT};
-                    border: 1px solid {C.BORDER_B}; border-radius: 4px; padding: 7px 10px;
+            b.setStyleSheet("""
+                QPushButton {
+                    background: #14070B; color: #F2E9EC;
+                    border: 1px solid #4A1522; border-radius: 4px; padding: 7px 10px;
                     text-align: left;
-                }}
-                QPushButton:hover {{
-                    background: rgba(255, 23, 68, 0.22);
-                    border: 1px solid {C.PRI}; color: #ffffff;
-                }}
+                }
+                QPushButton:hover {
+                    background: #220B12;
+                    border: 1px solid #FF1E42; color: #FFFFFF;
+                }
+                QPushButton:disabled {
+                    background: #0E0508; color: #7A5C64;
+                    border: 1px solid #2A0D14;
+                }
+                QPushButton QLabel {
+                    color: #F2E9EC; background: transparent; border: none;
+                }
+                QPushButton:hover QLabel {
+                    color: #FFFFFF;
+                }
+                QPushButton:disabled QLabel {
+                    color: #7A5C64;
+                }
             """)
             b_lay = QHBoxLayout(b)
             b_lay.setContentsMargins(6, 0, 6, 0)
             b_lay.setSpacing(6)
+            ic = None
             if icon_name:
                 ic = QLabel()
                 ic.setPixmap(get_uicon(icon_name, color=C.PRI, size=14).pixmap(14, 14))
@@ -1075,12 +1089,15 @@ class WindowAudioMixin:
                 b_lay.addWidget(ic)
             t_lbl = QLabel(btn_txt)
             t_lbl.setFont(keena_font(8, True))
-            t_lbl.setStyleSheet("color: inherit; background: transparent; border: none;")
+            t_lbl.setStyleSheet("color: #F2E9EC; background: transparent; border: none;")
             b_lay.addWidget(t_lbl, stretch=1)
             arr = QLabel("›")
             arr.setFont(QFont("Montserrat", 12, QFont.Weight.Bold))
-            arr.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent; border: none;")
+            arr.setStyleSheet("color: #D69DA4; background: transparent; border: none;")
             b_lay.addWidget(arr)
+            b._title_label = t_lbl
+            b._icon_label = ic
+            b._arrow_label = arr
             b.clicked.connect(cb)
             return b
 

@@ -734,32 +734,56 @@ class WindowControlsMixin:
         s_btn = getattr(self, "_settings_brain_btn", None)
         if s_btn is not None:
             if is_local:
-                s_btn.setText(" BRAIN: 🖥 LOCAL OLLAMA (CLICK TO SWITCH TO GEMINI)")
-                s_btn.setIcon(get_uicon("cpu", color="#f4b942", size=15))
-                s_btn.setStyleSheet(f"""
-                    QPushButton {{
+                s_text = "  BRAIN: LOCAL OLLAMA (CLICK TO SWITCH TO GEMINI)"
+                icon_col = "#f4b942"
+                s_btn.setStyleSheet("""
+                    QPushButton {
                         background: #1a1200; color: #f4b942;
-                        border: 1px solid #f4b942; border-radius: 4px; padding: 8px 12px;
+                        border: 1px solid #f4b942; border-radius: 4px; padding: 7px 10px;
                         text-align: left;
-                    }}
-                    QPushButton:hover {{
+                    }
+                    QPushButton:hover {
                         background: #2a1c00; border: 1px solid #ffd166; color: #ffffff;
-                    }}
+                    }
+                    QPushButton QLabel {
+                        color: #f4b942; background: transparent; border: none;
+                    }
+                    QPushButton:hover QLabel {
+                        color: #ffffff;
+                    }
                 """)
             else:
-                s_btn.setText(" BRAIN: ☁ GEMINI LIVE (CLICK TO SWITCH TO LOCAL)")
-                s_btn.setIcon(get_uicon("cpu", color=C.PRI, size=15))
-                s_btn.setStyleSheet(f"""
-                    QPushButton {{
-                        background: {C.PANEL2}; color: {C.TEXT};
-                        border: 1px solid {C.BORDER_B}; border-radius: 4px; padding: 8px 12px;
+                s_text = "  BRAIN: GEMINI LIVE (CLICK TO SWITCH TO LOCAL)"
+                icon_col = C.PRI
+                s_btn.setStyleSheet("""
+                    QPushButton {
+                        background: #14070B; color: #F2E9EC;
+                        border: 1px solid #4A1522; border-radius: 4px; padding: 7px 10px;
                         text-align: left;
-                    }}
-                    QPushButton:hover {{
-                        background: rgba(255, 23, 68, 0.25);
-                        border: 1px solid {C.PRI}; color: #ffffff;
-                    }}
+                    }
+                    QPushButton:hover {
+                        background: #220B12;
+                        border: 1px solid #FF1E42; color: #ffffff;
+                    }
+                    QPushButton QLabel {
+                        color: #F2E9EC; background: transparent; border: none;
+                    }
+                    QPushButton:hover QLabel {
+                        color: #ffffff;
+                    }
                 """)
+
+            title_lbl = getattr(s_btn, "_title_label", None)
+            icon_lbl = getattr(s_btn, "_icon_label", None)
+            if title_lbl is not None:
+                s_btn.setText("")
+                title_lbl.setText(s_text)
+                title_lbl.setStyleSheet(f"color: {'#f4b942' if is_local else '#F2E9EC'}; background: transparent; border: none;")
+                if icon_lbl is not None:
+                    icon_lbl.setPixmap(get_uicon("cpu", color=icon_col, size=14).pixmap(14, 14))
+            else:
+                s_btn.setText(s_text)
+                s_btn.setIcon(get_uicon("cpu", color=icon_col, size=15))
 
     def _toggle_brain_engine(self):
         """Switch between Gemini Live and Local Brain (Ollama), asking for model choice."""

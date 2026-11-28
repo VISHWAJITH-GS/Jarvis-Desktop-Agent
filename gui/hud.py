@@ -949,14 +949,21 @@ class HudCanvas(QWidget):
         y = cy + 150
         now = time.time()
         live = [(text, born) for text, born in self.cards if now - born <= 7]
-        p.setFont(keena_font(8, True, 1.5))
+        p.setFont(keena_font(7.5, True, 0.8))
+        fm = p.fontMetrics()
+        max_w = max(140.0, w_d - 24)
         for text, born in live:
             age = now - born
             fade = max(0.0, min(1.0, 7 - age)) * min(1.0, age * 5)
             p.setOpacity(fade)
-            label = f"[ ✓ {text.upper()[:28]} ]"
+            upper_txt = text.upper()
+            label = f"[ ✓ {upper_txt} ]"
+            if fm.horizontalAdvance(label) > max_w:
+                bracket_w = fm.horizontalAdvance("[ ✓  ]")
+                inner = fm.elidedText(upper_txt, Qt.TextElideMode.ElideRight, max(40, int(max_w - bracket_w)))
+                label = f"[ ✓ {inner} ]"
             p.setPen(rgba(accent, 230))
-            p.drawText(QRectF(0, y, w_d, 16), Qt.AlignmentFlag.AlignCenter, label)
+            p.drawText(QRectF(8, y, max(40, w_d - 16), 16), Qt.AlignmentFlag.AlignCenter, label)
             y += 18
         p.setOpacity(1.0)
 
