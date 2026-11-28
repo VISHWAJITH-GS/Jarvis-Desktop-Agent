@@ -199,6 +199,30 @@ def phone_link(parameters: dict | None = None, player: Any = None, **kwargs: Any
             confirmed=bool(params.get("confirmed", False)),
         )
 
+    # Phase 5: Photos, Apps & Optional Watcher
+    if action == "list_recent_photos":
+        return drv.op_list_recent_photos(limit=int(params.get("limit", 20)))
+    if action == "copy_photo":
+        return drv.op_copy_photo(index=int(params.get("index", 0)))
+    if action == "save_photo":
+        return drv.op_save_photo(index=int(params.get("index", 0)), folder=params.get("folder"))
+    if action == "share_photo":
+        return drv.op_share_photo(index=int(params.get("index", 0)), confirmed=bool(params.get("confirmed", False)))
+    if action == "delete_photo":
+        return drv.op_delete_photo(index=int(params.get("index", 0)), confirmed=bool(params.get("confirmed", False)))
+    if action == "list_apps":
+        return drv.op_list_apps()
+    if action == "open_app":
+        return drv.op_open_app(name=str(params.get("name", "")))
+    if action == "open_phone_screen":
+        return drv.op_open_phone_screen()
+    if action == "watcher_start":
+        return drv.op_watcher_start(poll_interval_sec=float(params.get("poll_interval_sec", 4.0)), player=player)
+    if action == "watcher_stop":
+        return drv.op_watcher_stop()
+    if action == "watcher_status":
+        return drv.op_watcher_status()
+
     return drv.unsupported_result(action, f"Action '{action}' is scheduled for a subsequent phase.")
 
 

@@ -1494,3 +1494,309 @@ def op_dial_via_tel_uri(number: str, confirmed: bool = False) -> str:
         return outcome.unverified("dial_via_tel_uri", "Opened tel: URI; call state cannot be verified via URI.")
     except Exception as exc:
         return outcome.failed("dial_via_tel_uri", f"Failed to open tel: URI: {exc}")
+
+
+# ── Phase 5 Operations: Photos, Apps (Android) & Optional Watcher ─────────────
+
+def _require_android(action: str, win: Any) -> Optional[str]:
+    caps = probe_capabilities(window=win)
+    if caps.get("linked_os") == "iphone_or_limited_android" and not caps.get("sections", {}).get("photos"):
+        return unsupported_result(action, f"{action} is only supported on Android devices.")
+    return None
+
+
+def op_list_recent_photos(limit: int = 20, window: Optional[Any] = None) -> str:
+    if not _IS_WINDOWS:
+        return unsupported_result("list_recent_photos", "Phone Link is only supported on Windows.")
+
+    with _UIA_LOCK, _ForegroundGuard(restore=True):
+        win = window or find_phone_link_window(timeout=3.0)
+        if win is None:
+            return outcome.failed("list_recent_photos", "Phone Link window is not open.")
+        blocked = _require_android("list_recent_photos", win)
+        if blocked:
+            return blocked
+
+        try:
+            grid, _ = resolve_control(win, "photos_grid", timeout=2.5)
+        except MissingSelectorError as exc:
+            return outcome.failed("list_recent_photos", str(exc), missing_selector=exc.selector_key)
+
+        items = _get_children(grid)[: max(1, min(int(limit), 50))]
+        meta = [
+            {"index": i, "label": scrub_pii(_elem_info(node)["name"] or f"Photo {i}")}
+            for i, node in enumerate(items)
+        ]
+        record_audit("list_recent_photos", status_str="done")
+        return outcome.done("list_recent_photos", count=len(meta), photos=json.dumps(meta, ensure_ascii=False))
+
+
+def op_copy_photo(index: int = 0, window: Optional[Any] = None) -> str:
+    if not _IS_WINDOWS:
+        return unsupported_result("copy_photo", "Phone Link is only supported on Windows.")
+
+    with _UIA_LOCK, _ForegroundGuard(restore=True):
+        win = window or find_phone_link_window(timeout=3.0)
+        if win is None:
+            return outcome.failed("copy_photo", "Phone Link window is not open.")
+        blocked = _require_android("copy_photo", win)
+        if blocked:
+            return blocked
+
+        try:
+            grid, _ = resolve_control(win, "photos_grid", timeout=2.5)
+        except MissingSelectorError as exc:
+            return outcome.failed("copy_photo", str(exc), missing_selector=exc.selector_key)
+
+        items = _get_children(grid)
+        idx = int(index)
+        if not (0 <= idx < len(items)):
+            return outcome.failed("copy_photo", f"Photo index {idx} out of range (0..{max(0, len(items)-1)}).")
+
+        _click_elem(items[idx])
+        time.sleep(0.1)
+        _send_shortcut(win, "^c")
+        record_audit("copy_photo", contact_alias=f"idx:{idx}", status_str="done")
+        return outcome.done("copy_photo", index=idx, verified=True)
+
+
+def op_save_photo(index: int = 0, folder: Optional[str] = None, window: Optional[Any] = None) -> str:
+    if not _IS_WINDOWS:
+        return unsupported_result("save_photo", "Phone Link is only supported on Windows.")
+
+    dest_dir = Path(folder).expanduser().resolve() if folder else (Path.home() / "Pictures").resolve()
+    allowed = any(dest_dir == r or dest_dir.is_relative_to(r) for r in _approved_folders())
+    if not allowed:
+        return outcome.failed("save_photo", "Destination folder must be inside approved folders (Pictures, Downloads, Desktop).")
+
+    with _UIA_LOCK, _ForegroundGuard(restore=True):
+        win = window or find_phone_link_window(timeout=3.0)
+        if win is None:
+            return outcome.failed("save_photo", "Phone Link window is not open.")
+        blocked = _require_android("save_photo", win)
+        if blocked:
+            return blocked
+
+        try:
+            grid, _ = resolve_control(win, "photos_grid", timeout=2.5)
+        except MissingSelectorError as exc:
+            return outcome.failed("save_photo", str(exc), missing_selector=exc.selector_key)
+
+        items = _get_children(grid)
+        idx = int(index)
+        if not (0 <= idx < len(items)):
+            return outcome.failed("save_photo", f"Photo index {idx} out of range.")
+
+        _click_elem(items[idx])
+        time.sleep(0.1)
+        try:
+            save_btn, _ = resolve_control(win, "photos_save_btn", timeout=2.0)
+            _click_elem(save_btn)
+        except MissingSelectorError:
+            _send_shortcut(win, "^s")
+
+        record_audit("save_photo", contact_alias=f"idx:{idx}", status_str="unverified")
+        return outcome.unverified(
+            "save_photo",
+            f"Triggered Save for photo {idx} targeting '{dest_dir}'; confirm file dialog if prompted.",
+            folder=str(dest_dir),
+        )
+
+
+def op_share_photo(index: int = 0, confirmed: bool = False, window: Optional[Any] = None) -> str:
+    if not _IS_WINDOWS:
+        return unsupported_result("share_photo", "Phone Link is only supported on Windows.")
+    if not confirmed:
+        return outcome.ask("share_photo", f"Confirm sharing photo at index {index}?")
+
+    with _UIA_LOCK, _ForegroundGuard(restore=True):
+        win = window or find_phone_link_window(timeout=3.0)
+        if win is None:
+            return outcome.failed("share_photo", "Phone Link window is not open.")
+        blocked = _require_android("share_photo", win)
+        if blocked:
+            return blocked
+        _send_shortcut(win, "^h")
+        record_audit("share_photo", contact_alias=f"idx:{index}", status_str="unverified")
+        return outcome.unverified("share_photo", f"Opened Windows Share sheet for photo {index}.")
+
+
+def op_delete_photo(index: int = 0, confirmed: bool = False, window: Optional[Any] = None) -> str:
+    if not _IS_WINDOWS:
+        return unsupported_result("delete_photo", "Phone Link is only supported on Windows.")
+    if not confirmed:
+        return outcome.ask("delete_photo", f"Confirm permanently deleting photo at index {index}? This cannot be undone.")
+
+    with _UIA_LOCK, _ForegroundGuard(restore=True):
+        win = window or find_phone_link_window(timeout=3.0)
+        if win is None:
+            return outcome.failed("delete_photo", "Phone Link window is not open.")
+        blocked = _require_android("delete_photo", win)
+        if blocked:
+            return blocked
+
+        try:
+            grid, _ = resolve_control(win, "photos_grid", timeout=2.5)
+        except MissingSelectorError as exc:
+            return outcome.failed("delete_photo", str(exc), missing_selector=exc.selector_key)
+
+        items_before = _get_children(grid)
+        idx = int(index)
+        if not (0 <= idx < len(items_before)):
+            return outcome.failed("delete_photo", f"Photo index {idx} out of range.")
+
+        _click_elem(items_before[idx])
+        time.sleep(0.1)
+        _send_shortcut(win, "{DELETE}")
+        time.sleep(0.2)
+        items_after = _get_children(grid)
+        if len(items_after) < len(items_before):
+            record_audit("delete_photo", contact_alias=f"idx:{idx}", status_str="done")
+            return outcome.done(
+                "delete_photo",
+                index=idx,
+                remaining=len(items_after),
+                undoable=False,
+                note="Photo deleted (not undoable).",
+                verified=True,
+            )
+        record_audit("delete_photo", contact_alias=f"idx:{idx}", status_str="unverified")
+        return outcome.unverified("delete_photo", "Sent Delete key, but photo count did not decrease.")
+
+
+def op_list_apps(window: Optional[Any] = None) -> str:
+    if not _IS_WINDOWS:
+        return unsupported_result("list_apps", "Phone Link is only supported on Windows.")
+
+    with _UIA_LOCK, _ForegroundGuard(restore=True):
+        win = window or find_phone_link_window(timeout=3.0)
+        if win is None:
+            return outcome.failed("list_apps", "Phone Link window is not open.")
+        blocked = _require_android("list_apps", win)
+        if blocked:
+            return blocked
+
+        try:
+            apps_list, _ = resolve_control(win, "apps_list", timeout=2.5)
+        except MissingSelectorError as exc:
+            return outcome.failed("list_apps", str(exc), missing_selector=exc.selector_key)
+
+        apps = [_elem_info(n)["name"] for n in _get_children(apps_list) if _elem_info(n)["name"]]
+        record_audit("list_apps", status_str="done")
+        return outcome.done("list_apps", count=len(apps), apps=json.dumps(apps[:50], ensure_ascii=False))
+
+
+def op_open_app(name: str, window: Optional[Any] = None) -> str:
+    if not _IS_WINDOWS:
+        return unsupported_result("open_app", "Phone Link is only supported on Windows.")
+    if not name or not name.strip():
+        return outcome.failed("open_app", "Missing required parameter 'name'.")
+
+    with _UIA_LOCK, _ForegroundGuard(restore=False):
+        win = window or find_phone_link_window(timeout=3.0)
+        if win is None:
+            return outcome.failed("open_app", "Phone Link window is not open.")
+        blocked = _require_android("open_app", win)
+        if blocked:
+            return blocked
+
+        try:
+            apps_list, _ = resolve_control(win, "apps_list", timeout=2.5)
+        except MissingSelectorError as exc:
+            return outcome.failed("open_app", str(exc), missing_selector=exc.selector_key)
+
+        q = name.strip().lower()
+        for node in _get_children(apps_list):
+            aname = _elem_info(node)["name"]
+            if q in aname.lower():
+                _click_elem(node)
+                record_audit("open_app", contact_alias=aname, status_str="done")
+                return outcome.done("open_app", app=aname, verified=True)
+        return outcome.failed("open_app", f"Mobile app '{name}' not found in Phone Link.")
+
+
+def op_open_phone_screen(window: Optional[Any] = None) -> str:
+    if not _IS_WINDOWS:
+        return unsupported_result("open_phone_screen", "Phone Link is only supported on Windows.")
+
+    with _UIA_LOCK, _ForegroundGuard(restore=False):
+        win = window or find_phone_link_window(timeout=3.0)
+        if win is None:
+            return outcome.failed("open_phone_screen", "Phone Link window is not open.")
+        blocked = _require_android("open_phone_screen", win)
+        if blocked:
+            return blocked
+
+        try:
+            btn, _ = resolve_control(win, "apps_open_screen_btn", timeout=2.0)
+            _click_elem(btn)
+        except MissingSelectorError:
+            _send_shortcut(win, "^p")
+
+        record_audit("open_phone_screen", status_str="done")
+        return outcome.done("open_phone_screen", verified=True)
+
+
+# ── Optional Low-CPU UIA Watcher (Off by Default) ─────────────────────────────
+
+_WATCHER_STATE: dict[str, Any] = {
+    "running": False,
+    "thread": None,
+    "stop_event": threading.Event(),
+    "last_call_state": "idle",
+    "last_notif_count": 0,
+}
+
+
+def _watcher_loop(poll_sec: float, player: Any = None) -> None:
+    stop_ev: threading.Event = _WATCHER_STATE["stop_event"]
+    while not stop_ev.is_set():
+        try:
+            if config_manager.is_phone_link_feature_enabled("watcher"):
+                win = find_phone_link_window(timeout=0.5)
+                if win is not None:
+                    with _UIA_LOCK:
+                        cs = _detect_call_state(win)
+                        if cs == "incoming" and _WATCHER_STATE["last_call_state"] != "incoming":
+                            if player and hasattr(player, "write_log"):
+                                player.write_log("SYS: Phone Link incoming call detected.")
+                        _WATCHER_STATE["last_call_state"] = cs
+        except Exception:
+            pass
+        stop_ev.wait(max(2.0, poll_sec))
+    _WATCHER_STATE["running"] = False
+
+
+def op_watcher_start(poll_interval_sec: float = 4.0, player: Any = None) -> str:
+    if not _IS_WINDOWS:
+        return unsupported_result("watcher_start", "Phone Link is only supported on Windows.")
+    if _WATCHER_STATE["running"]:
+        return outcome.done("watcher_start", running=True, already_running=True)
+
+    _WATCHER_STATE["stop_event"].clear()
+    t = threading.Thread(
+        target=_watcher_loop,
+        args=(max(2.0, float(poll_interval_sec)), player),
+        daemon=True,
+        name="PhoneLinkWatcher",
+    )
+    _WATCHER_STATE["thread"] = t
+    _WATCHER_STATE["running"] = True
+    t.start()
+    record_audit("watcher_start", status_str="done")
+    return outcome.done("watcher_start", running=True, poll_interval_sec=max(2.0, float(poll_interval_sec)))
+
+
+def op_watcher_stop() -> str:
+    _WATCHER_STATE["stop_event"].set()
+    _WATCHER_STATE["running"] = False
+    record_audit("watcher_stop", status_str="done")
+    return outcome.done("watcher_stop", running=False)
+
+
+def op_watcher_status() -> str:
+    return outcome.done(
+        "watcher_status",
+        running=bool(_WATCHER_STATE["running"]),
+        last_call_state=_WATCHER_STATE["last_call_state"],
+    )
