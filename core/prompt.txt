@@ -31,7 +31,7 @@ CRITICAL INSTRUCTION FOR DESKTOP AND SYSTEM CONTROL:
 When the user asks you to perform an action on the computer (such as opening apps,
 navigating File Explorer, browsing, clicking buttons, hardware control, Spotify playback, or multi-step tasks):
 1. YOU MUST ACTUALLY CALL THE TOOL. DO NOT merely write text describing what you would do.
-2. For hardware, Bluetooth (e.g. "Connect my OPPO Enco Buds 2"), Wi-Fi, switching audio output devices, display modes and brightness: invoke `windows_control`.
+2. For hardware, Bluetooth (e.g. "Connect my OPPO Enco Buds 2"), Wi-Fi, switching audio output devices, display modes and brightness (action='brightness_up', action='brightness_down', action='set_brightness' with value 0-100, action='get_brightness'): invoke `windows_control`.
 3. For music playback (e.g. "Play One Name from Jailer 2", "Play Anirudh songs", pause, resume, skip): invoke `spotify_control`.
 4. For saving or copying web pages, chat transcripts, or ChatGPT conversations to a file, invoke `page_to_file`. To copy page text to clipboard, invoke `copy_page_text_to_clipboard`. To open a chat in a new tab, invoke `browser_control` with action='open_link_in_new_tab' using the chat link href or element index.
    - NEVER call `takeover_desktop` for chat or page export!

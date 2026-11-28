@@ -715,10 +715,15 @@ def forget_wifi(ssid: str) -> dict:
 
 def get_brightness() -> Optional[int]:
     """Get current primary screen brightness (0-100%)."""
-    ps = "(Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightness).CurrentBrightness"
+    ps = "(Get-WmiObject -Namespace root/wmi -Class WmiMonitorBrightness).CurrentBrightness"
     code, stdout, _ = _run_ps(ps, timeout=5)
-    if code == 0 and stdout.isdigit():
-        return int(stdout)
+    if code != 0 or not stdout:
+        ps = "(Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightness).CurrentBrightness"
+        code, stdout, _ = _run_ps(ps, timeout=5)
+    if stdout:
+        nums = re.findall(r"\b\d+\b", stdout)
+        if nums:
+            return max(0, min(100, int(nums[0])))
     return None
 
 
@@ -726,7 +731,7 @@ def set_brightness(level: int) -> dict:
     """Set primary screen brightness (0-100%)."""
     lvl = max(0, min(100, int(level)))
     before = get_brightness()
-    ps = f"(Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightnessMethods).WmiSetBrightness(1, {lvl})"
+    ps = f"(Get-WmiObject -Namespace root/wmi -Class WmiMonitorBrightnessMethods).WmiSetBrightness(1, {lvl})"
     code, stdout, stderr = _run_ps(ps, timeout=5)
     now = get_brightness()
     verified = now is not None and abs(now - lvl) <= 5
@@ -1600,10 +1605,60 @@ def windows_control(parameters: dict = None, player=None, **kwargs) -> str:
         return outcome.done("windows_control", playback=res_out, recording=res_in)
 
     # Display & Power
-    if action in ("set_brightness", "brightness"):
-        lvl = int(value or target or 50)
+    if action in (
+        "set_brightness",
+        "brightness",
+        "adjust_brightness",
+        "change_brightness",
+        "brightness_up",
+        "brightness_down",
+        "increase_brightness",
+        "decrease_brightness",
+        "brighter",
+        "dimmer",
+        "dim",
+    ):
+        curr = get_brightness()
+        if curr is None:
+            curr = 50
+
+        if action in ("brightness_up", "increase_brightness", "brighter", "raise_brightness"):
+            delta = 10
+            raw = str(value or target or "").replace("%", "").strip()
+            nums = re.findall(r"\d+", raw)
+            if nums:
+                delta = int(nums[-1])
+            lvl = min(100, curr + delta)
+        elif action in ("brightness_down", "decrease_brightness", "dimmer", "dim", "lower_brightness"):
+            delta = 10
+            raw = str(value or target or "").replace("%", "").strip()
+            nums = re.findall(r"\d+", raw)
+            if nums:
+                delta = int(nums[-1])
+            lvl = max(0, curr - delta)
+        else:
+            raw = str(value if value is not None else (target if target is not None else "50")).replace("%", "").strip()
+            rel_m = re.search(r"([+-]\s*\d+)", raw)
+            if rel_m:
+                delta = int(rel_m.group(1).replace(" ", ""))
+                lvl = max(0, min(100, curr + delta))
+            else:
+                nums = re.findall(r"\d+", raw)
+                if nums:
+                    lvl = max(0, min(100, int(nums[-1])))
+                else:
+                    lvl = 50
         res = set_brightness(lvl)
+        if player and hasattr(player, "show_content"):
+            player.show_content("Display Brightness", res.get("message", f"Brightness set to {lvl}%."))
         return outcome.done("windows_control", **res)
+
+    if action in ("get_brightness", "check_brightness", "brightness_status", "brightness_get"):
+        b = get_brightness()
+        msg = f"Current screen brightness is {b}%." if b is not None else "Screen brightness could not be determined."
+        if player and hasattr(player, "show_content"):
+            player.show_content("Brightness Status", msg)
+        return outcome.done("windows_control", brightness=b, verified=True, message=msg)
 
     if action in ("set_display_mode", "display_mode"):
         res = set_display_mode(target or "extend")
@@ -1627,7 +1682,7 @@ TOOL = {
         "set_audio_input to switch microphone e.g. 'OPPO Enco Buds2' or 'laptop microphone', "
         "set_audio_output to switch speakers e.g. 'OPPO Enco Buds2' or 'laptop speakers', "
         "set_audio_device to switch both, reset_audio_devices to use Windows default audio devices). "
-        "Display (brightness, display modes duplicate/extend/pc_only), and battery status. "
+        "Display (brightness_up, brightness_down, set_brightness 0-100, get_brightness, display modes duplicate/extend/pc_only), and battery status. "
         "Reading status never needs confirmation; changing connection/state executes immediately or asks for confirmation when switching."
     ),
     "brief": "Hardware control: Wi-Fi management, Bluetooth management, volume, app volume, mute, audio output switching, brightness, display modes.",
@@ -1641,7 +1696,7 @@ TOOL = {
                     "get_bluetooth_status | list_bluetooth_devices | connect_bluetooth_device | disconnect_bluetooth_device | set_bluetooth_enabled | pair_bluetooth_device | "
                     "set_volume | get_volume | volume_up | volume_down | set_app_volume | increase_app_volume | decrease_app_volume | list_app_volumes | mute | unmute | mute_jarvis | unmute_jarvis | minimize_jarvis | maximize_jarvis | manage_memory | manage_actions | "
                     "list_audio_devices | list_audio_input_devices | list_audio_output_devices | get_audio_status | set_audio_input | set_audio_output | set_audio_device | reset_audio_devices | "
-                    "set_brightness | set_display_mode | get_power_status"
+                    "brightness_up | brightness_down | set_brightness | get_brightness | set_display_mode | get_power_status"
                 ),
             },
             "app": {

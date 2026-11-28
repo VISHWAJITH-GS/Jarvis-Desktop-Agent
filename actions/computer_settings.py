@@ -970,6 +970,10 @@ ACTION_MAP: dict[str, callable] = {
     "toggle_mute": volume_mute,
     "brightness_up": brightness_up,
     "brightness_down": brightness_down,
+    "increase_brightness": brightness_up,
+    "decrease_brightness": brightness_down,
+    "brighter": brightness_up,
+    "dimmer": brightness_down,
     "sleep_display": sleep_display,
     "screen_off": sleep_display,
     "pause_video": pause_video,
@@ -1139,7 +1143,16 @@ _ALIASES = {
     "restart": ("reboot", "restart the pc"),
 }
 
-_VALUE_ACTIONS = {"volume_set", "type_text", "press_key", "reload_n", "scroll_up", "scroll_down"}
+_VALUE_ACTIONS = {
+    "volume_set",
+    "brightness_set",
+    "set_brightness",
+    "type_text",
+    "press_key",
+    "reload_n",
+    "scroll_up",
+    "scroll_down",
+}
 
 
 def _normalise(text: str) -> str:
@@ -1168,6 +1181,9 @@ def _detect_action(description: str) -> dict:
     low_canon = re.sub(r"wi[- ]?fi", "wifi", low)
 
     # Wi-Fi status check intent vs toggle intent
+    m_b = re.search(r"(?:set\s+)?brightness\s+(?:to\s+)?(\d+)", low)
+    if m_b:
+        return {"action": "set_brightness", "value": int(m_b.group(1))}
     if "wifi" in low_canon:
         if any(
             w in low_canon
@@ -1478,6 +1494,25 @@ def computer_settings(
             return outcome.done("computer_settings", wanted=action, volume=now, verified=True)
         except Exception as e:
             return outcome.failed("computer_settings", f"the volume could not be set: {e}", wanted=action)
+
+    if action in ("brightness_set", "set_brightness"):
+        try:
+            target = int(value if value is not None else 50)
+            before = brightness_get()
+            brightness_set(target)
+            if before is not None:
+                push_undo(f"brightness {before}% → {target}%", lambda b=before: (brightness_set(b), f"Back to {b}%.")[1])
+            now = brightness_get()
+            if now is None:
+                return outcome.unverified(
+                    "computer_settings",
+                    "this system does not report its brightness, so the new level could not be read back",
+                    wanted=action,
+                    asked=target,
+                )
+            return outcome.done("computer_settings", wanted=action, brightness=now, verified=True)
+        except Exception as e:
+            return outcome.failed("computer_settings", f"the brightness could not be set: {e}", wanted=action)
 
     if action in ("type_text", "write_on_screen", "type", "write"):
         text = str(value or params.get("text", "")).strip()
