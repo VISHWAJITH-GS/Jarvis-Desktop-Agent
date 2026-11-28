@@ -7,7 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased] - Phase 1: Action Inspector, Audit Store & Metadata Routing
+## [Unreleased] - Phase 2: Files, Clipboard History, Notes, and Conversation Search
+
+### Added
+- **Clipboard Manager (`actions/clipboard_manager.py`)**:
+  - Action-parameterized tool supporting `capture`, `paste`, `history`, `search`, `pin`, `pinned`, and `clear`.
+  - SQLite WAL persistent storage in `memory/clipboard.db`.
+  - Automated secret detection and masking using regex heuristics (`[REDACTED_SECRET]`) for JWTs, API tokens, passwords, and private keys.
+  - Reversible action support integrated with `core.undo.UndoStack`.
+- **Notes & Scratchpad Manager (`plugins/notes_manager.py`)**:
+  - Full CRUD and tagging support for user notes and fast ephemeral scratchpads in `memory/notes.db`.
+  - Daily note management (`daily_get`, `daily_append`) with markdown headers and timestamps.
+- **Conversation Search Engine (`plugins/conversation_search.py`)**:
+  - SQLite FTS5 full-text indexing and search for past conversation transcripts in `memory/conversations.db`.
+  - Resilient query fallback with parameterized substring matching if FTS syntax errors occur.
+- **Testing**:
+  - Unit tests in `tests/test_phase2_tools.py` verifying secret masking, clipboard lifecycle, notes CRUD, and conversation FTS search.
+
+---
+
+## [1.2.0] - 2026-11-28 - Phase 1: Action Inspector, Audit Store & Metadata Routing
 
 ### Added
 - **Action Inspector Tool (`actions/action_inspector.py`)**:

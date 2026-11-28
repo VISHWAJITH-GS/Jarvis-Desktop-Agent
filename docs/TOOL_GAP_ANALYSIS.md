@@ -57,13 +57,13 @@ Following **Rule 7**, all 231 capabilities are consolidated into **35–45 actio
 | `chrome_run_js` | Execute JavaScript in the current Chrome tab. | **partial** | `actions/browser_session.py` | `action` | Cross-platform | `SENSITIVE` | websockets, requests |
 | `chrome_click` | Click an element in Chrome by CSS selector. | **partial** | `actions/browser_session.py` | `action` | Cross-platform | `NORMAL` | websockets, requests |
 | `chrome_type` | Type text into a form field in Chrome. | **partial** | `actions/browser_session.py` | `action` | Cross-platform | `NORMAL` | websockets, requests |
-| `clipboard_capture` | Snapshot the current clipboard text into the clipboard history. | **missing** | `actions/clipboard_manager.py` | `action` | Windows/macOS/Linux | `READ_ONLY` | pyperclip, sqlite3 |
-| `clipboard_history` | Browse or search the clipboard history. | **missing** | `actions/clipboard_manager.py` | `action` | Windows/macOS/Linux | `READ_ONLY` | pyperclip, sqlite3 |
-| `clipboard_pin` | Pin a text snippet for quick recall later. | **missing** | `actions/clipboard_manager.py` | `action` | Windows/macOS/Linux | `READ_ONLY` | pyperclip, sqlite3 |
-| `clipboard_pinned` | List all pinned clipboard snippets. | **missing** | `actions/clipboard_manager.py` | `action` | Windows/macOS/Linux | `READ_ONLY` | pyperclip, sqlite3 |
-| `clipboard_paste` | Copy a history entry back to the clipboard. | **missing** | `actions/clipboard_manager.py` | `action` | Windows/macOS/Linux | `NORMAL` | pyperclip, sqlite3 |
-| `clipboard_search` | Search clipboard history or list recent entries. | **missing** | `actions/clipboard_manager.py` | `action` | Cross-platform | `READ_ONLY` | sqlite3 |
-| `clipboard_get` | Get a specific clipboard entry by ID. | **missing** | `actions/clipboard_manager.py` | `action` | Cross-platform | `READ_ONLY` | sqlite3 |
+| `clipboard_capture` | Snapshot the current clipboard text into the clipboard history. | **exists** | `actions/clipboard_manager.py` | `action` | Windows/macOS/Linux | `READ_ONLY` | pyperclip, sqlite3 |
+| `clipboard_history` | Browse or search the clipboard history. | **exists** | `actions/clipboard_manager.py` | `action` | Windows/macOS/Linux | `READ_ONLY` | pyperclip, sqlite3 |
+| `clipboard_pin` | Pin a text snippet for quick recall later. | **exists** | `actions/clipboard_manager.py` | `action` | Windows/macOS/Linux | `READ_ONLY` | pyperclip, sqlite3 |
+| `clipboard_pinned` | List all pinned clipboard snippets. | **exists** | `actions/clipboard_manager.py` | `action` | Windows/macOS/Linux | `READ_ONLY` | pyperclip, sqlite3 |
+| `clipboard_paste` | Copy a history entry back to the clipboard. | **exists** | `actions/clipboard_manager.py` | `action` | Windows/macOS/Linux | `NORMAL` | pyperclip, sqlite3 |
+| `clipboard_search` | Search clipboard history or list recent entries. | **exists** | `actions/clipboard_manager.py` | `action` | Cross-platform | `READ_ONLY` | sqlite3 |
+| `clipboard_get` | Get a specific clipboard entry by ID. | **exists** | `actions/clipboard_manager.py` | `action` | Cross-platform | `READ_ONLY` | sqlite3 |
 | `codereview_diff` | Show git diff (working tree or staged) for a repository. | **partial** | `actions/dev_tools.py` | `action` | Cross-platform | `READ_ONLY` | git |
 | `codereview_log` | Show recent git commit log. | **partial** | `actions/dev_tools.py` | `action` | Cross-platform | `READ_ONLY` | git |
 | `codereview_blame` | Run git blame on a file, optionally for a line range. | **partial** | `actions/dev_tools.py` | `action` | Cross-platform | `READ_ONLY` | git |
@@ -77,8 +77,8 @@ Following **Rule 7**, all 231 capabilities are consolidated into **35–45 actio
 | `ui_click` | Click a control from the latest ui_snapshot. | **partial** | `actions/windows_uia.py` | `action` | Windows | `SENSITIVE` | uiautomation / ctypes |
 | `ui_type` | Type text into a control from ui_snapshot, or at the current cursor. Never use for passwor | **partial** | `actions/windows_uia.py` | `action` | Windows | `SENSITIVE` | uiautomation / ctypes |
 | `ui_hotkey` | Press a key or keyboard shortcut in the active window. | **partial** | `actions/windows_uia.py` | `action` | Windows | `SENSITIVE` | uiautomation / ctypes |
-| `conversation_search` | Search past conversations for a topic, decision, or phrase. | **missing** | `plugins/conversation_search.py` | `plugin` | Cross-platform | `READ_ONLY` | sqlite3 |
-| `conversation_list` | List recent conversations by title and date. | **missing** | `plugins/conversation_search.py` | `plugin` | Cross-platform | `READ_ONLY` | sqlite3 |
+| `conversation_search` | Search past conversations for a topic, decision, or phrase. | **exists** | `plugins/conversation_search.py` | `plugin` | Cross-platform | `READ_ONLY` | sqlite3 |
+| `conversation_list` | List recent conversations by title and date. | **exists** | `plugins/conversation_search.py` | `plugin` | Cross-platform | `READ_ONLY` | sqlite3 |
 | `credential_check_password` | Check password strength locally: entropy, common-pattern detection, suggestions. The passw | **partial** | `actions/security_privacy.py` | `action` | Cross-platform | `READ_ONLY` | hashlib, requests |
 | `credential_check_reuse` | Check if a password appears in known data breaches via HIBP Pwned Passwords (k-anonymity:  | **partial** | `actions/security_privacy.py` | `action` | Cross-platform | `READ_ONLY` | hashlib, requests |
 | `credential_generate` | Generate a cryptographically secure random password. | **partial** | `actions/security_privacy.py` | `action` | Cross-platform | `READ_ONLY` | hashlib, requests |
@@ -154,12 +154,12 @@ Following **Rule 7**, all 231 capabilities are consolidated into **35–45 actio
 | `music_search` | Search for music across YouTube Music. Returns song/album/artist results. | **exists** | `actions/spotify_control.py` | `action` | Cross-platform | `READ_ONLY` | spotipy, lyricsgenius |
 | `music_play` | Play a song: search by name or open a direct YouTube Music / Spotify URL. | **exists** | `actions/spotify_control.py` | `action` | Cross-platform | `SENSITIVE` | spotipy, lyricsgenius |
 | `music_lyrics` | Fetch song lyrics by artist and title. | **partial** | `actions/spotify_control.py` | `action` | Cross-platform | `READ_ONLY` | spotipy, lyricsgenius |
-| `note_add` | Save a quick note with optional tags. | **missing** | `plugins/notes_manager.py` | `plugin` | Cross-platform | `READ_ONLY` | sqlite3 |
-| `note_list` | List recent notes, optionally filtered by tag. | **missing** | `plugins/notes_manager.py` | `plugin` | Cross-platform | `READ_ONLY` | sqlite3 |
-| `note_search` | Search notes by text content. | **missing** | `plugins/notes_manager.py` | `plugin` | Cross-platform | `READ_ONLY` | sqlite3 |
-| `note_delete` | Delete a note by its ID. | **missing** | `plugins/notes_manager.py` | `plugin` | Cross-platform | `NORMAL` | sqlite3 |
-| `note_today` | Get or create today's daily note. | **missing** | `plugins/notes_manager.py` | `plugin` | Cross-platform | `READ_ONLY` | sqlite3 |
-| `note_daily_append` | Append text to today's daily note under a section. | **missing** | `plugins/notes_manager.py` | `plugin` | Cross-platform | `NORMAL` | sqlite3 |
+| `note_add` | Save a quick note with optional tags. | **exists** | `plugins/notes_manager.py` | `plugin` | Cross-platform | `READ_ONLY` | sqlite3 |
+| `note_list` | List recent notes, optionally filtered by tag. | **exists** | `plugins/notes_manager.py` | `plugin` | Cross-platform | `READ_ONLY` | sqlite3 |
+| `note_search` | Search notes by text content. | **exists** | `plugins/notes_manager.py` | `plugin` | Cross-platform | `READ_ONLY` | sqlite3 |
+| `note_delete` | Delete a note by its ID. | **exists** | `plugins/notes_manager.py` | `plugin` | Cross-platform | `NORMAL` | sqlite3 |
+| `note_today` | Get or create today's daily note. | **exists** | `plugins/notes_manager.py` | `plugin` | Cross-platform | `READ_ONLY` | sqlite3 |
+| `note_daily_append` | Append text to today's daily note under a section. | **exists** | `plugins/notes_manager.py` | `plugin` | Cross-platform | `NORMAL` | sqlite3 |
 | `persona_get` | Get the current persona and standing instructions. | **partial** | `plugins/persona_presets.py` | `plugin` | Cross-platform | `READ_ONLY` | json |
 | `persona_set` | Update the persona and standing instructions. | **partial** | `plugins/persona_presets.py` | `plugin` | Cross-platform | `SENSITIVE` | json |
 | `persona_append` | Add a standing instruction to the persona. | **partial** | `plugins/persona_presets.py` | `plugin` | Cross-platform | `NORMAL` | json |
@@ -192,11 +192,11 @@ Following **Rule 7**, all 231 capabilities are consolidated into **35–45 actio
 | `schedule_create` | Create a timer, reminder, or recurring task. | **partial** | `actions/scheduler.py` | `action` | Cross-platform | `READ_ONLY` | threading, time |
 | `schedule_list` | List scheduled tasks and reminders. | **partial** | `actions/scheduler.py` | `action` | Cross-platform | `READ_ONLY` | threading, time |
 | `schedule_cancel` | Cancel a scheduled task. | **partial** | `actions/scheduler.py` | `action` | Cross-platform | `NORMAL` | threading, time |
-| `scratchpad_add` | Add a quick note to the scratchpad. | **missing** | `plugins/notes_manager.py` | `plugin` | Cross-platform | `NORMAL` | sqlite3 |
-| `scratchpad_list` | List scratchpad notes, newest first. Optionally filter by tag. | **missing** | `plugins/notes_manager.py` | `plugin` | Cross-platform | `READ_ONLY` | sqlite3 |
-| `scratchpad_search` | Full-text search across scratchpad notes. | **missing** | `plugins/notes_manager.py` | `plugin` | Cross-platform | `READ_ONLY` | sqlite3 |
-| `scratchpad_delete` | Delete a scratchpad note by ID. | **missing** | `plugins/notes_manager.py` | `plugin` | Cross-platform | `NORMAL` | sqlite3 |
-| `scratchpad_clear` | Delete ALL scratchpad notes. This cannot be undone. | **missing** | `plugins/notes_manager.py` | `plugin` | Cross-platform | `SENSITIVE` | sqlite3 |
+| `scratchpad_add` | Add a quick note to the scratchpad. | **exists** | `plugins/notes_manager.py` | `plugin` | Cross-platform | `NORMAL` | sqlite3 |
+| `scratchpad_list` | List scratchpad notes, newest first. Optionally filter by tag. | **exists** | `plugins/notes_manager.py` | `plugin` | Cross-platform | `READ_ONLY` | sqlite3 |
+| `scratchpad_search` | Full-text search across scratchpad notes. | **exists** | `plugins/notes_manager.py` | `plugin` | Cross-platform | `READ_ONLY` | sqlite3 |
+| `scratchpad_delete` | Delete a scratchpad note by ID. | **exists** | `plugins/notes_manager.py` | `plugin` | Cross-platform | `NORMAL` | sqlite3 |
+| `scratchpad_clear` | Delete ALL scratchpad notes. This cannot be undone. | **exists** | `plugins/notes_manager.py` | `plugin` | Cross-platform | `SENSITIVE` | sqlite3 |
 | `clip_capture` | Take a screenshot (full screen or active window) and save it with metadata. | **partial** | `actions/screenshot_curator.py` | `action` | Cross-platform | `NORMAL` | Pillow, sqlite3 |
 | `clip_list` | List saved screenshots, optionally filtered by tag or label search. | **partial** | `actions/screenshot_curator.py` | `action` | Cross-platform | `READ_ONLY` | Pillow, sqlite3 |
 | `clip_delete` | Delete a screenshot by ID. | **partial** | `actions/screenshot_curator.py` | `action` | Cross-platform | `NORMAL` | Pillow, sqlite3 |

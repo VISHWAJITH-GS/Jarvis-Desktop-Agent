@@ -168,6 +168,9 @@ ACTION_PERMISSIONS: dict[str, str] = {
     "antigravity_status": READ_ONLY,
     "tool_performance_report": READ_ONLY,
     "action_inspector": READ_ONLY,
+    "clipboard_manager": NORMAL,
+    "notes_manager": NORMAL,
+    "conversation_search": READ_ONLY,
     # Gesture & Workflow Watcher controls
     "enable_gesture_mode": NORMAL,
     "disable_gesture_mode": NORMAL,
