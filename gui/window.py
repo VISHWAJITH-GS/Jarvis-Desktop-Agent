@@ -106,6 +106,7 @@ class MainWindow(
     _watcher_badge_sig = pyqtSignal(str, bool)  # (text, active) — HUD active watcher badge
     _gesture_state_sig = pyqtSignal(bool)  # (enabled) — Settings Drawer gesture control state
     _telemetry_sig = pyqtSignal()  # Thread-safe telemetry command center display request
+    _phone_link_controls_sig = pyqtSignal()  # Thread-safe Phone Link feature toggles dialog
 
     def __init__(self, face_path: str):
         super().__init__()
@@ -350,6 +351,7 @@ class MainWindow(
         self._watcher_badge_sig.connect(self._set_watcher_badge)
         self._gesture_state_sig.connect(self._refresh_gesture_btn)
         self._telemetry_sig.connect(self._show_telemetry)
+        self._phone_link_controls_sig.connect(self._open_phone_link_settings)
         try:
             from core.telemetry_service import get_telemetry_service, get_event_bus
             self._telemetry_svc = get_telemetry_service()

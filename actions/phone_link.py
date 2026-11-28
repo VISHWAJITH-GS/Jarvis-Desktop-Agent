@@ -54,11 +54,23 @@ ACTION_TIERS: dict[str, str] = {
 _ALL_ACTIONS = list(ACTION_TIERS.keys())
 
 
-def _require_group(action: str, group: str) -> str | None:
+def _require_group(action: str, group: str, player: Any = None) -> str | None:
     if not config_manager.is_phone_link_feature_enabled(group):
+        opened_ui = False
+        if player is not None and hasattr(player, "open_phone_link_controls"):
+            try:
+                player.open_phone_link_controls()
+                opened_ui = True
+            except Exception:
+                pass
+        hint = (
+            "I opened JARVIS's Phone Link Controls window for you — check the box and click SAVE."
+            if opened_ui
+            else "Open JARVIS -> SETTINGS tab -> PHONE LINK (WINDOWS) CONTROLS, check the box, and click SAVE."
+        )
         return drv.unsupported_result(
             action,
-            f"Phone Link '{group}' feature is disabled by default. Enable it in Settings > Phone Link.",
+            f"Phone Link '{group}' is disabled in JARVIS's own settings (separate from Microsoft's Phone Link app). {hint}",
         )
     return None
 
@@ -133,7 +145,7 @@ def phone_link(parameters: dict | None = None, player: Any = None, **kwargs: Any
     }
     grp = group_map.get(action)
     if grp:
-        blocked = _require_group(action, grp)
+        blocked = _require_group(action, grp, player=player)
         if blocked:
             return blocked
 

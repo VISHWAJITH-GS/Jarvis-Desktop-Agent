@@ -212,6 +212,14 @@ class JarvisUI:
         except (RuntimeError, AttributeError):
             pass
 
+    def open_phone_link_controls(self) -> None:
+        """Thread-safe: open JARVIS's Phone Link feature toggle dialog."""
+        try:
+            if self._is_alive():
+                self._win._phone_link_controls_sig.emit()
+        except (RuntimeError, AttributeError):
+            pass
+
     def sync_mute_state(self, muted: bool, hud_state: str = "") -> None:
         """Thread-safe: atomically update mute indicator and exact HUD state
         (e.g. MUTED, SLEEPING, LISTENING)."""

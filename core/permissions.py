@@ -273,6 +273,11 @@ class PermissionRegistry:
             PermissionEntry("file:empty_recycle_bin", "Empty Recycle Bin", "Permanently delete contents of Windows Recycle Bin", DESTRUCTIVE, POLICY_ASK, "file_controller"),
             # Communication
             PermissionEntry("message:send", "Send Message", "Send message via WhatsApp or messaging tools", SENSITIVE, POLICY_ASK, "send_message"),
+            # Phone Link
+            PermissionEntry("phone_link:read", "Phone Link Read / Status", "Inspect Phone Link status, recent calls, messages, notifications, photos, or apps", READ_ONLY, POLICY_ALLOW, "phone_link"),
+            PermissionEntry("phone_link:normal", "Phone Link Controls", "Answer/decline/end calls, dismiss notifications, toggle DND/mute, copy/save photos, open apps", NORMAL, POLICY_ALLOW, "phone_link"),
+            PermissionEntry("phone_link:sensitive", "Phone Link Outbound Call / SMS", "Place phone calls, send SMS/MMS, or share photos via Phone Link", SENSITIVE, POLICY_ASK, "phone_link"),
+            PermissionEntry("phone_link:destructive", "Phone Link Delete Photo", "Delete photos on linked phone via Phone Link", DESTRUCTIVE, POLICY_ASK, "phone_link"),
             PermissionEntry("message:read", "Read Messages", "Read received chat messages or notifications", READ_ONLY, POLICY_ALLOW, "notification_center"),
             # Browser
             PermissionEntry("browser:navigate", "Browser Navigation & Clicks", "Navigate URLs, click elements, fill web forms", NORMAL, POLICY_ALLOW, "browser_control"),
@@ -329,6 +334,20 @@ class PermissionRegistry:
 
         if act in self._entries:
             return self._entries[act]
+
+        if act == "phone_link":
+            if sub_act in (
+                "status", "launch", "open_feature", "diagnose",
+                "recent_calls", "call_status", "list_conversations",
+                "read_conversation", "list_notifications", "list_recent_photos",
+                "list_apps", "watcher_status",
+            ):
+                return self.get("phone_link:read")
+            if sub_act == "delete_photo":
+                return self.get("phone_link:destructive")
+            if sub_act in ("call", "send_sms", "send_mms_attachment", "share_photo", "dial_via_tel_uri"):
+                return self.get("phone_link:sensitive")
+            return self.get("phone_link:normal")
 
         if act in ("windows_control", "computer_settings"):
             if any(k in sub_act for k in ("shutdown", "shutdown_computer", "shutdown_laptop")):

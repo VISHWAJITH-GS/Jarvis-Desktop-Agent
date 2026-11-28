@@ -132,7 +132,7 @@ def test_non_windows_and_default_disabled_guards():
 
     with patch("memory.config_manager.is_phone_link_feature_enabled", return_value=False):
         res_sms = phone_link({"action": "send_sms", "target": "Alice", "text": "hi"})
-        assert "disabled by default" in res_sms
+        assert "disabled in JARVIS's own settings" in res_sms
 
 
 def test_safety_primitives_emergency_otp_mask_and_rate_limit():
