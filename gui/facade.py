@@ -720,6 +720,14 @@ class JarvisUI:
         except (RuntimeError, AttributeError):
             pass
 
+    def show_telemetry(self):
+        """Thread-safe: Display the master telemetry command center window."""
+        try:
+            if self._is_alive():
+                self._win._telemetry_sig.emit()
+        except (RuntimeError, AttributeError):
+            pass
+
     def show_todo_list(self, scope: str = "all"):
         """Thread-safe alias for show_tasks."""
         self.show_tasks(scope=scope)

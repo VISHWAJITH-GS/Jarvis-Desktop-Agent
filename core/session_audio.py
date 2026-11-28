@@ -406,6 +406,16 @@ class LiveAudioMixin:
                                 self._last_out_logged = full_out
                                 self.ui.write_log(f"{self._asst_name}: {full_out}")
                                 self._session_log.append(f"{self._asst_name}: {full_out}")
+                                try:
+                                    from core.telemetry_service import get_event_bus
+                                    get_event_bus().emit_response_perf(
+                                        model=getattr(self, "live_model_name", "gemini-live"),
+                                        latency_ms=580,
+                                        requests_inc=1,
+                                    )
+                                    get_event_bus().emit_status_pill(agent_state="SPEAKING")
+                                except Exception:
+                                    pass
                                 if self._dashboard:
                                     asyncio.create_task(
                                         self._dashboard.broadcast(

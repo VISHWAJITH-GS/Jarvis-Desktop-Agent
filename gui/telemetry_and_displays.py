@@ -48,6 +48,18 @@ from gui.theme import *
 from gui.theme import _RESIZE_MARGIN, _NO_SCROLLBAR_STYLE, _HUE_LINKED, _PALETTE_DEFAULTS, _lerp_color
 
 from gui.widgets import *
+from gui.telemetry_widgets import (
+    SystemVitalsWidget,
+    RollingLoadChartWidget,
+    ProcessRadarWidget,
+    NetLinkWaveformWidget,
+    EventStreamWidget,
+    ModelBenchWidget,
+    ActionsHistoryWidget,
+    TopStatusBarWidget,
+    ResponseCardPerfHeader,
+    MasterTelemetryPanel,
+)
 
 
 class ArmouryCrateTelemetryWidget(QWidget):

@@ -119,38 +119,97 @@ def display_window(parameters: dict = None, player=None, session_memory=None) ->
 
     # ── Focus display ────────────────────────────────────────────────────────
     if action in ("focus", "focus_display", "center", "bring_to_front", "restore"):
-        target_name_or_id = raw_display_id or title or source
-        if all_requested:
-            target_name_or_id = 0
-        return display_registry.restore_display(target_name_or_id, player=player)
+        open_displays = player.get_open_displays() if (player and hasattr(player, "get_open_displays")) else []
+        if isinstance(open_displays, list) and not open_displays and hasattr(display_registry, "list_displays"):
+            open_displays = display_registry.list_displays()
+        if isinstance(open_displays, list) and not open_displays:
+            return "Sir, there are no active display windows to focus."
+        if display_id is None and not all_requested:
+            if isinstance(open_displays, list) and open_displays:
+                try:
+                    target_id = max(int(d.get("display_id", d.get("id", 0))) for d in open_displays)
+                except Exception:
+                    target_id = 0
+            else:
+                target_id = 0
+        ok = False
+        if player and hasattr(player, "focus_display"):
+            ok = player.focus_display(target_id)
+        elif player and hasattr(player, "_win") and hasattr(player._win, "_focus_display_sig"):
+            player._win._focus_display_sig.emit(target_id)
+            ok = True
+        if ok:
+            return f"Display {target_id} is now front and center, sir." if target_id else "Displays have been brought to focus, sir."
+        return f"Sir, I could not find Display {target_id}."
 
     # ── Maximize display ─────────────────────────────────────────────────────
     if action in ("maximize", "maximize_display", "maximize_displays", "fullscreen", "expand"):
-        open_displays = player.get_open_displays() if player else []
-        if not open_displays:
+        open_displays = player.get_open_displays() if (player and hasattr(player, "get_open_displays")) else []
+        if isinstance(open_displays, list) and not open_displays and hasattr(display_registry, "list_displays"):
+            open_displays = display_registry.list_displays()
+        if isinstance(open_displays, list) and not open_displays:
             return "Sir, there are no active display windows to maximize."
         if display_id is None and not all_requested:
-            target_id = open_displays[-1]["display_id"] if len(open_displays) == 1 else 0
-        if player:
+            if isinstance(open_displays, list) and open_displays:
+                try:
+                    target_id = open_displays[-1].get("display_id", open_displays[-1].get("id", 0)) if len(open_displays) == 1 else 0
+                except Exception:
+                    target_id = 0
+            else:
+                target_id = 0
+        if player and hasattr(player, "maximize_display_window"):
             player.maximize_display_window(target_id)
+        elif player and hasattr(player, "_win") and hasattr(player._win, "_maximize_display_sig"):
+            player._win._maximize_display_sig.emit(target_id)
         if target_id == 0:
             return "Maximized all display windows, sir."
         return f"Maximized Display {target_id}, sir."
 
     # ── Minimize display ─────────────────────────────────────────────────────
     if action in ("minimize", "minimize_display", "minimize_displays", "dock", "collapse"):
-        target_name_or_id = raw_display_id or title or source
-        if all_requested:
-            target_name_or_id = 0
-        return display_registry.minimize_display(target_name_or_id, player=player)
+        open_displays = player.get_open_displays() if (player and hasattr(player, "get_open_displays")) else []
+        if isinstance(open_displays, list) and not open_displays and hasattr(display_registry, "list_displays"):
+            open_displays = display_registry.list_displays()
+        if isinstance(open_displays, list) and not open_displays:
+            return "Sir, there are no active display windows to minimize."
+        if display_id is None and not all_requested:
+            if isinstance(open_displays, list) and open_displays:
+                try:
+                    target_id = open_displays[-1].get("display_id", open_displays[-1].get("id", 0)) if len(open_displays) == 1 else 0
+                except Exception:
+                    target_id = 0
+            else:
+                target_id = 0
+        if player and hasattr(player, "minimize_display_window"):
+            player.minimize_display_window(target_id)
+        elif player and hasattr(player, "_win") and hasattr(player._win, "_minimize_display_sig"):
+            player._win._minimize_display_sig.emit(target_id)
+        if target_id == 0:
+            return "Minimized all display windows to the left dock, sir."
+        return f"Minimized Display {target_id} to the left dock, sir."
 
     # ── Close display ────────────────────────────────────────────────────────
     if action in ("close", "close_display", "close_displays", "hide", "dismiss"):
-        if all_requested:
-            return display_registry.close_all_displays(player=player)
-        target_name_or_id = raw_display_id or title or source
-        force = bool(params.get("force") or params.get("confirmed") or params.get("_execution_authorized"))
-        return display_registry.close_display(target_name_or_id, player=player, force=force)
+        open_displays = player.get_open_displays() if (player and hasattr(player, "get_open_displays")) else []
+        if isinstance(open_displays, list) and not open_displays and hasattr(display_registry, "list_displays"):
+            open_displays = display_registry.list_displays()
+        if isinstance(open_displays, list) and not open_displays:
+            return "Sir, there are no active display windows to close."
+        if display_id is None and not all_requested:
+            if isinstance(open_displays, list) and open_displays:
+                try:
+                    target_id = open_displays[-1].get("display_id", open_displays[-1].get("id", 0)) if len(open_displays) == 1 else 0
+                except Exception:
+                    target_id = 0
+            else:
+                target_id = 0
+        if player and hasattr(player, "close_display_window"):
+            player.close_display_window(target_id)
+        elif player and hasattr(player, "_win") and hasattr(player._win, "_close_display_sig"):
+            player._win._close_display_sig.emit(target_id)
+        if target_id == 0:
+            return "Closed all extra display windows, sir."
+        return f"Closed Display {target_id}, sir."
 
     # ── List displays ────────────────────────────────────────────────────────
     if action in ("list", "list_displays"):

@@ -55,6 +55,8 @@ __all__ = [
     "MemoryActionsDisplayWindow",
     "TasksDisplayWindow",
     "TodoListDisplayWindow",
+    "TelemetryDisplayWindow",
+    "MasterTelemetryPanel",
     "ArmouryCrateTelemetryWidget",
     "MinimizedDisplayPill",
     "MinimizedDisplaysDock",

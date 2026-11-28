@@ -995,7 +995,7 @@ class WindowControlsMixin:
     def _style_mute_btn(self):
         if hasattr(self, "_hud_mute_btn"):
             if self._muted:
-                self._hud_mute_btn.setText(" MUTED")
+                self._hud_mute_btn.setText("MUTED")
                 self._hud_mute_btn.setIcon(get_uicon("microphone-slash", color=C.MUTED_C, size=13))
                 self._hud_mute_btn.setStyleSheet(f"""
                     QPushButton {{
@@ -1006,7 +1006,7 @@ class WindowControlsMixin:
                     }}
                 """)
             else:
-                self._hud_mute_btn.setText(" MIC")
+                self._hud_mute_btn.setText("MIC")
                 self._hud_mute_btn.setIcon(get_uicon("circle-microphone", color=C.PRI, size=13))
                 self._hud_mute_btn.setStyleSheet(f"""
                     QPushButton {{
@@ -1055,6 +1055,13 @@ class WindowControlsMixin:
         if hasattr(self.hud, "on_state_changed"):
             self.hud.on_state_changed(state)
         self.hud.update()
+        try:
+            from core.telemetry_service import get_event_bus
+            st_clean = str(state or "IDLE").upper()
+            get_event_bus().emit_status_pill(agent_state=st_clean)
+            get_event_bus().emit_event("STATE", f"state -> {st_clean.lower()}", level="info")
+        except Exception:
+            pass
 
     def _check_config(self) -> bool:
         try:

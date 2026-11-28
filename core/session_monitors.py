@@ -73,11 +73,6 @@ class LiveMonitorsMixin:
         )
         self._record_activity()
         print(f"[JARVIS] Startup greeting sent: {greeting_text}")
-        if self.ui:
-            try:
-                self.ui.write_log(f"JARVIS: {greeting_text}")
-            except Exception:
-                pass
 
     async def _save_session_summary(self) -> None:
         log = self._session_log

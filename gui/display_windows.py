@@ -2233,3 +2233,104 @@ class TasksDisplayWindow(_FramelessWindowResizeMixin, QWidget):
 
 
 TodoListDisplayWindow = TasksDisplayWindow
+
+
+class TelemetryDisplayWindow(_FramelessWindowResizeMixin, QWidget):
+    """
+    Dedicated floating command-center telemetry display window for JARVIS.
+    Features:
+      - MasterTelemetryPanel with hardware vitals, rolling load chart, process radar, net waveform,
+        event stream, model bench, and actions history.
+      - StandardTitleBarControls (— minimize, □ / ❐ maximize/restore, ✕ close).
+      - Frameless interactive 8-direction edge & corner resizing.
+      - Dark Crimson-Noir Sci-Fi aesthetic.
+    """
+
+    def __init__(self, main_win: "MainWindow" = None, parent=None):
+        super().__init__(parent)
+        self._main_win = main_win
+        self.setWindowTitle("JARVIS Telemetry Command Center")
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setMinimumSize(640, 480)
+        self._init_frameless_resize()
+
+        screen = QApplication.primaryScreen().availableGeometry()
+        w = min(1100, max(750, screen.width() - 200))
+        h = min(720, max(520, screen.height() - 150))
+        x = max(screen.left() + 40, screen.center().x() - w // 2)
+        y = max(screen.top() + 40, screen.center().y() - h // 2)
+        self.setGeometry(x, y, w, h)
+
+        self._build_ui()
+
+    def _build_ui(self):
+        self._outer = QFrame(self)
+        self._outer.setObjectName("TelemetryOuter")
+        self._outer.setStyleSheet(f"""
+            QFrame#TelemetryOuter {{
+                background: {getattr(C, 'PANEL_BG_ALPHA', 'rgba(10, 4, 6, 0.94)')};
+                border: 1px solid rgba(255, 23, 68, 0.45);
+                border-radius: 8px;
+            }}
+        """)
+        self._outer.setMouseTracking(True)
+        self._outer.installEventFilter(self)
+        v_outer = QVBoxLayout(self)
+        v_outer.setContentsMargins(0, 0, 0, 0)
+        v_outer.addWidget(self._outer)
+
+        self._main_lay = QVBoxLayout(self._outer)
+        self._main_lay.setContentsMargins(10, 8, 10, 10)
+        self._main_lay.setSpacing(6)
+
+        # Header bar
+        hdr = QHBoxLayout()
+        hdr.setSpacing(6)
+
+        dot = QLabel("◈")
+        dot.setFont(QFont("Montserrat", 9, QFont.Weight.Bold))
+        dot.setStyleSheet(f"color: {C.PRI}; background: transparent;")
+        hdr.addWidget(dot)
+
+        title_lbl = QLabel("JARVIS INTELLIGENCE & TELEMETRY COMMAND CENTER")
+        title_lbl.setFont(QFont("Montserrat", 8, QFont.Weight.Bold))
+        title_lbl.setStyleSheet(f"color: {C.PRI}; background: transparent; letter-spacing: 1px;")
+        hdr.addWidget(title_lbl)
+
+        hdr.addStretch()
+
+        from gui.base import StandardTitleBarControls
+        self.controls = StandardTitleBarControls(
+            self,
+            on_minimize=self.showMinimized,
+            on_close=self.hide,
+        )
+        hdr.addWidget(self.controls)
+        self._main_lay.addLayout(hdr)
+
+        # Body: MasterTelemetryPanel
+        from gui.telemetry_widgets import MasterTelemetryPanel
+        self.panel = MasterTelemetryPanel(main_win=self._main_win, parent=self)
+        self._main_lay.addWidget(self.panel, stretch=1)
+
+    def mousePressEvent(self, e):
+        if self._handle_mouse_press(e):
+            return
+        super().mousePressEvent(e)
+
+    def mouseMoveEvent(self, e):
+        if self._handle_mouse_move(e):
+            return
+        super().mouseMoveEvent(e)
+
+    def mouseReleaseEvent(self, e):
+        self._handle_mouse_release(e)
+        super().mouseReleaseEvent(e)
+
+    def eventFilter(self, watched, event):
+        if watched == getattr(self, "_outer", None):
+            if self._filter_child_mouse_event(watched, event):
+                return True
+        return super().eventFilter(watched, event)
+

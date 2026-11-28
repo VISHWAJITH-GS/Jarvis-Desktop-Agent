@@ -259,6 +259,14 @@ class WindowPanelsMixin:
             self._memory_actions_dock = MemoryActionsDisplayWindow(self)
         self._memory_actions_dock.popup(tab)
 
+    def _show_telemetry(self):
+        if getattr(self, "_telemetry_win", None) is None:
+            from gui.display_windows import TelemetryDisplayWindow
+            self._telemetry_win = TelemetryDisplayWindow(self)
+        self._telemetry_win.show()
+        self._telemetry_win.raise_()
+        self._telemetry_win.activateWindow()
+
     # ── the coding agent, live ───────────────────────────────────────────────
     # The panel under the head shows a folder job while it runs: what was asked,
     # the plan, every file with its state, and the steps as they happen. Drawn

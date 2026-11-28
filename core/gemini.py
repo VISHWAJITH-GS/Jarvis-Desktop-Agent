@@ -800,21 +800,56 @@ def call(
     cl = None
     tried = [m for m in ladder if not _cooling(m)] or list(ladder)
     for model in tried:
+        _t0 = time.monotonic()
         try:
             if model == LIVE:
                 reply = _live_call(contents, config, timeout_ms, resolved_key)
                 if reply is not None:
+                    try:
+                        from core.telemetry_service import get_event_bus
+                        _lat = time.monotonic() - _t0
+                        get_event_bus().record_model_benchmark("gemini-live", _lat, True, tier)
+                        get_event_bus().emit_event("ROUTE", f"route -> Google Gemini Live", level="info")
+                        get_event_bus().emit_response_perf(model="gemini-live", latency_ms=_lat * 1000)
+                    except Exception:
+                        pass
                     return reply
                 raise RuntimeError("the Live turn came back empty")
             if model.startswith(PROVIDER_PREFIX):
-                return _provider_call(model, contents, config, timeout_ms)
+                res = _provider_call(model, contents, config, timeout_ms)
+                try:
+                    from core.telemetry_service import get_event_bus
+                    _lat = time.monotonic() - _t0
+                    get_event_bus().record_model_benchmark(model, _lat, True, tier)
+                    get_event_bus().emit_event("ROUTE", f"route -> {model}", level="info")
+                    get_event_bus().emit_response_perf(model=model, latency_ms=_lat * 1000)
+                except Exception:
+                    pass
+                return res
             if cl is None:
                 cl = client(timeout_ms=timeout_ms, key=resolved_key)
             kwargs = {"model": model, "contents": _normalize_genai_contents(contents)}
             if config is not None:
                 kwargs["config"] = config
-            return cl.models.generate_content(**kwargs)
+            resp = cl.models.generate_content(**kwargs)
+            try:
+                from core.telemetry_service import get_event_bus
+                _lat = time.monotonic() - _t0
+                get_event_bus().record_model_benchmark(model, _lat, True, tier)
+                get_event_bus().emit_event("ROUTE", f"route -> Google Gemini {model}", level="info")
+                get_event_bus().emit_response_perf(model=model, latency_ms=_lat * 1000)
+            except Exception:
+                pass
+            return resp
         except Exception as e:
+            try:
+                from core.telemetry_service import get_event_bus
+                _lat = time.monotonic() - _t0
+                get_event_bus().record_model_benchmark(model, _lat, False, tier)
+                get_event_bus().emit_event("FAULT", f"{model} failed: {str(e)[:80]}", level="error")
+                get_event_bus().emit_error(f"Google Gemini rejected the request: {str(e)[:100]}")
+            except Exception:
+                pass
             msg = str(e)
             if is_quota_error(msg):
                 _cool(model)

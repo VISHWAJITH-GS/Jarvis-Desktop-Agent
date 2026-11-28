@@ -63,22 +63,20 @@ class HudFadeOverlay(QWidget):
             p.end()
             return
 
-        fade_h = min(36, max(16, int(h * 0.22)))
+        fade_h = min(14, max(8, int(h * 0.10)))
 
         # Top blur / gradient fade
-        bg_col = QColor(10, 4, 6, 245)
+        bg_col = QColor(10, 4, 6, 180)
         top_grad = QLinearGradient(0, 0, 0, fade_h)
         top_grad.setColorAt(0.0, bg_col)
-        top_grad.setColorAt(0.5, QColor(10, 4, 6, 175))
-        top_grad.setColorAt(0.85, QColor(10, 4, 6, 60))
+        top_grad.setColorAt(0.5, QColor(10, 4, 6, 90))
         top_grad.setColorAt(1.0, QColor(10, 4, 6, 0))
         p.fillRect(QRect(0, 0, w, fade_h), top_grad)
 
         # Bottom blur / gradient fade
         bot_grad = QLinearGradient(0, h - fade_h, 0, h)
         bot_grad.setColorAt(0.0, QColor(10, 4, 6, 0))
-        bot_grad.setColorAt(0.15, QColor(10, 4, 6, 60))
-        bot_grad.setColorAt(0.5, QColor(10, 4, 6, 175))
+        bot_grad.setColorAt(0.5, QColor(10, 4, 6, 90))
         bot_grad.setColorAt(1.0, bg_col)
         p.fillRect(QRect(0, h - fade_h, w, fade_h), bot_grad)
 
@@ -97,12 +95,13 @@ class HudConversationWidget(QTextEdit):
         self.setFrameShape(QFrame.Shape.NoFrame)
         self.document().setMaximumBlockCount(400)
         self.setFont(QFont("Montserrat", 9))
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
         self.setStyleSheet(f"""
             QTextEdit {{
                 background: transparent;
                 color: {C.TEXT};
                 border: none;
-                padding: 22px 6px 12px 6px;
+                padding: 4px 6px 6px 6px;
                 selection-background-color: rgba(255, 23, 68, 0.35);
             }}
             QScrollBar:vertical {{
@@ -147,7 +146,15 @@ class HudConversationWidget(QTextEdit):
         self._render_conversation()
 
     def _on_stream_reply(self, text: str):
-        self._streaming_reply = str(text or "").strip()
+        clean = str(text or "").strip()
+        # If the streaming reply text is already committed in the last assistant message, do not duplicate!
+        if self._messages and self._messages[-1][0] == "jarvis":
+            last_msg = self._messages[-1][1].strip().lower()
+            if clean.lower() == last_msg or last_msg.startswith(clean.lower()):
+                self._streaming_reply = ""
+                self._render_conversation()
+                return
+        self._streaming_reply = clean
         self._render_conversation()
 
     def _on_add_msg(self, speaker: str, text: str):
@@ -161,7 +168,8 @@ class HudConversationWidget(QTextEdit):
                 self._messages.append(("you", clean))
         elif spk in ("ai", "jarvis", self._asst_name.lower()):
             self._streaming_reply = ""
-            if not (self._messages and self._messages[-1] == ("jarvis", clean)):
+            # Deduplicate identical consecutive assistant messages
+            if not (self._messages and self._messages[-1][0] == "jarvis" and self._messages[-1][1].strip().lower() == clean.lower()):
                 self._messages.append(("jarvis", clean))
         else:
             self._messages.append(("sys", clean))
@@ -173,18 +181,19 @@ class HudConversationWidget(QTextEdit):
         html_parts = []
         html_parts.append(f"<div style=\"font-family: 'Montserrat', monospace; color: {C.TEXT}; font-size: 11px;\">")
 
-        for spk, txt in self._messages[-50:]:
+        for idx, (spk, txt) in enumerate(self._messages[-50:]):
             escaped = txt.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>")
+            top_margin = "2px" if idx == 0 else "6px"
             if spk == "you":
                 html_parts.append(
-                    f'<div style="margin-top: 6px; margin-bottom: 2px;">'
+                    f'<div style="margin-top: {top_margin}; margin-bottom: 2px;">'
                     f'<span style="color: {C.TEXT_DIM}; font-size: 9px; font-weight: bold; letter-spacing: 1.5px;">YOU</span>'
                     f"</div>"
                     f'<div style="color: #ffffff; margin-bottom: 8px; line-height: 1.35;">{escaped}</div>'
                 )
             elif spk == "jarvis":
                 html_parts.append(
-                    f'<div style="margin-top: 6px; margin-bottom: 2px;">'
+                    f'<div style="margin-top: {top_margin}; margin-bottom: 2px;">'
                     f'<span style="color: {C.PRI}; font-size: 9px; font-weight: bold; letter-spacing: 1.5px;">{self._asst_name}</span>'
                     f"</div>"
                     f'<div style="color: {C.TEXT}; border-left: 2px solid {C.PRI}; padding-left: 6px; margin-bottom: 8px; line-height: 1.35;">{escaped}</div>'
@@ -209,18 +218,25 @@ class HudConversationWidget(QTextEdit):
             )
 
         if self._streaming_reply:
-            esc = (
-                self._streaming_reply.replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-                .replace("\n", "<br>")
-            )
-            html_parts.append(
-                f'<div style="margin-top: 6px; margin-bottom: 2px;">'
-                f'<span style="color: {C.PRI}; font-size: 9px; font-weight: bold; letter-spacing: 1.5px;">{self._asst_name}</span>'
-                f"</div>"
-                f'<div style="color: {C.TEXT}; border-left: 2px solid {C.PRI}; padding-left: 6px; margin-bottom: 8px; line-height: 1.35;">{esc} <span style="color: {C.PRI}; font-weight: bold;">█</span></div>'
-            )
+            is_dup = False
+            if self._messages and self._messages[-1][0] == "jarvis":
+                last_txt = self._messages[-1][1].strip().lower()
+                cur_txt = self._streaming_reply.strip().lower()
+                if cur_txt == last_txt or last_txt.startswith(cur_txt):
+                    is_dup = True
+            if not is_dup:
+                esc = (
+                    self._streaming_reply.replace("&", "&amp;")
+                    .replace("<", "&lt;")
+                    .replace(">", "&gt;")
+                    .replace("\n", "<br>")
+                )
+                html_parts.append(
+                    f'<div style="margin-top: 6px; margin-bottom: 2px;">'
+                    f'<span style="color: {C.PRI}; font-size: 9px; font-weight: bold; letter-spacing: 1.5px;">{self._asst_name}</span>'
+                    f"</div>"
+                    f'<div style="color: {C.TEXT}; border-left: 2px solid {C.PRI}; padding-left: 6px; margin-bottom: 8px; line-height: 1.35;">{esc} <span style="color: {C.PRI}; font-weight: bold;">█</span></div>'
+                )
 
         html_parts.append("</div>")
 
@@ -373,13 +389,14 @@ class HudCanvas(QWidget):
         off_x = (w - BASE_W * scale) / 2.0
         off_y = (h - BASE_H * scale) / 2.0
 
-        top_y = 348.0
-        bot_y = BASE_H - 14.0
-        conv_h = max(40.0, bot_y - top_y)
+        card_count = len([c for c, born in getattr(self, "cards", []) if time.time() - born <= 7])
+        top_y = 368.0 if card_count > 0 else 352.0
+        bot_y = BASE_H - 12.0
+        conv_h = max(50.0, bot_y - top_y)
 
-        c_x = int(off_x + 18.0 * scale)
+        c_x = int(off_x + 16.0 * scale)
         c_y = int(off_y + top_y * scale)
-        c_w = int((BASE_W - 36.0) * scale)
+        c_w = int((BASE_W - 32.0) * scale)
         c_h = int(conv_h * scale)
 
         self.conversation.setGeometry(c_x, c_y, c_w, c_h)
@@ -929,7 +946,7 @@ class HudCanvas(QWidget):
         p.setBrush(Qt.BrushStyle.NoBrush)
 
         # Action Cards
-        y = cy + 160
+        y = cy + 150
         now = time.time()
         live = [(text, born) for text, born in self.cards if now - born <= 7]
         p.setFont(keena_font(8, True, 1.5))

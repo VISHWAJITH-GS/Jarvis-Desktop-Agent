@@ -69,7 +69,7 @@ class WindowAudioMixin:
         lay.setSpacing(4)
 
         def _btn(txt, tip, icon_name=None):
-            btn_txt = f" {txt.strip()}" if icon_name and txt.strip() else txt
+            btn_txt = txt.strip()
             b = QPushButton(btn_txt)
             b.setFont(keena_font(8, True))
             b.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -338,13 +338,13 @@ class WindowAudioMixin:
         p0_v.addWidget(self._file_hint)
         self._drawer_tabs.addWidget(p0)
 
-        # Tab 1: Telemetry (Armoury Crate hardware matrix)
+        # Tab 1: Telemetry (Full command-center telemetry suite)
         p1 = QWidget()
         p1.setStyleSheet("background: transparent;")
         p1_v = QVBoxLayout(p1)
         p1_v.setContentsMargins(0, 2, 0, 2)
         p1_v.setSpacing(4)
-        self._armoury_telemetry = ArmouryCrateTelemetryWidget(self)
+        self._armoury_telemetry = MasterTelemetryPanel(self)
         p1_v.addWidget(self._armoury_telemetry, stretch=1)
         self._drawer_tabs.addWidget(p1)
 

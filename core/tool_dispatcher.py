@@ -45,6 +45,13 @@ class ToolDispatcher:
         if live.ui:
             live.ui.set_state("THINKING")
 
+        try:
+            from core.telemetry_service import get_event_bus
+            get_event_bus().emit_event("TOOL", f"{name} · running", level="info")
+            get_event_bus().emit_status_pill(agent_state="ACTING")
+        except Exception:
+            pass
+
         # Central permission policy gate
         try:
             from core.permissions import resolve_action_policy, POLICY_DENY, POLICY_ALLOW, log_permission_decision
@@ -377,6 +384,30 @@ class ToolDispatcher:
             traceback.print_exc()
             try:
                 live.speak_error(name, e)
+            except Exception:
+                pass
+            try:
+                from core.telemetry_service import get_event_bus
+                _dur_ms = (time.monotonic() - _t_tool) * 1000
+                get_event_bus().emit_event("FAULT", f"tool {name} · failed", level="error")
+                get_event_bus().emit_action(label=f"{name}: {str(args)[:50]}", category="TO", duration_ms=_dur_ms, success=False)
+                get_event_bus().emit_error(f"Tool '{name}' failed: {e}")
+            except Exception:
+                pass
+
+        _dur_ms = (time.monotonic() - _t_tool) * 1000
+        if not str(result).startswith(f"Tool '{name}' failed"):
+            try:
+                from core.telemetry_service import get_event_bus
+                get_event_bus().emit_event("TOOL", f"{name} ok · {int(_dur_ms)}ms", level="success")
+                _cat = "TO"
+                if any(k in name for k in ("time", "timer", "alarm", "reminder")):
+                    _cat = "TI"
+                elif any(k in name for k in ("memory", "notes")):
+                    _cat = "ME"
+                elif any(k in name for k in ("system", "brightness", "volume")):
+                    _cat = "SY"
+                get_event_bus().emit_action(label=f"{name}: {str(args)[:50]}", category=_cat, duration_ms=_dur_ms, success=True)
             except Exception:
                 pass
 

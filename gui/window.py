@@ -105,6 +105,7 @@ class MainWindow(
     _model_picker_sig = pyqtSignal()  # Thread-safe local brain model picker request
     _watcher_badge_sig = pyqtSignal(str, bool)  # (text, active) — HUD active watcher badge
     _gesture_state_sig = pyqtSignal(bool)  # (enabled) — Settings Drawer gesture control state
+    _telemetry_sig = pyqtSignal()  # Thread-safe telemetry command center display request
 
     def __init__(self, face_path: str):
         super().__init__()
@@ -127,11 +128,12 @@ class MainWindow(
         self.setWindowTitle(f"{_display} — {APP_VERSION}")
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-        self.setMinimumSize(280, 380)
+        self.setMinimumSize(420, 580)
         self._init_frameless_resize()
         self._is_closed: bool = False
         self._expanded: bool = False
         self._is_fullscreen: bool = False
+        self._normal_geometry: QRect | None = None
 
         screen = QApplication.primaryScreen().availableGeometry()
         hud_w, hud_h = 420, 580
@@ -347,6 +349,14 @@ class MainWindow(
         self._model_picker_sig.connect(self._open_local_model_picker)
         self._watcher_badge_sig.connect(self._set_watcher_badge)
         self._gesture_state_sig.connect(self._refresh_gesture_btn)
+        self._telemetry_sig.connect(self._show_telemetry)
+        try:
+            from core.telemetry_service import get_telemetry_service, get_event_bus
+            self._telemetry_svc = get_telemetry_service()
+            self._telemetry_svc.start()
+            get_event_bus().error_alert.connect(lambda err: self.write_log(f"ERR: {err}") if hasattr(self, "write_log") else None)
+        except Exception as e:
+            print(f"[Telemetry] Service init note: {e}")
         self._screen_glow_overlay = ScreenGlowOverlay(self)
         self._search_dock_minimized_to_bar = False
         self._reminders_dock_minimized_to_bar = False
@@ -385,10 +395,55 @@ class MainWindow(
 
     def showEvent(self, event):
         super().showEvent(event)
-        # Chat box is popped up ONLY if selected by the user. Do not auto-show on start.
+        # Capture canonical default normal geometry on first showEvent
+        if getattr(self, "_normal_geometry", None) is None:
+            geom = self.geometry()
+            if geom.width() >= 420 and geom.height() >= 540:
+                self._normal_geometry = geom
+            else:
+                screen = QApplication.primaryScreen().availableGeometry()
+                hud_w, hud_h = 420, 580
+                init_x = max(screen.left() + 20, screen.right() - hud_w - 24)
+                init_y = max(screen.top() + 20, screen.bottom() - hud_h - 24)
+                self._normal_geometry = QRect(init_x, init_y, hud_w, hud_h)
+            self._normal_geom = self._normal_geometry
+
+    def changeEvent(self, event):
+        if event.type() == QEvent.Type.WindowStateChange:
+            if self.isMinimized():
+                if not getattr(self, "_is_minimized_top", False):
+                    cur = self.geometry()
+                    if cur.width() >= 380 and cur.height() >= 480:
+                        self._normal_geometry = cur
+                        self._normal_geom = cur
+            elif not self.isMinimized() and not getattr(self, "_is_minimized_top", False):
+                target = getattr(self, "_normal_geometry", None) or getattr(self, "_normal_geom", None)
+                if target:
+                    self.setMinimumSize(0, 0)
+                    self.setMaximumSize(16777215, 16777215)
+                    if hasattr(self, "hud_box"):
+                        self.hud_box.setMinimumWidth(380)
+                        self.hud_box.setMaximumWidth(16777215)
+                        self.hud_box.setFixedWidth(420)
+                    if hasattr(self, "hud_ctrl_bar"):
+                        self.hud_ctrl_bar.setVisible(True)
+                    self.setGeometry(target)
+                    self.setMinimumSize(420, 580)
+                    if self.layout():
+                        self.layout().activate()
+                    if hasattr(self, "hud"):
+                        self.hud._update_conversation_geometry()
+                        self.hud.update()
+                    self.update()
+        super().changeEvent(event)
 
     def closeEvent(self, event):
         self._is_closed = True
+        if hasattr(self, "_telemetry_svc") and self._telemetry_svc:
+            try:
+                self._telemetry_svc.stop()
+            except Exception:
+                pass
         if getattr(self, "_clipboard_panel", None) is not None:
             try:
                 self._clipboard_panel.close()
@@ -412,7 +467,7 @@ class MainWindow(
             self.left_search_dock.close()
         super().closeEvent(event)
 
-    def toggle_minimize_top(self):
+    def toggle_minimize_top(self, mini: bool | None = None):
         """
         Minimizes ONLY the circular Arc Reactor element to the left-bottom of the screen
         into a small favicon-sized floating orb, or restores it back to normal position.
@@ -421,48 +476,104 @@ class MainWindow(
         screen = QApplication.primaryScreen().availableGeometry()
         MINI_SIZE = 58  # Favicon-sized circular orb
 
-        if getattr(self, "_is_minimized_top", False):
-            # Restore to normal position at bottom-right
-            self.hud._mini_mode = False
-            self.setMinimumSize(280, 380)
-            if hasattr(self, "hud_box"):
-                self.hud_box.setMinimumWidth(300)
-                self.hud_box.setMaximumWidth(16777215)
-            if hasattr(self, "hud_ctrl_bar"):
-                self.hud_ctrl_bar.setVisible(True)
-            target = getattr(self, "_normal_geom", None)
-            if not target:
+        entering_mini = not getattr(self, "_is_minimized_top", False) if mini is None else bool(mini)
+
+        if not entering_mini:
+            # ── Restore to normal position at bottom-right ──
+            target = getattr(self, "_normal_geometry", None) or getattr(self, "_normal_geom", None)
+            if not target or target.width() < 380 or target.height() < 480:
                 init_x = max(screen.left() + 20, screen.right() - 420 - 24)
                 init_y = max(screen.top() + 20, screen.bottom() - 580 - 24)
                 target = QRect(init_x, init_y, 420, 580)
+                self._normal_geometry = target
+                self._normal_geom = target
+
+            # Reset any temporary size locks before resizing
+            self.setMinimumSize(0, 0)
+            self.setMaximumSize(16777215, 16777215)
+            if hasattr(self, "hud_box"):
+                self.hud_box.setMinimumWidth(380)
+                self.hud_box.setMaximumWidth(16777215)
+                self.hud_box.setFixedWidth(420)
+                self.hud_box.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
+
+            # Restore visibility of all normal-mode child containers before resizing
+            self.hud.set_mini_mode(False)
+            if hasattr(self, "hud_ctrl_bar"):
+                self.hud_ctrl_bar.setVisible(True)
+            if hasattr(self, "_hud_cam_stack"):
+                self._hud_cam_stack.setVisible(True)
+            if hasattr(self.hud, "_update_conversation_geometry"):
+                self.hud._update_conversation_geometry()
+
             self._is_minimized_top = False
             if hasattr(self, "_hud_mini_btn"):
                 self._hud_mini_btn.setText("MINI")
                 self._hud_mini_btn.setToolTip("Minimize Arc Reactor circle to bottom-left (Favicon size)")
+
+            self._geom_anim = QPropertyAnimation(self, b"geometry")
+            self._geom_anim.setDuration(300)
+            self._geom_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+            self._geom_anim.setStartValue(self.geometry())
+            self._geom_anim.setEndValue(target)
+
+            def _on_restore_finished():
+                self.setGeometry(target)
+                self.setMinimumSize(420, 580)
+                if hasattr(self, "hud_box"):
+                    self.hud_box.setFixedWidth(420)
+                if self.layout():
+                    self.layout().activate()
+                if hasattr(self, "hud"):
+                    self.hud._update_conversation_geometry()
+                    self.hud.update()
+                self.update()
+
+            self._geom_anim.finished.connect(_on_restore_finished)
+            self._geom_anim.start()
+
         else:
+            # ── Enter MINI mode ──
             if getattr(self, "_expanded", False):
                 self._toggle_expanded(False)
-            self._normal_geom = self.geometry()
-            self.hud._mini_mode = True
+
+            cur = self.geometry()
+            if cur.width() >= 380 and cur.height() >= 480:
+                self._normal_geometry = cur
+                self._normal_geom = cur
+            elif getattr(self, "_normal_geometry", None) is None:
+                init_x = max(screen.left() + 20, screen.right() - 420 - 24)
+                init_y = max(screen.top() + 20, screen.bottom() - 580 - 24)
+                self._normal_geometry = QRect(init_x, init_y, 420, 580)
+                self._normal_geom = self._normal_geometry
+
+            self.hud.set_mini_mode(True)
             if hasattr(self, "hud_ctrl_bar"):
                 self.hud_ctrl_bar.setVisible(False)
+            if hasattr(self.hud, "conversation"):
+                self.hud.conversation.hide()
             if hasattr(self, "hud_box"):
                 self.hud_box.setFixedWidth(MINI_SIZE)
             self.setMinimumSize(MINI_SIZE, MINI_SIZE)
+            self.setMaximumSize(MINI_SIZE, MINI_SIZE)
+
             target_x = screen.left() + 24
             target_y = screen.bottom() - MINI_SIZE - 24
             target = QRect(target_x, target_y, MINI_SIZE, MINI_SIZE)
+
             self._is_minimized_top = True
             if hasattr(self, "_hud_mini_btn"):
                 self._hud_mini_btn.setText("NORM")
                 self._hud_mini_btn.setToolTip("Restore Arc Reactor to normal position")
 
-        self._geom_anim = QPropertyAnimation(self, b"geometry")
-        self._geom_anim.setDuration(300)
-        self._geom_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
-        self._geom_anim.setStartValue(self.geometry())
-        self._geom_anim.setEndValue(target)
-        self._geom_anim.start()
+            self._geom_anim = QPropertyAnimation(self, b"geometry")
+            self._geom_anim.setDuration(300)
+            self._geom_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+            self._geom_anim.setStartValue(self.geometry())
+            self._geom_anim.setEndValue(target)
+            self._geom_anim.start()
+
+    toggle_mini_mode = toggle_minimize_top
 
     def snap_to_corner(self, corner: str):
         """

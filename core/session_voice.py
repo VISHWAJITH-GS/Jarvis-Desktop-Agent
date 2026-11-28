@@ -604,6 +604,12 @@ class LiveVoiceMixin:
         drop, _ = self.filter_incoming_transcript(text)
         if drop:
             return
+        try:
+            from core.telemetry_service import get_event_bus
+            get_event_bus().emit_event("RECV", f"request received · {len(text)} chars", level="info")
+            get_event_bus().emit_status_pill(agent_state="THINKING")
+        except Exception:
+            pass
         # Respect sleep mode: a typed command must not be answered while asleep.
         is_sleeping = (
             self.voice_state.is_sleeping if hasattr(self, "voice_state") else (self._wake_enabled and not self._awake)
